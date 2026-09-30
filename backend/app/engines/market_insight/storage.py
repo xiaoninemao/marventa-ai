@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
+import time
 import uuid
 from datetime import datetime, timezone
+
 from app.config import DB_PATH, MEDIA_ROOT, MEDIA_S3_BUCKET, MEDIA_STORAGE_BACKEND
 from app.database import connect_database
 from app.engines.market_insight.models import (
@@ -13,13 +16,13 @@ from app.engines.market_insight.models import (
     InsightSource,
     ParsedDocument,
 )
+from app.media_storage import delete_media, list_media_keys, media_exists
 from app.storage_schema import (
     ensure_json_columns,
     ensure_organization_scope,
     ensure_project_scope,
     resolve_user_organization_id,
 )
-from app.media_storage import delete_media, list_media_keys, media_exists
 
 _reconciled_storage_roots: set[tuple[str, str]] = set()
 
@@ -30,6 +33,11 @@ class InsightProjectAccessDenied(PermissionError):
 
 class InsightRetryNotAllowed(ValueError):
     pass
+
+
+logger = logging.getLogger(__name__)
+ANALYSIS_LEASE_SECONDS = 75
+ANALYSIS_TIMEOUT_SECONDS = 600
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -57,6 +65,13 @@ def init_db() -> None:
     cols = [r[1] for r in conn.execute("PRAGMA table_info(insights)").fetchall()]
     if "status" not in cols:
         conn.execute("ALTER TABLE insights ADD COLUMN status TEXT DEFAULT 'completed'")
+    for column, sql_type in (
+        ("analysis_attempt_id", "TEXT"),
+        ("analysis_lease_until", "BIGINT"),
+        ("analysis_deadline", "BIGINT"),
+    ):
+        if column not in cols:
+            conn.execute(f"ALTER TABLE insights ADD COLUMN {column} {sql_type}")
     if "owner_id" not in cols:
         conn.execute("ALTER TABLE insights ADD COLUMN owner_id TEXT DEFAULT ''")
     if "project_id" not in cols:
@@ -169,8 +184,69 @@ def init_db() -> None:
     if reconciliation_key not in _reconciled_storage_roots:
         _reconcile_source_files(conn)
         _reconciled_storage_roots.add(reconciliation_key)
+    _recover_interrupted_analyses(conn, int(time.time()))
     conn.commit()
     conn.close()
+
+
+def _recover_interrupted_analyses(conn: sqlite3.Connection, now: int) -> None:
+    updated = conn.execute(
+        """UPDATE insights
+           SET status = 'failed', analysis_attempt_id = NULL,
+               analysis_lease_until = NULL, analysis_deadline = NULL
+           WHERE status = 'analyzing' AND (
+               analysis_attempt_id IS NULL OR analysis_attempt_id = ''
+               OR analysis_lease_until IS NULL OR analysis_lease_until <= ?
+               OR analysis_deadline IS NULL OR analysis_deadline <= ?
+           )""",
+        (now, now),
+    )
+    if updated.rowcount:
+        logger.warning("Recovered %s interrupted insight analyses", updated.rowcount)
+
+
+def renew_analysis_lease(record_id: str, attempt_id: str) -> bool:
+    conn = _get_conn()
+    try:
+        now = int(time.time())
+        _recover_interrupted_analyses(conn, now)
+        updated = conn.execute(
+            """UPDATE insights SET analysis_lease_until = ?
+               WHERE id = ? AND status = 'analyzing' AND analysis_attempt_id = ?
+               AND analysis_lease_until > ? AND analysis_deadline > ?""",
+            (now + ANALYSIS_LEASE_SECONDS, record_id, attempt_id, now, now),
+        )
+        conn.commit()
+        return updated.rowcount == 1
+    finally:
+        conn.close()
+
+
+def finish_analysis(
+    record_id: str, attempt_id: str, analysis: AIAnalysis | None = None,
+) -> bool:
+    """Only the still-live owner may publish a result, including a failure."""
+    conn = _get_conn()
+    try:
+        now = int(time.time())
+        _recover_interrupted_analyses(conn, now)
+        updated = conn.execute(
+            """UPDATE insights
+               SET status = ?, ai_analysis = COALESCE(?, ai_analysis),
+                   analysis_attempt_id = NULL, analysis_lease_until = NULL,
+                   analysis_deadline = NULL
+               WHERE id = ? AND status = 'analyzing' AND analysis_attempt_id = ?
+               AND analysis_lease_until > ? AND analysis_deadline > ?""",
+            (
+                "completed" if analysis is not None else "failed",
+                analysis.model_dump_json() if analysis is not None else None,
+                record_id, attempt_id, now, now,
+            ),
+        )
+        conn.commit()
+        return updated.rowcount == 1
+    finally:
+        conn.close()
 
 
 def _reconcile_source_files(conn: sqlite3.Connection) -> None:
@@ -226,17 +302,23 @@ def save_insight(
 
     conn = _get_conn()
     project = _project_access(conn, owner_id, project_id)
+    attempt_id = uuid.uuid4().hex if status == "analyzing" else None
+    started_at = int(time.time())
     conn.execute(
         """INSERT INTO insights (id, filename, file_size, upload_time, source_type,
            title, raw_text, ai_model, ai_analysis, is_edited, status, owner_id,
-           project_id, organization_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+           project_id, organization_id, analysis_attempt_id, analysis_lease_until,
+           analysis_deadline)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)""",
         (record_id, filename, file_size, now, doc.source_type, title,
          "", doc.ai_model, analysis_json, status, owner_id, project_id,
-         project["organization_id"]),
+         project["organization_id"], attempt_id,
+         started_at + ANALYSIS_LEASE_SECONDS if attempt_id else None,
+         started_at + ANALYSIS_TIMEOUT_SECONDS if attempt_id else None),
     )
     conn.commit()
     conn.close()
+    doc._analysis_attempt_id = attempt_id or ""
 
     return HistoryRecord(
         id=record_id,
@@ -521,12 +603,14 @@ def update_insight_status(record_id: str, status: str, analysis: AIAnalysis | No
     if analysis is not None:
         analysis_json = analysis.model_dump_json()
         conn.execute(
-            "UPDATE insights SET status = ?, ai_analysis = ? WHERE id = ?",
+            "UPDATE insights SET status = ?, ai_analysis = ?, analysis_attempt_id = NULL, "
+            "analysis_lease_until = NULL, analysis_deadline = NULL WHERE id = ?",
             (status, analysis_json, record_id),
         )
     else:
         conn.execute(
-            "UPDATE insights SET status = ? WHERE id = ?",
+            "UPDATE insights SET status = ?, analysis_attempt_id = NULL, "
+            "analysis_lease_until = NULL, analysis_deadline = NULL WHERE id = ?",
             (status, record_id),
         )
     conn.commit()
@@ -558,9 +642,14 @@ def prepare_insight_retry(
     if row["source_type"] == "manual" or row["status"] not in {"failed", "completed"}:
         conn.close()
         raise InsightRetryNotAllowed("Only completed or failed document insights can be reanalyzed")
+    attempt_id = uuid.uuid4().hex
+    started_at = int(time.time())
     updated = conn.execute(
-        "UPDATE insights SET status = 'analyzing' WHERE id = ? AND status IN ('failed', 'completed')",
-        (record_id,),
+        """UPDATE insights SET status = 'analyzing', analysis_attempt_id = ?,
+           analysis_lease_until = ?, analysis_deadline = ?
+           WHERE id = ? AND status IN ('failed', 'completed')""",
+        (attempt_id, started_at + ANALYSIS_LEASE_SECONDS,
+         started_at + ANALYSIS_TIMEOUT_SECONDS, record_id),
     )
     if updated.rowcount != 1:
         conn.close()
@@ -583,12 +672,14 @@ def prepare_insight_retry(
     )
     conn.commit()
     conn.close()
-    return ParsedDocument(
+    document = ParsedDocument(
         title=row["title"],
         source_type=combined_source_type,
         raw_text=combined_text,
         ai_model=row["ai_model"] or "",
-    ), row["owner_id"]
+    )
+    document._analysis_attempt_id = attempt_id
+    return document, row["owner_id"]
 
 
 def save_manual_insight(

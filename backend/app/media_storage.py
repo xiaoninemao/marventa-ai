@@ -15,6 +15,8 @@ from fastapi import HTTPException
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app.config import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_VIDEO_EXTENSIONS,
     MEDIA_ROOT,
     MEDIA_S3_ACCESS_KEY_ID,
     MEDIA_S3_ADDRESSING_STYLE,
@@ -28,7 +30,6 @@ from app.config import (
     MEDIA_STORAGE_BACKEND,
 )
 
-
 _IMAGE_DATA_URL = re.compile(
     r"^data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=\\s]+)$"
 )
@@ -41,6 +42,7 @@ _IMAGE_EXTENSIONS = {
 _PUBLIC_MEDIA_PREFIXES = (
     "avatars/",
     "organization-avatars/",
+    "project-materials/",
     "users/",
 )
 
@@ -160,16 +162,24 @@ def put_media_bytes(
     return normalized
 
 
-def read_media_bytes(key: str) -> bytes:
+def read_media_bytes(key: str, *, max_bytes: int | None = None) -> bytes:
     normalized = _normalize_key(key)
     if _is_s3():
         response = _s3_client().get_object(
             Bucket=MEDIA_S3_BUCKET,
             Key=_s3_key(normalized),
         )
-        return response["Body"].read()
-    with open(_local_path(normalized), "rb") as handle:
-        return handle.read()
+        body = response["Body"]
+        try:
+            data = body.read() if max_bytes is None else body.read(max_bytes + 1)
+        finally:
+            body.close()
+    else:
+        with open(_local_path(normalized), "rb") as handle:
+            data = handle.read() if max_bytes is None else handle.read(max_bytes + 1)
+    if max_bytes is not None and len(data) > max_bytes:
+        raise ValueError("Media object exceeds the document size limit")
+    return data
 
 
 def media_exists(key: str) -> bool:
@@ -293,7 +303,15 @@ def media_response(
     public: bool = False,
 ) -> Response:
     normalized = _normalize_key(key)
-    if public and not normalized.startswith(_PUBLIC_MEDIA_PREFIXES):
+    parts = normalized.split("/")
+    publication_media = (
+        len(parts) == 6
+        and parts[0] == "publishing"
+        and parts[3] == "publications"
+        and PurePosixPath(normalized).suffix.lower()
+        in ALLOWED_IMAGE_EXTENSIONS | ALLOWED_VIDEO_EXTENSIONS
+    )
+    if public and not (normalized.startswith(_PUBLIC_MEDIA_PREFIXES) or publication_media):
         raise HTTPException(status_code=404, detail="Media not found")
     if not media_exists(normalized):
         raise HTTPException(status_code=404, detail="Media not found")

@@ -24,14 +24,14 @@ def completion(value):
 
 
 class EnglishMasterPromptTests(unittest.TestCase):
-    def test_all_six_tasks_use_one_english_master_and_one_language_policy(self):
+    def test_all_six_tasks_share_the_master_with_their_intended_language_policy(self):
         for prompt, policy in (
             (content_ai.SYSTEM_PROMPT, OUTPUT_LANGUAGE_INSTRUCTION),
             (content_ai.CARD_SYSTEM_PROMPT, OUTPUT_LANGUAGE_INSTRUCTION),
             (content_ai.MODIFY_SYSTEM_PROMPT, EDIT_LANGUAGE_INSTRUCTION),
             (content_ai.DOCUMENT_SYSTEM_PROMPT, BILINGUAL_REPORT_INSTRUCTION),
-            (case_ai.SYSTEM_PROMPT, OUTPUT_LANGUAGE_INSTRUCTION),
-            (insight_ai.SYSTEM_PROMPT, OUTPUT_LANGUAGE_INSTRUCTION),
+            (case_ai.SYSTEM_PROMPT, "The user's explicitly requested output language is Simplified Chinese (zh-CN)."),
+            (insight_ai.SYSTEM_PROMPT, "The user's explicitly requested output language is Simplified Chinese (zh-CN)."),
         ):
             with self.subTest(task=prompt[len(MASTER_SYSTEM_PROMPT):][:70]):
                 self.assertTrue(prompt.isascii())

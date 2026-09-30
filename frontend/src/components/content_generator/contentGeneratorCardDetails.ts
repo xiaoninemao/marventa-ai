@@ -6,7 +6,6 @@ type DetailProfile = {
   core: string;
   platforms: string;
   tone: string;
-  labels: string[];
 };
 
 type ContentFormat = "short_video" | "image_text";
@@ -38,7 +37,6 @@ export const get_card_detail_profile = (
     core: t("痛点切入 → 卖点承接 → 信任建立 → 行动号召", "Pain point → Selling point → Build trust → Call to action"),
     platforms: t("小红书、公众号、微博、抖音图文", "Xiaohongshu, WeChat Official Accounts, Weibo, Douyin image posts"),
     tone: t("真诚自然、利益明确、轻转化导向", "Authentic and natural, clear benefits, gentle conversion focus"),
-    labels: [t("痛点切入", "Pain point"), t("卖点突出", "Key selling points"), t("效果对比", "Results comparison"), t("信任背书", "Trust signals"), t("行动号召", "Call to action"), t("记忆强化", "Reinforce recall")],
   },
   script: contentFormat === "short_video"
     ? {
@@ -46,59 +44,34 @@ export const get_card_detail_profile = (
         core: t("开场钩子 → 分镜推进 → 字幕文案 → 产品露出 → 行动号召", "Opening hook → Storyboard → Captions → Product placement → Call to action"),
         platforms: t("抖音、快手、视频号、B站", "Douyin, Kuaishou, WeChat Channels, Bilibili"),
         tone: t("节奏清晰、画面感强、口语化转化", "Clear pacing, vivid imagery, conversational conversion"),
-        labels: [t("开场钩子", "Opening hook"), t("分镜内容", "Storyboard"), t("口播台词", "Voiceover"), t("产品露出", "Product placement"), t("节奏控制", "Pacing"), t("行动号召", "Call to action")],
       }
     : {
         format: t("图文方案", "Image post plan"),
         core: t("封面钩子 → 图片顺序 → 图文正文 → 卖点展开 → 互动引导", "Cover hook → Image sequence → Post copy → Selling points → Engagement prompt"),
         platforms: t("小红书、公众号、微博、抖音图文", "Xiaohongshu, WeChat Official Accounts, Weibo, Douyin image posts"),
         tone: t("信息清晰、视觉连贯、适合阅读停留", "Clear information, coherent visuals, designed for engaged reading"),
-        labels: [t("封面钩子", "Cover hook"), t("图片内容", "Image content"), t("配图文案", "Image copy"), t("卖点展开", "Selling points"), t("阅读节奏", "Reading flow"), t("互动引导", "Engagement prompt")],
       },
   copy: {
     format: t("图文方案", "Image post plan"),
     core: t("用户场景 → 问题放大 → 方案说明 → 体验证明 → 转化提示", "User scenario → Highlight the problem → Explain the solution → Show results → Conversion prompt"),
     platforms: t("小红书、公众号、微博", "Xiaohongshu, WeChat Official Accounts, Weibo"),
     tone: t("专业可信、细节充分、适合阅读停留", "Professional and credible, detailed, designed for engaged reading"),
-    labels: [t("场景铺垫", "Set the scene"), t("痛点切入", "Pain point"), t("成分安心", "Ingredient reassurance"), t("效果对比", "Results comparison"), t("信任背书", "Trust signals"), t("行动号召", "Call to action")],
   },
   hashtags: {
     format: t("话题组合", "Hashtag set"),
     core: t("核心品类词 → 场景需求词 → 功效卖点词 → 人群转化词", "Core category → Scenario needs → Benefits → Audience conversion"),
     platforms: t("小红书、微博、抖音图文", "Xiaohongshu, Weibo, Douyin image posts"),
     tone: t("搜索友好、分类明确、兼顾曝光与转化", "Search-friendly, clearly categorized, balancing reach and conversion"),
-    labels: [t("核心话题", "Core hashtags"), t("场景标签", "Scenario tags"), t("功效标签", "Benefit tags"), t("人群标签", "Audience tags"), t("平台适配", "Platform fit"), t("推荐理由", "Why we recommend it")],
   },
   visual: {
     format: t("封面视觉方案", "Cover visual plan"),
     core: t("第一视觉锚点 → 信息主标题 → 产品/场景证明 → 点击理由", "Visual focal point → Main headline → Product/scenario evidence → Reason to click"),
     platforms: t("小红书、抖音图文、公众号封面、微博", "Xiaohongshu, Douyin image posts, WeChat covers, Weibo"),
     tone: t("清爽正式、重点突出、便于快速识别", "Clean and professional, focused, easy to recognize"),
-    labels: [t("视觉焦点", "Visual focus"), t("标题层级", "Title hierarchy"), t("卖点突出", "Key selling points"), t("效果对比", "Results comparison"), t("信任背书", "Trust signals"), t("行动号召", "Call to action")],
   },
 });
 
-export function get_content_preview_items(
-  card: ContentCard,
-  t: Translate,
-  contentFormat: ContentFormat = get_card_content_format(card),
-) {
-  const profiles = get_card_detail_profile(t, contentFormat);
-  const profile = profiles[card.card_type] || profiles.copy;
-  const normalized = card.content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.replace(/^(\d+[\.\)、:：]|[-*•]\s*)\s*/, "").trim())
-    .filter(Boolean);
-  const lines = normalized.length > 1
-    ? normalized
-    : card.content.split(/(?<=[。！？!?])\s*/).map((line) => line.trim()).filter(Boolean);
-  const fallback_items = [card.preview, ...card.tips].filter(Boolean);
-  const items = (lines.length > 0 ? lines : fallback_items).slice(0, 6);
-
-  return items.map((text, index) => ({
-    text,
-    label: profile.labels[index % profile.labels.length],
-  }));
+export function get_card_preview_content(card: ContentCard): string {
+  if (card.content.trim()) return card.content;
+  return card.preview.trim() ? card.preview : "";
 }

@@ -208,7 +208,7 @@ export default function OrganizationDetailPage() {
   };
 
   if (authLoading || (loading && !organization)) {
-    return <div className="p-8 text-sm text-slate-500" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
   }
 
   if (!organization) {
@@ -267,7 +267,7 @@ export default function OrganizationDetailPage() {
             <h1 className="amp-workspace-title break-words">{organizationName(organization, t)}</h1>
             {canEditOrganization && (
               <button type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border-0 bg-transparent text-slate-500 hover:text-blue-600"
                 aria-label={t("编辑组织名称", "Edit organization name")}
                 title={t("编辑组织名称", "Edit organization name")}
                 onClick={() => {
@@ -399,7 +399,7 @@ export default function OrganizationDetailPage() {
               className="amp-workspace-control mt-2 w-full font-normal" />
           </label>
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary" disabled={actionBusy}
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy}
               onClick={() => renameDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
             <button type="submit" className="amp-button amp-button-primary" disabled={actionBusy}>
               {actionBusy ? t("保存中...", "Saving...") : t("保存", "Save")}
@@ -435,7 +435,7 @@ export default function OrganizationDetailPage() {
             />
           </fieldset>
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" className="amp-button amp-button-secondary" disabled={actionBusy}
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy}
               onClick={() => inviteDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
             <button type="submit" className="amp-button amp-button-primary" disabled={actionBusy}>
               {actionBusy ? t("邀请中...", "Inviting...") : t("邀请", "Invite")}
@@ -457,7 +457,7 @@ export default function OrganizationDetailPage() {
           )}
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="amp-button amp-button-secondary" disabled={actionBusy}
+          <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy}
             onClick={() => removeDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
           <button type="button" className="amp-button bg-red-600 text-white hover:bg-red-700" disabled={actionBusy || !memberToRemove}
             onClick={() => memberToRemove && void removeMember(memberToRemove)}>

@@ -23,6 +23,7 @@ from app.engines.publishing.project_memberships import (
     ProjectNotFound,
     project_manager_access,
 )
+from app.engines.publishing.publication_plans import ensure_publications_deletable
 from app.storage_schema import resolve_user_organization_id
 
 
@@ -356,6 +357,12 @@ def delete_project_channel_account(
             raise LookupError("Channel account not found")
         if account["created_by_user_id"] != user_id:
             project_manager_access(conn, user_id, project_id)
+        ensure_publications_deletable(conn, project_id, account_id)
+        conn.execute(
+            "DELETE FROM project_publications "
+            "WHERE channel_account_id = ? AND project_id = ?",
+            (account_id, project_id),
+        )
         conn.execute(
             "DELETE FROM project_channel_accounts WHERE id = ? AND project_id = ?",
             (account_id, project_id),

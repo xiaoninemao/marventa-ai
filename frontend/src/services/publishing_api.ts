@@ -1,5 +1,5 @@
 import { apiError } from "@/i18n/errors";
-import type { ContentProject, ItemResponse, ListResponse, ProjectChannelAccount, ProjectMember } from "@/types/publishing";
+import type { ContentProject, ItemResponse, ListResponse, ProjectChannelAccount, ProjectMaterial, ProjectMember, PublicationPlan, PublicationContent } from "@/types/publishing";
 import { API_BASE, auth_headers, response_error } from "@/services/api_core";
 
 // Project APIs retain their existing URL namespace.
@@ -186,5 +186,299 @@ export async function delete_project_channel_account(
     { method: "DELETE", headers: auth_headers() },
   );
   if (!res.ok) throw await response_error(res, "Could not remove channel account");
+  return res.json();
+}
+
+export async function fetch_publication_plans(
+  project_id = "",
+): Promise<ListResponse<PublicationPlan>> {
+  const query = project_id
+    ? `?project_id=${encodeURIComponent(project_id)}`
+    : "";
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/publications${query}`,
+    { headers: auth_headers() },
+  );
+  if (!res.ok) throw await response_error(res, "Could not load publication plans");
+  return res.json();
+}
+
+export async function create_publication_plan(payload: {
+  project_id: string;
+  name: string;
+  media_mode?: "image_text" | "video";
+}): Promise<ItemResponse<PublicationPlan>> {
+  const res = await fetch(`${API_BASE}/api/v1/publishing/publications`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...auth_headers() },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw await response_error(res, "Could not create publication plan");
+  return res.json();
+}
+
+export async function fetch_publication_plan(plan_id: string): Promise<ItemResponse<PublicationPlan>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(plan_id)}`,
+    { headers: auth_headers() },
+  );
+  if (!res.ok) throw await response_error(res, "Could not load publication plan");
+  return res.json();
+}
+
+function publicationContentsUrl(planId: string) {
+  return `${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(planId)}/contents`;
+}
+
+export async function fetch_publication_copy(planId: string): Promise<ItemResponse<{ title: string; content: string; tags: string[] }>> {
+  const response = await fetch(`${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(planId)}/copy`, {
+    headers: auth_headers(),
+  });
+  if (!response.ok) throw await response_error(response, "Could not load publication copy");
+  return response.json();
+}
+
+export async function update_publication_copy(
+  planId: string,
+  title: string,
+  content: string,
+  tags: string[],
+): Promise<ItemResponse<{ title: string; content: string; tags: string[] }>> {
+  const response = await fetch(`${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(planId)}/copy`, {
+    method: "PATCH", headers: { "Content-Type": "application/json", ...auth_headers() },
+    body: JSON.stringify({ title, content, tags }),
+  });
+  if (!response.ok) throw await response_error(response, "Could not save publication copy");
+  return response.json();
+}
+
+export async function fetch_publication_contents(planId: string): Promise<ListResponse<PublicationContent>> {
+  const response = await fetch(publicationContentsUrl(planId), { headers: auth_headers() });
+  if (!response.ok) throw await response_error(response, "Could not load publication content");
+  return response.json();
+}
+
+export async function upload_publication_content(planId: string, file: File): Promise<ItemResponse<PublicationContent>> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(publicationContentsUrl(planId), { method: "POST", headers: auth_headers(), body });
+  if (!response.ok) throw await response_error(response, "Could not upload publication content");
+  return response.json();
+}
+
+export async function import_publication_materials(planId: string, materialIds: string[]): Promise<ListResponse<PublicationContent>> {
+  const response = await fetch(`${publicationContentsUrl(planId)}/from-materials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...auth_headers() },
+    body: JSON.stringify({ material_ids: materialIds }),
+  });
+  if (!response.ok) throw await response_error(response, "Could not add project materials");
+  return response.json();
+}
+
+export async function fetch_publication_content_text(
+  planId: string, contentId: string, format: "html" | "text" = "html",
+): Promise<ItemResponse<{ content: string; format: "html" | "text" }>> {
+  const response = await fetch(`${publicationContentsUrl(planId)}/${encodeURIComponent(contentId)}/content?format=${format}`, {
+    headers: auth_headers(),
+  });
+  if (!response.ok) throw await response_error(response, "Could not load publication content");
+  return response.json();
+}
+
+export async function delete_publication_content(planId: string, contentId: string): Promise<void> {
+  const response = await fetch(`${publicationContentsUrl(planId)}/${encodeURIComponent(contentId)}`, {
+    method: "DELETE", headers: auth_headers(),
+  });
+  if (!response.ok) throw await response_error(response, "Could not remove publication content");
+}
+
+export async function reorder_publication_images(planId: string, contentIds: string[]): Promise<ListResponse<PublicationContent>> {
+  const response = await fetch(`${publicationContentsUrl(planId)}/order`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...auth_headers() },
+    body: JSON.stringify({ content_ids: contentIds }),
+  });
+  if (!response.ok) throw await response_error(response, "Could not reorder publication images");
+  return response.json();
+}
+
+export async function update_publication_plan(
+  plan_id: string,
+  payload: {
+    media_mode?: "image_text" | "video";
+    name?: string;
+    portfolio_id?: string;
+    channel_account_id?: string;
+    scheduled_for?: string;
+    note?: string;
+    status?: "draft" | "scheduled" | "cancelled";
+  },
+): Promise<ItemResponse<PublicationPlan>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(plan_id)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...auth_headers() },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not update publication plan");
+  return res.json();
+}
+
+export async function delete_publication_plan(
+  plan_id: string,
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(plan_id)}`,
+    { method: "DELETE", headers: auth_headers() },
+  );
+  if (!res.ok) throw await response_error(res, "Could not delete publication plan");
+  return res.json();
+}
+
+export async function fetch_project_materials(
+  project_id: string,
+  material_set_id = "",
+): Promise<ListResponse<ProjectMaterial>> {
+  const query = material_set_id
+    ? `?material_set_id=${encodeURIComponent(material_set_id)}`
+    : "";
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/materials${query}`,
+    { headers: auth_headers() },
+  );
+  if (!res.ok) throw await response_error(res, "Could not load project materials");
+  return res.json();
+}
+
+export async function upload_project_material(
+  project_id: string,
+  file: File,
+  material_set_id: string,
+): Promise<ItemResponse<ProjectMaterial>> {
+  const data = new FormData();
+  data.append("file", file);
+  data.append("material_set_id", material_set_id);
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/materials`,
+    {
+      method: "POST",
+      headers: auth_headers(),
+      body: data,
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not upload project material");
+  return res.json();
+}
+
+export async function create_project_material_copy(
+  project_id: string,
+  material_set_id: string,
+  title: string,
+  content: string,
+): Promise<ItemResponse<ProjectMaterial>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/materials/copy`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth_headers() },
+      body: JSON.stringify({ material_set_id, title, content }),
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not create material copy");
+  return res.json();
+}
+
+export async function fetch_project_material_content(
+  project_id: string,
+  material_id: string,
+  format: "html" | "text" = "html",
+): Promise<ItemResponse<{ content: string; format: "html" | "text" }>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/materials/${encodeURIComponent(material_id)}/content?format=${format}`,
+    { headers: auth_headers() },
+  );
+  if (!res.ok) throw await response_error(res, "Could not load material content");
+  return res.json();
+}
+
+export async function update_project_material_content(
+  project_id: string,
+  material_id: string,
+  content: string,
+): Promise<ItemResponse<ProjectMaterial>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/materials/${encodeURIComponent(material_id)}/content`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...auth_headers() },
+      body: JSON.stringify({ content }),
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not save material copy");
+  return res.json();
+}
+
+export async function create_project_material_set(
+  project_id: string,
+  name: string,
+): Promise<ItemResponse<ProjectMaterial>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/material-sets`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth_headers() },
+      body: JSON.stringify({ name }),
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not create material set");
+  return res.json();
+}
+
+export async function update_project_material_set(
+  project_id: string,
+  material_set_id: string,
+  name: string,
+): Promise<ItemResponse<ProjectMaterial>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/material-sets/${encodeURIComponent(material_set_id)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...auth_headers() },
+      body: JSON.stringify({ name }),
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not rename material set");
+  return res.json();
+}
+
+export async function update_project_material(
+  project_id: string,
+  material_id: string,
+  name: string,
+): Promise<ItemResponse<ProjectMaterial>> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/materials/${encodeURIComponent(material_id)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...auth_headers() },
+      body: JSON.stringify({ name }),
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not rename material");
+  return res.json();
+}
+
+export async function delete_project_material(
+  project_id: string,
+  material_id: string,
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}/materials/${encodeURIComponent(material_id)}`,
+    { method: "DELETE", headers: auth_headers() },
+  );
+  if (!res.ok) throw await response_error(res, "Could not delete project material");
   return res.json();
 }

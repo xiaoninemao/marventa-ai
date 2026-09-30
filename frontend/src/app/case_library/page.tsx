@@ -4,6 +4,7 @@ import { Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import CaseCard from "@/components/case_library/case_card";
+import { selectUploadFiles } from "@/utils/upload_selection";
 import CaseProjectSidebar from "@/components/case_library/CaseProjectSidebar";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import InlineIcon from "@/components/redesign/InlineIcon";
@@ -109,7 +110,7 @@ export default function CaseLibraryPage() {
   const { user } = useAuth();
   const organizationId = (user?.current_organization ?? user?.default_organization)?.id;
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-50 dark:bg-slate-950" />}>
+    <Suspense fallback={<div className="amp-page-state" role="status">Loading...</div>}>
       <CaseLibraryContent key={`${user?.id || ""}:${organizationId || ""}`} />
     </Suspense>
   );
@@ -136,6 +137,7 @@ function CaseLibraryContent() {
   const [loadingCases, setLoadingCases] = useState(true);
   const createDialogRef = useRef<HTMLDialogElement>(null);
   const createSelectedFilesRef = useRef<HTMLDivElement>(null);
+  const closingCaseIdRef = useRef("");
   const [createMode, setCreateMode] = useState<"link" | "image_text" | "video">("link");
   const [createProjectId, setCreateProjectId] = useState("");
   const [createTitle, setCreateTitle] = useState("");
@@ -145,6 +147,7 @@ function CaseLibraryContent() {
   const [createFilesExpanded, setCreateFilesExpanded] = useState(false);
   const projectId = searchParams.get("project") || "";
   const favoritesRoom = searchParams.get("view") === "favorites";
+  const selectedCaseId = searchParams.get("case") || "";
   const selectedCreateFiles = useMemo(
     () => createMode === "video" ? (createVideo ? [createVideo] : []) : createMode === "image_text" ? createImages : [],
     [createImages, createMode, createVideo],
@@ -229,6 +232,37 @@ function CaseLibraryContent() {
     }, 3000);
     return () => window.clearInterval(timer);
   }, [cases, favoritesRoom, locale, projectId, showError, t, user]);
+
+  useEffect(() => {
+    if (!selectedCaseId) {
+      closingCaseIdRef.current = "";
+      return;
+    }
+    if (closingCaseIdRef.current === selectedCaseId) return;
+    const requestedCase = cases.find((item) => item.id === selectedCaseId);
+    if (requestedCase && selectedCase?.id !== requestedCase.id) {
+      setSelectedCase(requestedCase);
+    }
+  }, [cases, selectedCase?.id, selectedCaseId]);
+
+  const openCaseDetail = (item: CaseItem) => {
+    closingCaseIdRef.current = "";
+    setSelectedCase(item);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("case", item.id);
+    router.replace(`/case_library?${nextParams.toString()}`, { scroll: false });
+  };
+
+  const closeCaseDetail = () => {
+    closingCaseIdRef.current = selectedCase?.id || selectedCaseId;
+    setSelectedCase(null);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("case");
+    const query = nextParams.toString();
+    router.replace(query ? `/case_library?${query}` : "/case_library", {
+      scroll: false,
+    });
+  };
 
 
   const visibleCases = useMemo(() => {
@@ -447,7 +481,7 @@ function CaseLibraryContent() {
                 is_favorited={favoriteIds.includes(item.id) || item.is_favorited || item.isFavorited}
                 canDelete={canManageCase(user, item)}
                 onFavorite={toggleFavorite} onDelete={setPendingDeleteCase}
-                onOpen={setSelectedCase} />
+                onOpen={openCaseDetail} />
             ))}
           </div>
         )}
@@ -510,31 +544,32 @@ function CaseLibraryContent() {
                     accept={createMode === "video" ? ".mp4,.mov,.webm,.m4v" : "image/*"}
                     multiple={createMode === "image_text"}
                     onChange={(event) => {
-                      if (createMode === "video") {
-                        const selectedVideo = event.target.files?.[0];
-                        if (selectedVideo && createVideo) {
-                          showError(t(
+                      const isVideo = createMode === "video";
+                      const result = selectUploadFiles(
+                        isVideo ? (createVideo ? [createVideo] : []) : createImages,
+                        Array.from(event.target.files || []),
+                        isVideo ? 1 : 10,
+                      );
+                      if (isVideo) setCreateVideo(result.files[0] || null);
+                      else setCreateImages(result.files);
+                      const messages: string[] = [];
+                      if (result.duplicates.length > 0) {
+                        messages.push(t(
+                          "已选择以下文件，请勿重复添加：{names}",
+                          "These files are already selected: {names}",
+                          { names: [...new Set(result.duplicates)].join(", ") },
+                        ));
+                      }
+                      if (result.limitExceeded) {
+                        messages.push(isVideo ? t(
                             "只能上传一个视频，请先移除已选择的视频。",
                             "Only one video can be uploaded. Remove the selected video first.",
+                          ) : t(
+                            "最多选择 10 张图片，超出的图片未添加。",
+                            "You can select up to 10 images. Additional images were not added.",
                           ));
-                        } else {
-                          setCreateVideo(selectedVideo || null);
-                        }
-                      } else {
-                        const selected = Array.from(event.target.files || []);
-                        setCreateImages((current) => {
-                          const merged = [...current];
-                          selected.forEach((file) => {
-                            const duplicate = merged.some((existing) => (
-                              existing.name === file.name
-                              && existing.size === file.size
-                              && existing.lastModified === file.lastModified
-                            ));
-                            if (!duplicate) merged.push(file);
-                          });
-                          return merged.slice(0, 10);
-                        });
                       }
+                      if (messages.length > 0) showError(messages.join("\n"));
                       event.currentTarget.value = "";
                     }} />
                 </label>
@@ -576,7 +611,7 @@ function CaseLibraryContent() {
               </div>
             )}
             <div className="amp-insight-create-action-buttons">
-              <button type="button" className="amp-button amp-button-secondary" disabled={isImporting}
+              <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={isImporting}
                 onClick={() => createDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
               <button type="submit" className="amp-button amp-button-primary" disabled={isImporting || !createProjectId}>
                 {isImporting ? t("处理中...", "Processing...") : t("创建案例", "Create case")}
@@ -589,7 +624,7 @@ function CaseLibraryContent() {
       {selectedCase && (
         <CaseDetailModal
           item={selectedCase}
-          onClose={() => setSelectedCase(null)}
+          onClose={closeCaseDetail}
           onUpdate={(updatedCase) => {
             const hydrated = hydrateCase(updatedCase);
             setSelectedCase(hydrated);
@@ -671,7 +706,7 @@ function CaseDetailModal({
     if (isAnalyzing || isStartingAnalysis) return;
     setIsStartingAnalysis(true);
     try {
-      await analyze_case(item.id);
+      await analyze_case(item.id, locale);
       onUpdate({ ...item, ai_status: "analyzing" });
       setTab("analysis");
       showSuccess(t("AI 分析已开始，将在后台自动完成。", "AI analysis started and will finish in the background."));
@@ -865,7 +900,7 @@ function CaseDetailModal({
                       onChange={(event) => setDraftContent(event.target.value)} />
                   </label>
                   <div className="amp-case-content-editor-actions">
-                    <button type="button" className="amp-button amp-button-secondary"
+                    <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
                       disabled={isSavingContent} onClick={cancelContentEdit}>{t("取消", "Cancel")}</button>
                     <button type="button" className="amp-button amp-button-primary"
                       disabled={isSavingContent || !draftTitle.trim()} onClick={saveContent}>

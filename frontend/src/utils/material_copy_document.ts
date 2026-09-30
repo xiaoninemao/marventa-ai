@@ -1,0 +1,5 @@
+export function materialCopyDocument(sanitizedContent: string, thumbnail = false): string {
+  const style = "body{margin:0;font:16px/1.5 system-ui,sans-serif;color:#344054;padding:20px;overflow-wrap:anywhere}p{margin:0 0 8px;white-space:pre-wrap}h2,h3{color:#101828;margin:16px 0 8px;line-height:1.35}ul,ol{margin:0 0 8px;padding-left:24px}blockquote{border-left:3px solid #d0d5dd;margin:0 0 8px;padding-left:16px}body>:first-child{margin-top:0}a{color:#175cd3}";
+  const compactStyle = "html,body{margin:0;height:100%;overflow:hidden;background:#fff}body{box-sizing:border-box;font-size:10px;line-height:1.4;padding:28px 6px 6px}h2,h3{font-size:12px;line-height:1.3;margin:0 0 4px}p,ul,ol,blockquote{margin:0 0 4px}ul,ol{padding-left:14px}blockquote{padding-left:6px;border-left-width:2px}";
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>${style}${thumbnail ? compactStyle : ""}</style></head><body>${sanitizedContent}</body></html>`;
+}

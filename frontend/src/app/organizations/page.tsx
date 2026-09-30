@@ -102,10 +102,10 @@ export default function OrganizationsPage() {
     }
   };
 
-  if (loading || !user) return <div className="p-8 text-sm text-slate-500" role="status">{t("加载中...", "Loading...")}</div>;
+  if (loading || !user) return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
 
   return (
-    <div className="amp-redesign amp-workspace-page max-w-5xl">
+    <div className="amp-redesign amp-workspace-page amp-state-page max-w-5xl">
       <header className="amp-module-header">
         <h1 className="amp-module-title">{t("组织管理", "Organizations")}</h1>
         <p className="amp-module-description">{t("管理所属组织、成员与当前工作空间。", "Manage your organizations, members, and current workspace.")}</p>
@@ -116,8 +116,8 @@ export default function OrganizationsPage() {
           onClick={openEditor}>{t("创建组织", "Create organization")}</button>
       </div>
 
-      {organizationsLoading ? <p role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-sm text-slate-500">{t("正在加载组织...", "Loading organizations...")}</p>
-        : organizations.length === 0 && !organizationsError ? <p className="rounded-xl border border-slate-200 bg-white p-8 text-sm text-slate-500">{t("暂未读取到组织，请尝试刷新。", "No organizations were returned. Try refreshing.")}</p>
+      {organizationsLoading ? <p role="status" className="amp-page-state">{t("正在加载组织...", "Loading organizations...")}</p>
+        : organizations.length === 0 && !organizationsError ? <p className="amp-page-state">{t("暂未读取到组织，请尝试刷新。", "No organizations were returned. Try refreshing.")}</p>
           : <div className="grid gap-4">{organizations.map((item) => (
             <article key={item.id} data-organization-id={item.id} className="amp-workspace-card p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -207,7 +207,7 @@ export default function OrganizationsPage() {
             className="amp-workspace-control w-full" />
           <p className="mt-2 text-xs leading-5 text-slate-500">{t("最多 80 个字符。自定义名称按原文保存，不会自动翻译。", "Up to 80 characters. Custom names are saved as entered and are not translated.")}</p>
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary" disabled={organizationBusy} onClick={() => setEditorOpen(false)}>{t("取消", "Cancel")}</button>
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={organizationBusy} onClick={() => setEditorOpen(false)}>{t("取消", "Cancel")}</button>
             <button type="submit" className="amp-button amp-button-primary" disabled={organizationBusy}>
               {organizationBusy ? t("保存中...", "Saving...") : t("创建", "Create")}
             </button>

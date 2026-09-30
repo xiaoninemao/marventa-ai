@@ -256,7 +256,7 @@ export default function ProjectsPage() {
   };
 
   if (loading || !user) {
-    return <div className="p-8 text-sm text-slate-500" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
   }
 
   return (
@@ -413,7 +413,7 @@ export default function ProjectsPage() {
             className="amp-workspace-control w-full resize-none"
           />
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary" disabled={creating} onClick={() => setDialogOpen(false)}>{t("取消", "Cancel")}</button>
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={creating} onClick={() => setDialogOpen(false)}>{t("取消", "Cancel")}</button>
             <button type="submit" className="amp-button amp-button-primary" disabled={creating}>
               {creating ? t("创建中...", "Creating...") : t("创建", "Create")}
             </button>
@@ -468,7 +468,7 @@ export default function ProjectsPage() {
             </div>
           </fieldset>
           <div className="amp-project-customize-actions">
-            <button type="button" className="amp-button amp-button-secondary" disabled={projectActionBusy}
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={projectActionBusy}
               onClick={() => customizeDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
             <button type="submit" className="amp-button amp-button-primary" disabled={projectActionBusy}>
               {projectActionBusy ? t("保存中...", "Saving...") : t("保存", "Save")}
@@ -488,7 +488,7 @@ export default function ProjectsPage() {
           })}
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="amp-button amp-button-secondary" disabled={projectActionBusy}
+          <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={projectActionBusy}
             onClick={() => deleteDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
           <button type="button" className="amp-button amp-project-delete-confirm" disabled={projectActionBusy}
             onClick={() => void deleteProject()}>

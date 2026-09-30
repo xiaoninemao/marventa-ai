@@ -1,4 +1,5 @@
 import { apiError } from "@/i18n/errors";
+import type { Locale } from "@/i18n/locale";
 import type { CaseListResponse, CaseItemResponse, CaseImportTaskResponse } from "@/types/case_library";
 import { API_BASE, auth_headers, normalize_network_error } from "@/services/api_core";
 
@@ -157,8 +158,9 @@ export async function unfavorite_case(id: string): Promise<{ success: boolean; m
   return res.json();
 }
 
-export async function analyze_case(id: string): Promise<{ success: boolean; message: string; data: { status: string } }> {
-  const res = await fetch(`${API_BASE}/api/v1/case_library/cases/${id}/analyze`, {
+export async function analyze_case(id: string, locale: Locale): Promise<{ success: boolean; message: string; data: { status: string } }> {
+  const query = new URLSearchParams({ locale });
+  const res = await fetch(`${API_BASE}/api/v1/case_library/cases/${id}/analyze?${query}`, {
     method: "POST",
     headers: auth_headers(),
   });

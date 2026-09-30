@@ -25,6 +25,7 @@ import RedesignInput from "@/components/redesign/RedesignInput";
 import InsightProjectSidebar from "@/components/market_insight/InsightProjectSidebar";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
 import { canManageInsight } from "@/utils/insight_permissions";
+import { startPolling } from "@/utils/polling";
 
 type CreateMode = "files" | "repo" | "manual";
 type StatusFilter = "all" | "analyzing" | "completed" | "failed";
@@ -131,21 +132,24 @@ function MarketInsightOverview() {
     return () => document.removeEventListener("pointerdown", collapseOnOutsideClick);
   }, [filesExpanded]);
 
+  const hasAnalyzingInsights = insights.some((insight) => insight.status === "analyzing");
   useEffect(() => {
-    if (!user || !insights.some((insight) => insight.status === "analyzing")) return;
-    const timer = window.setInterval(() => {
-      void fetch_history("", selectedProjectId)
-        .then((response) => setInsights(response.data || []))
-        .catch((error) => {
-          window.clearInterval(timer);
-          showError(localizeErrorMessage(
-            error instanceof Error ? error.message : "Could not refresh insights",
-            locale,
-          ));
-        });
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [insights, locale, selectedProjectId, showError, user]);
+    if (!user || loading || !hasAnalyzingInsights) return;
+    return startPolling({
+      load: () => fetch_history("", selectedProjectId),
+      onResult: (response) => {
+        const updated = response.data || [];
+        setInsights(updated);
+        return updated.some((insight) => insight.status === "analyzing");
+      },
+      onError: (error) => {
+        showError(localizeErrorMessage(
+          error instanceof Error ? error.message : "Could not refresh insights",
+          locale,
+        ));
+      },
+    });
+  }, [hasAnalyzingInsights, loading, locale, selectedProjectId, showError, user]);
 
   useEffect(() => {
     if (!menuInsightId) return;
@@ -274,11 +278,11 @@ function MarketInsightOverview() {
       let recordId = "";
       if (mode === "files") {
         if (files.length === 0) throw new Error(t("请选择至少一个资料文件", "Select at least one source file"));
-        const response = await parse_files(files, projectId);
+        const response = await parse_files(files, projectId, locale);
         recordId = response.data?.record_id || "";
       } else if (mode === "repo") {
         if (!repoUrl.trim()) throw new Error(t("请输入仓库地址", "Repository URL is required"));
-        const response = await parse_repo(repoUrl.trim(), projectId);
+        const response = await parse_repo(repoUrl.trim(), projectId, locale);
         recordId = response.data?.record_id || "";
       } else {
         if (!manualName.trim()) throw new Error(t("请输入洞察名称", "Insight name is required"));
@@ -299,7 +303,7 @@ function MarketInsightOverview() {
   };
 
   if (authLoading || !user) {
-    return <div className="p-8 text-sm text-slate-500" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
   }
 
   const projectOptions = projects.map((project) => ({ value: project.id, label: project.title }));
@@ -517,7 +521,7 @@ function MarketInsightOverview() {
               </div>
             )}
             <div className="amp-insight-create-action-buttons">
-              <button type="button" className="amp-button amp-button-secondary" disabled={creating}
+              <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={creating}
                 onClick={() => dialogRef.current?.close()}>{t("取消", "Cancel")}</button>
               <button type="submit" className="amp-button amp-button-primary" disabled={creating || !projectId}>
                 {creating ? t("创建中...", "Creating...") : t("创建洞察", "Create insight")}
@@ -552,7 +556,7 @@ function MarketInsightOverview() {
             className="amp-workspace-control w-full" value={renameName} disabled={renaming}
             onChange={(event) => setRenameName(event.target.value)} />
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary" disabled={renaming}
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
               onClick={() => renameDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
             <button type="submit" className="amp-button amp-button-primary" disabled={renaming || !renameName.trim()}>
               {renaming ? t("保存中...", "Saving...") : t("保存", "Save")}
@@ -566,7 +570,7 @@ function MarketInsightOverview() {
 
 export default function MarketInsightPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-slate-500" role="status">Loading...</div>}>
+    <Suspense fallback={<div className="amp-page-state" role="status">Loading...</div>}>
       <MarketInsightOverview />
     </Suspense>
   );

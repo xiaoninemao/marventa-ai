@@ -240,7 +240,7 @@ export default function PortfolioDetailPage() {
   };
 
   if (authLoading || loading || !script || !report || !user) {
-    return <div className="p-8 text-sm text-slate-500" role="status">{t("正在加载作品...", "Loading work...")}</div>;
+    return <div className="amp-page-state" role="status">{t("正在加载作品...", "Loading work...")}</div>;
   }
 
   return (
@@ -444,7 +444,7 @@ export default function PortfolioDetailPage() {
               dangerouslySetInnerHTML={{ __html: pdfPreviewHtml }} />
           </div>
           <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-5 py-3">
-            <button type="button" className="amp-button amp-button-secondary" disabled={exportingPdf}
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={exportingPdf}
               onClick={() => pdfPreviewDialogRef.current?.close()}>
               {t("取消", "Cancel")}
             </button>

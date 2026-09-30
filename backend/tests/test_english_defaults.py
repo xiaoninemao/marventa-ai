@@ -31,10 +31,10 @@ class EnglishOutputDefaultsTests(unittest.TestCase):
             for kind in ("script", "title", "copy", "hashtags", "visual")
         ]
 
-    def test_all_non_report_prompts_default_to_english_and_allow_explicit_requests(self):
+    def test_content_prompts_default_to_english_and_allow_explicit_requests(self):
         for prompt in (
             content_ai.SYSTEM_PROMPT, content_ai.CARD_SYSTEM_PROMPT,
-            content_ai.MODIFY_SYSTEM_PROMPT, case_ai.SYSTEM_PROMPT, insight_ai.SYSTEM_PROMPT,
+            content_ai.MODIFY_SYSTEM_PROMPT,
         ):
             with self.subTest(prompt=prompt[:40]):
                 self.assertIn("Use English by default.", prompt)
@@ -43,6 +43,11 @@ class EnglishOutputDefaultsTests(unittest.TestCase):
                 self.assertNotIn("请用中文输出", prompt)
                 self.assertNotIn("始终使用中文输出", prompt)
         self.assertNotIn("始终使用中文输出", insight_ai.ANALYSIS_PROMPT)
+
+    def test_analysis_prompts_default_to_chinese_when_no_interface_locale_is_supplied(self):
+        for prompt in (case_ai.SYSTEM_PROMPT, insight_ai.SYSTEM_PROMPT):
+            self.assertIn("requested output language is Simplified Chinese", prompt)
+            self.assertNotIn("Use English by default.", prompt)
 
     def test_chat_passes_explicit_language_request_and_preserves_response(self):
         client = self.client_returning("中文营销建议")
@@ -130,9 +135,9 @@ class EnglishOutputDefaultsTests(unittest.TestCase):
         ):
             result = insight_ai.analyze_document(ParsedDocument(
                 title="原始资料", source_type="markdown", raw_text="原始中文资料",
-            ))
+            ), locale="en")
         sent = client.chat.completions.create.call_args.kwargs["messages"]
-        self.assertIn("Use English by default.", sent[0]["content"])
+        self.assertIn("requested output language is English", sent[0]["content"])
         self.assertNotIn("Chinese characters", sent[1]["content"])
         self.assertIn("原始中文资料", sent[1]["content"])
         self.assertEqual(result.ai_analysis.product_name, "Product")

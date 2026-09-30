@@ -18,6 +18,7 @@ from app.engines.publishing.project_memberships import (
     attach_project_members,
     project_manager_access,
 )
+from app.engines.publishing.publication_plans import ensure_publications_deletable
 from app.storage_schema import resolve_user_organization_id
 
 
@@ -319,6 +320,7 @@ def delete_project(user_id: str, project_id: str) -> list[str]:
     with closing(_connection_factory()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         project_manager_access(conn, user_id, project_id)
+        ensure_publications_deletable(conn, project_id)
         conn.execute(
             "UPDATE publish_tasks SET project_id = '' WHERE project_id = ?",
             (project_id,),

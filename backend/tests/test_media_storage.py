@@ -65,6 +65,28 @@ class _FakeS3Client:
 
 
 class MediaStorageTests(unittest.TestCase):
+    def test_s3_publication_media_redirect_keeps_historical_files_private(self):
+        fake = _FakeS3Client()
+        fake.objects = {}
+        with (
+            patch.object(media_storage, "MEDIA_STORAGE_BACKEND", "s3"),
+            patch.object(media_storage, "MEDIA_S3_BUCKET", "media-bucket"),
+            patch.object(media_storage, "MEDIA_S3_PREFIX", "marventa"),
+            patch.object(media_storage, "MEDIA_S3_PUBLIC_BASE_URL", ""),
+            patch.object(media_storage, "_s3_client", return_value=fake),
+        ):
+            for filename in ("image.gif", "video.mp4"):
+                key = f"publishing/org/project/publications/plan/{filename}"
+                media_storage.put_media_bytes(key, b"media")
+                response = media_storage.media_response(key, public=True)
+                self.assertEqual(response.status_code, 307)
+                self.assertIn(f"/marventa/{key}?expires=", response.headers["location"])
+            historical = "publishing/org/project/tasks/task/image.gif"
+            media_storage.put_media_bytes(historical, b"private")
+            with self.assertRaises(HTTPException) as raised:
+                media_storage.media_response(historical, public=True)
+            self.assertEqual(raised.exception.status_code, 404)
+
     def test_local_round_trip_and_public_media_response(self):
         with (
             tempfile.TemporaryDirectory() as directory,

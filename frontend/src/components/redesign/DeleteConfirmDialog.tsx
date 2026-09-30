@@ -45,7 +45,7 @@ export default function DeleteConfirmDialog({
       <h2 id={titleId} className="text-xl font-semibold">{title}</h2>
       <p className="mt-3 text-sm leading-6 text-slate-600">{message}</p>
       <div className="mt-6 flex justify-end gap-3">
-        <button type="button" className="amp-button amp-button-secondary" disabled={busy}
+        <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={busy}
           onClick={onCancel}>{cancelLabel}</button>
         <button type="button" className="amp-button amp-project-delete-confirm" disabled={busy}
           onClick={onConfirm}>{busy ? busyLabel : confirmLabel}</button>

@@ -118,6 +118,7 @@ async def remove_organization(organization_id: str, user=Depends(get_current_use
     for prefix in (
         f"organization-avatars/{organization_id}",
         f"publishing/{organization_id}",
+        f"project-materials/{organization_id}",
         f"market_insight_sources/{organization_id}",
     ):
         delete_media_prefix(prefix)

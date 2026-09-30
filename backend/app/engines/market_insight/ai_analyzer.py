@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
+
 from openai import OpenAI
+
 from app.config import CASE_AI_API_KEY, CASE_AI_BASE_URL, CASE_AI_MODEL
-from app.engines.market_insight.models import ParsedDocument, AIAnalysis
+from app.engines.market_insight.models import AIAnalysis, AnalysisLocale, ParsedDocument
 from app.shared.prompts import build_system_prompt
 
-SYSTEM_PROMPT = build_system_prompt("""Analyze technical documentation as a marketing strategist and technology-product competitive analyst, extracting actionable business intelligence.
+logger = logging.getLogger(__name__)
+ANALYSIS_HEARTBEAT_SECONDS = 15
+_active_workers: set[object] = set()
+_workers_changed = threading.Condition()
+
+TASK_INSTRUCTIONS = """Analyze technical documentation as a marketing strategist and technology-product competitive analyst, extracting actionable business intelligence.
 
 Return a structured analysis with these fields:
 1. product_name: the product's accurate name from the document.
@@ -26,7 +34,9 @@ Return a structured analysis with these fields:
 13. marketing_stage: the current stage, such as early market education, initial customer acquisition, scaling, mature brand maintenance, or competition in an established market, with a brief rationale.
 
 If the request specifies a compact output budget, prioritize those length and list limits while retaining all fields and their intended meaning.
-Be specific and insightful, ground every conclusion in details from the document, and do not use Markdown formatting in the output.""")
+Be specific and insightful, ground every conclusion in details from the document, and do not use Markdown formatting in the output."""
+
+SYSTEM_PROMPT = build_system_prompt(TASK_INSTRUCTIONS, output_locale="zh-CN")
 
 ANALYSIS_PROMPT = """Analyze this technical document and return a structured JSON analysis.
 
@@ -66,7 +76,7 @@ def _get_case_ai_client() -> OpenAI:
     return OpenAI(api_key=CASE_AI_API_KEY, base_url=CASE_AI_BASE_URL)
 
 
-def _analyze_text(doc: ParsedDocument) -> AIAnalysis | None:
+def _analyze_text(doc: ParsedDocument, *, locale: AnalysisLocale = "zh-CN") -> AIAnalysis | None:
     if not _has_case_ai_provider():
         return None
 
@@ -90,7 +100,8 @@ def _analyze_text(doc: ParsedDocument) -> AIAnalysis | None:
     response = client.chat.completions.create(
         model=CASE_AI_MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT if locale == "zh-CN"
+             else build_system_prompt(TASK_INSTRUCTIONS, output_locale=locale)},
             {"role": "user", "content": prompt},
         ],
         max_tokens=4096,
@@ -102,34 +113,93 @@ def _analyze_text(doc: ParsedDocument) -> AIAnalysis | None:
     return AIAnalysis(**analysis_dict)
 
 
-def analyze_document(doc: ParsedDocument, record_id: str = "", owner_id: str = "") -> ParsedDocument:
+def analyze_document(
+    doc: ParsedDocument, record_id: str = "", owner_id: str = "", *, locale: AnalysisLocale = "zh-CN",
+) -> ParsedDocument:
     if not _has_case_ai_provider():
         return doc
 
-    analysis = _analyze_text(doc)
+    analysis = _analyze_text(doc, locale=locale)
     if analysis:
         doc.ai_analysis = analysis
         doc.ai_model = CASE_AI_MODEL
     return doc
 
 
-def analyze_async(doc: ParsedDocument, record_id: str, owner_id: str = "") -> None:
-    """Run AI analysis in a background thread and update the DB on completion."""
+def drain_analysis_workers(timeout: float | None = None) -> bool:
+    """Wait for this process's workers without cancelling them or their heartbeats.
+
+    Quiesce analysis submissions first. Call in the serving process (off the async
+    event loop), not a separate deployment CLI process. False means workers remain;
+    a timeout does not stop them or make it safe to terminate the process.
+    """
+    with _workers_changed:
+        return _workers_changed.wait_for(lambda: not _active_workers, timeout)
+
+
+def analyze_async(
+    doc: ParsedDocument, record_id: str, owner_id: str = "", *, locale: AnalysisLocale = "zh-CN",
+) -> None:
+    """Run a claimed attempt; stale workers cannot renew or publish results."""
+    from app.engines.market_insight.storage import finish_analysis, renew_analysis_lease
+
+    attempt_id = doc._analysis_attempt_id
+    if not attempt_id:
+        logger.warning("Insight analysis has no claim: record=%s", record_id)
+        return
+    stopped = threading.Event()
+    worker = object()
+
+    def _finished():
+        stopped.set()
+        with _workers_changed:
+            _active_workers.discard(worker)
+            _workers_changed.notify_all()
+
+    def _fail_safely():
+        try:
+            finish_analysis(record_id, attempt_id)
+        except Exception as exc:  # noqa: BLE001 -- Thread boundary; log no provider content.
+            logger.error("Insight failure persistence failed: record=%s error=%s",
+                         record_id, type(exc).__name__)
+
+    def _heartbeat():
+        try:
+            while not stopped.wait(ANALYSIS_HEARTBEAT_SECONDS):
+                if not renew_analysis_lease(record_id, attempt_id):
+                    break
+        except Exception as exc:  # noqa: BLE001 -- Thread boundary; log no provider content.
+            logger.error("Insight heartbeat failed: record=%s error=%s",
+                         record_id, type(exc).__name__)
+            _fail_safely()
+        finally:
+            stopped.set()
 
     def _run():
         try:
-            result = analyze_document(doc, record_id, owner_id)
-            from app.engines.market_insight.storage import update_insight_status
-            if result.ai_analysis:
-                update_insight_status(record_id, "completed", result.ai_analysis)
-            else:
-                update_insight_status(record_id, "failed")
-        except Exception:
-            from app.engines.market_insight.storage import update_insight_status
-            update_insight_status(record_id, "failed")
+            result = analyze_document(doc, record_id, owner_id, locale=locale)
+            finish_analysis(record_id, attempt_id, result.ai_analysis)
+        except Exception as exc:  # noqa: BLE001 -- Thread boundary; log no provider content.
+            # Provider exceptions can embed document content; log only their type.
+            logger.error("Insight analysis failed: record=%s error=%s",
+                         record_id, type(exc).__name__)
+            _fail_safely()
+        finally:
+            _finished()
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
+    try:
+        if not renew_analysis_lease(record_id, attempt_id):
+            return
+        with _workers_changed:
+            _active_workers.add(worker)
+        threading.Thread(target=_heartbeat, daemon=True).start()
+        threading.Thread(target=_run, daemon=True).start()
+    except Exception as exc:  # noqa: BLE001 -- Thread boundary; log no provider content.
+        stopped.set()
+        logger.error("Insight worker startup failed: record=%s error=%s",
+                     record_id, type(exc).__name__)
+        _fail_safely()
+        _finished()
 
 
 def _parse_json_response(text: str) -> dict:

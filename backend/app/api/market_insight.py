@@ -2,24 +2,48 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import Annotated
+
 import aiofiles
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query, Depends, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
+
+from app.auth.dependencies import get_current_user
+from app.config import ALLOWED_DOCUMENT_TYPES, ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE_BYTES
+from app.engines.market_insight.ai_analyzer import analyze_async
 from app.engines.market_insight.models import (
-    ParseRequest, HistoryUpdateRequest,
-    InsightRenameRequest, ManualInsightRequest, ParsedDocument,
+    AnalysisLocale,
+    HistoryUpdateRequest,
+    InsightRenameRequest,
+    ManualInsightRequest,
+    ParsedDocument,
+    ParseRequest,
 )
 from app.engines.market_insight.parser_factory import parse_document
-from app.engines.market_insight.ai_analyzer import analyze_async
 from app.engines.market_insight.storage import (
-    save_insight, list_history, get_insight, get_insight_source_preview,
-    get_insight_source_file, add_insight_source, list_insight_sources,
-    update_insight, rename_insight, delete_insight,
-    save_manual_insight, prepare_insight_retry,
-    InsightProjectAccessDenied, InsightRetryNotAllowed,
+    InsightProjectAccessDenied,
+    InsightRetryNotAllowed,
+    add_insight_source,
+    delete_insight,
+    get_insight,
+    get_insight_source_file,
+    get_insight_source_preview,
+    list_history,
+    list_insight_sources,
+    prepare_insight_retry,
+    rename_insight,
+    save_insight,
+    save_manual_insight,
+    update_insight,
 )
-from app.shared.response import success_response
-from app.config import ALLOWED_EXTENSIONS, ALLOWED_DOCUMENT_TYPES, MAX_UPLOAD_SIZE_BYTES
-from app.auth.dependencies import get_current_user
 from app.media_storage import (
     delete_media,
     delete_media_prefix,
@@ -27,6 +51,7 @@ from app.media_storage import (
     media_response,
     put_media_bytes,
 )
+from app.shared.response import success_response
 
 router = APIRouter(prefix="/api/v1/market_insight", tags=["market_insight"])
 
@@ -131,7 +156,10 @@ async def rename_history_item(
 
 
 @router.post("/history/{record_id}/retry")
-async def retry_history_item(record_id: str, current_user=Depends(get_current_user)):
+async def retry_history_item(
+    record_id: str, locale: Annotated[AnalysisLocale, Query()] = "zh-CN",
+    current_user=Depends(get_current_user),
+):
     try:
         prepared = prepare_insight_retry(record_id, current_user["id"])
     except InsightProjectAccessDenied as exc:
@@ -141,7 +169,7 @@ async def retry_history_item(record_id: str, current_user=Depends(get_current_us
     if prepared is None:
         raise HTTPException(status_code=404, detail="Record not found")
     document, owner_id = prepared
-    analyze_async(document, record_id=record_id, owner_id=owner_id)
+    analyze_async(document, record_id=record_id, owner_id=owner_id, locale=locale)
     record = get_insight(record_id, current_user["id"])
     return success_response("Analysis restarted", record.model_dump())
 
@@ -191,6 +219,7 @@ async def create_manual_insight(body: ManualInsightRequest, current_user=Depends
 async def parse_file(
     files: list[UploadFile] = File(...),
     project_id: str = Form(...),
+    locale: Annotated[AnalysisLocale, Form()] = "zh-CN",
     with_ai: bool = Query(default=True),
     current_user=Depends(get_current_user),
     request: Request = None,
@@ -293,7 +322,7 @@ async def parse_file(
 
         # Start async AI analysis in background
         if with_ai:
-            analyze_async(result, record_id=record.id, owner_id=current_user["id"])
+            analyze_async(result, record_id=record.id, owner_id=current_user["id"], locale=locale)
 
         return success_response("Document uploaded, AI analysis in progress", response_data)
     except ValueError as e:
@@ -340,7 +369,7 @@ async def parse_repo(
         response_data["status"] = status
 
         if with_ai:
-            analyze_async(result, record_id=record.id, owner_id=current_user["id"])
+            analyze_async(result, record_id=record.id, owner_id=current_user["id"], locale=request.locale)
 
         return success_response("Repository uploaded, AI analysis in progress", response_data)
     except ValueError as e:

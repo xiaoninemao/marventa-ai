@@ -70,7 +70,7 @@ export default function CaseCard({
 
   return (
     <article className={`relative rounded-lg border bg-white transition-[border-color,box-shadow] hover:shadow-[0_4px_12px_rgba(16,24,40,0.06)] dark:bg-slate-950 ${staticMedia ? "amp-case-card-static" : ""} ${
-      visuallySelected ? "border-blue-500 ring-2 ring-blue-100 dark:border-blue-500 dark:ring-blue-950" : "border-slate-200 hover:border-blue-200 dark:border-slate-800"
+      visuallySelected ? "border-blue-500 dark:border-blue-500" : "border-slate-200 hover:border-blue-200 dark:border-slate-800"
     }`}>
       <button type="button" onClick={() => onOpen?.(item)} className="amp-case-cover-button block w-full text-left"
         aria-pressed={selectionMode ? selected : undefined}

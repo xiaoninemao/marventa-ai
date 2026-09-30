@@ -222,7 +222,7 @@ function PortfolioOverview() {
   };
 
   if (authLoading || !user) {
-    return <div className="p-8 text-sm text-slate-500" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
   }
 
   return (
@@ -356,7 +356,7 @@ function PortfolioOverview() {
             <RedesignInput value={renameName} onChange={(event) => setRenameName(event.target.value)} autoFocus />
           </label>
           <div className="mt-6 flex justify-end gap-2">
-            <button type="button" className="amp-button amp-button-secondary" disabled={renaming}
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
               onClick={() => { renameDialogRef.current?.close(); setRenamingScript(null); }}>
               {t("取消", "Cancel")}
             </button>
@@ -384,7 +384,7 @@ function PortfolioOverview() {
 
 export default function PortfolioPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-slate-500" role="status">Loading...</div>}>
+    <Suspense fallback={<div className="amp-page-state" role="status">Loading...</div>}>
       <PortfolioOverview />
     </Suspense>
   );

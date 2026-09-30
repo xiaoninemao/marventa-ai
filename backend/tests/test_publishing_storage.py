@@ -17,27 +17,17 @@ from app.engines.content_generator.storage import create_session, update_session
 from app.auth import storage as auth_storage
 from app.engines.publishing import storage as publishing_storage
 from app.engines.publishing.storage import (
-    create_social_account,
-    create_account_memory,
     create_manual_project,
     create_project_from_session,
-    create_task_from_project,
-    create_task_from_session,
-    generate_review_for_task,
-    get_account_memory,
-    get_social_account,
-    get_task,
+    get_project,
     list_projects,
     ProjectNameExists,
-    list_social_accounts,
-    update_social_account,
-    update_task,
 )
 
 
 class PublishingStorageTests(unittest.TestCase):
     def setUp(self):
-        directory = tempfile.TemporaryDirectory()
+        directory = tempfile.TemporaryDirectory(prefix=".publishing-", dir=Path(__file__).parent)
         self.addCleanup(directory.cleanup)
         db_path = str(Path(directory.name) / "publishing_test.db")
         self.enterContext(patch.object(auth_storage, "DB_PATH", db_path))
@@ -74,26 +64,17 @@ class PublishingStorageTests(unittest.TestCase):
             status="completed",
         )
 
-    def test_project_and_publish_task_keep_creation_snapshot(self):
+    def test_project_keeps_creation_snapshot(self):
         project = create_project_from_session(
             self.user_id,
             self.session.id,
             title="新品上市 Q2",
             xhs_account="品牌小红书号",
         )
-        task = create_task_from_session(
-            self.user_id,
-            self.session.id,
-            project_id=project.id,
-            platform="xiaohongshu",
-            account_name="品牌小红书号",
-            selected_version_ids={"title": "title-card", "body": "copy-card"},
-        )
-
-        saved = get_task(task.id)
-        self.assertEqual(saved.project_id, project.id)
-        self.assertEqual(saved.status, "pending_publish")
-        self.assertEqual(saved.original_cards[0].id, "title-card")
+        update_session(self.session.id, cards=[], title="Changed source")
+        saved = get_project(project.id, self.user_id)
+        self.assertEqual(saved.source_session_id, self.session.id)
+        self.assertEqual(saved.cards_snapshot[0].id, "title-card")
         self.assertEqual(saved.final_snapshot["title"], "标题版本")
         self.assertIn(project.avatar_color, publishing_storage.PROJECT_AVATAR_COLORS)
         self.assertIn(project.avatar_icon, publishing_storage.PROJECT_AVATAR_ICONS)
@@ -101,102 +82,7 @@ class PublishingStorageTests(unittest.TestCase):
         projects = list_projects(self.user_id, xhs_account="品牌小红书号")
         self.assertEqual([item.id for item in projects], [project.id])
 
-    def test_review_can_write_effective_lesson_to_account_memory(self):
-        memory = create_account_memory(
-            self.user_id,
-            platform="xiaohongshu",
-            account_name="品牌小红书号",
-            brand_positioning="科技新品种草账号",
-        )
-        task = create_task_from_session(
-            self.user_id,
-            self.session.id,
-            platform="xiaohongshu",
-            account_name="品牌小红书号",
-            selected_version_ids={"title": "title-card", "body": "copy-card"},
-        )
-        update_task(task.id, metrics={"views": 2000, "likes": 180, "collects": 90, "comments": 22})
-
-        review = generate_review_for_task(task.id, write_to_memory=True)
-
-        self.assertIn("表现原因", review.summary)
-        updated_memory = get_account_memory(memory.id)
-        self.assertTrue(updated_memory.ai_operation_lessons)
-        self.assertIn("新品上市内容方案", updated_memory.ai_operation_lessons[-1])
-
-    def test_social_account_is_persisted(self):
-        account = create_social_account(
-            self.user_id,
-            platform="douyin",
-            account_name="抖音品牌号",
-            session_dir="D:/sessions/douyin-brand",
-            profile={"nickname": "抖音品牌号", "home_url": "https://creator.douyin.com/"},
-        )
-        self.assertEqual(get_social_account(account.id).platform, "douyin")
-        self.assertEqual(list_social_accounts(self.user_id, "douyin")[0].account_name, "抖音品牌号")
-
-    def test_quick_login_account_can_be_saved_without_nickname(self):
-        account = create_social_account(
-            self.user_id,
-            platform="xiaohongshu",
-            account_name="小红书账号_未命名",
-            session_dir="D:/sessions/xhs-unnamed",
-            status="pending_identification",
-            cookie_status="valid",
-            profile={
-                "import_mode": "quick_login",
-                "cookie_names": ["a1", "web_session"],
-                "nickname_parse_status": "failed",
-            },
-            credential_blob="encrypted-login-state",
-        )
-
-        saved = get_social_account(account.id)
-        self.assertEqual(saved.nickname, "")
-        self.assertEqual(saved.account_name, "小红书账号_未命名")
-        self.assertEqual(saved.status, "pending_identification")
-        self.assertEqual(list_social_accounts(self.user_id, "xiaohongshu")[0].id, account.id)
-
-    def test_social_account_editable_fields_can_be_updated(self):
-        account = create_social_account(
-            self.user_id,
-            platform="douyin",
-            account_name="品牌号",
-            session_dir="D:/sessions/douyin-brand",
-            nickname="平台昵称",
-            profile={"followers": ""},
-        )
-
-        updated = update_social_account(
-            self.user_id,
-            account.id,
-            remark="运营备注",
-            platform_user_id="1234567890",
-            profile={"followers": "1.2万", "industry": "美妆"},
-        )
-
-        self.assertEqual(updated.nickname, "平台昵称")
-        self.assertEqual(updated.remark, "运营备注")
-        self.assertEqual(updated.platform_user_id, "1234567890")
-        self.assertEqual(updated.profile["followers"], "1.2万")
-        self.assertEqual(updated.profile["industry"], "美妆")
-
-    def test_publish_task_can_be_created_from_content_project(self):
-        project = create_project_from_session(self.user_id, self.session.id, title="项目库内容", platform_hint="douyin")
-        task = create_task_from_project(
-            self.user_id,
-            project.id,
-            platform="douyin",
-            account_name="品牌号",
-            content_type="video",
-        )
-
-        self.assertEqual(task.project_id, project.id)
-        self.assertEqual(task.source_session_id, self.session.id)
-        self.assertEqual(task.final_snapshot["title"], project.final_snapshot["title"])
-        self.assertNotIn("media_assets", task.final_snapshot)
-
-    def test_manual_content_creates_project_then_draft_task(self):
+    def test_manual_content_creates_project(self):
         project = create_manual_project(
             self.user_id,
             title="手写草稿",
@@ -205,18 +91,11 @@ class PublishingStorageTests(unittest.TestCase):
             final_snapshot={"title": "手写标题", "body": "手写正文", "tags": "#新品"},
             notes="发布管理手动创建",
         )
-        task = create_task_from_project(
-            self.user_id,
-            project.id,
-            platform="xiaohongshu",
-            account_name="",
-            content_type="image_text",
-        )
-
-        self.assertEqual(project.source_session_id, "")
-        self.assertEqual(task.status, "pending_publish")
-        self.assertEqual(task.final_snapshot["title"], "手写标题")
-        self.assertEqual(task.project_id, project.id)
+        saved = get_project(project.id, self.user_id)
+        self.assertEqual(saved.source_session_id, "")
+        self.assertEqual(saved.status, "active")
+        self.assertEqual(saved.final_snapshot["title"], "手写标题")
+        self.assertNotIn("media_assets", saved.final_snapshot)
 
     def test_project_names_are_unique_within_organization(self):
         first = create_manual_project(self.user_id, title="Launch Plan")

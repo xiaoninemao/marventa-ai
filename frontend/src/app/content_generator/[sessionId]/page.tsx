@@ -8,7 +8,7 @@ export default function ContentCanvasDetailPage() {
   const params = useParams<{ sessionId: string }>();
 
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-slate-500" role="status">Loading...</div>}>
+    <Suspense fallback={<div className="amp-page-state" role="status">Loading...</div>}>
       <ContentGeneratorExperience canvasId={params.sessionId} />
     </Suspense>
   );

@@ -1,12 +1,14 @@
 import { apiError } from "@/i18n/errors";
+import type { Locale } from "@/i18n/locale";
 import type { ParseResponse, HistoryListResponse, HistoryItemResponse, InsightSourcesResponse, SourcePreviewResponse, AIAnalysis } from "@/types/market_insight";
 import { API_BASE, auth_headers } from "@/services/api_core";
 
 // ── Market Insight API ──
-export async function parse_files(files: File[], project_id: string): Promise<ParseResponse> {
+export async function parse_files(files: File[], project_id: string, locale: Locale): Promise<ParseResponse> {
   const form_data = new FormData();
   files.forEach((file) => form_data.append("files", file));
   form_data.append("project_id", project_id);
+  form_data.append("locale", locale);
 
   const url = `${API_BASE}/api/v1/market_insight/parse`;
 
@@ -22,13 +24,13 @@ export async function parse_files(files: File[], project_id: string): Promise<Pa
   return res.json();
 }
 
-export async function parse_repo(repo_url: string, project_id: string): Promise<ParseResponse> {
+export async function parse_repo(repo_url: string, project_id: string, locale: Locale): Promise<ParseResponse> {
   const url = `${API_BASE}/api/v1/market_insight/parse_repo`;
 
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ repo_url, project_id }),
+    body: JSON.stringify({ repo_url, project_id, locale }),
   });
   if (!res.ok) {
     const error = await res.json();
@@ -107,8 +109,9 @@ export async function rename_history_item(id: string, name: string): Promise<His
   return res.json();
 }
 
-export async function retry_history_item(id: string): Promise<HistoryItemResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/market_insight/history/${id}/retry`, {
+export async function retry_history_item(id: string, locale: Locale): Promise<HistoryItemResponse> {
+  const query = new URLSearchParams({ locale });
+  const res = await fetch(`${API_BASE}/api/v1/market_insight/history/${id}/retry?${query}`, {
     method: "POST",
     headers: auth_headers(),
   });

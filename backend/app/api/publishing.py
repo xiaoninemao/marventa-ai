@@ -1,21 +1,33 @@
 ﻿from __future__ import annotations
 
 import logging
+import os
+import re
+import uuid
+from typing import Literal
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import get_current_user
-from app.engines.publishing.models import (
-    CreateProjectRequest,
-    ManualProjectRequest,
-    ProjectMember,
-    ProjectChannelAuthorizationPollRequest,
-    ProjectChannelAuthorizationRequest,
-    ProjectMemberInvite,
-    ProjectMemberRole,
-    UpdateProjectRequest,
+from app.config import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_VIDEO_EXTENSIONS,
+    FRONTEND_BASE_URL,
+    MAX_IMAGE_SIZE_BYTES,
+    MAX_UPLOAD_SIZE_BYTES,
+    MAX_VIDEO_SIZE_BYTES,
 )
 from app.engines.publishing.channel_credentials import (
     ChannelCredentialEncryptionUnavailable,
@@ -27,6 +39,33 @@ from app.engines.publishing.channel_oauth import (
     poll_xiaohongshu_authorization,
     start_channel_authorization,
 )
+from app.engines.publishing.document_copy import parse_document_copy
+from app.engines.publishing.material_copy import (
+    DOCUMENT_CONTENT_TYPES,
+    copy_html_to_text,
+    sanitize_copy_html,
+    validate_copy_title,
+)
+from app.engines.publishing.models import (
+    CreateProjectRequest,
+    ManualProjectRequest,
+    ProjectChannelAuthorizationPollRequest,
+    ProjectChannelAuthorizationRequest,
+    ProjectMaterialContentUpdate,
+    ProjectMaterialCopyCreate,
+    ProjectMaterialSetCreate,
+    ProjectMaterialSetUpdate,
+    ProjectMaterialUpdate,
+    ProjectMember,
+    ProjectMemberInvite,
+    ProjectMemberRole,
+    PublicationContentOrder,
+    PublicationContentsFromMaterials,
+    PublicationCopy,
+    PublicationPlanCreate,
+    PublicationPlanUpdate,
+    UpdateProjectRequest,
+)
 from app.engines.publishing.project_channel_accounts import (
     InvalidChannelAuthorizationState,
     consume_channel_authorization_state,
@@ -35,15 +74,15 @@ from app.engines.publishing.project_channel_accounts import (
     list_project_channel_accounts,
     save_authorized_channel_account,
 )
-from app.config import FRONTEND_BASE_URL
-from app.engines.publishing.projects import (
-    ProjectNameExists,
-    create_manual_project,
-    create_project_from_session,
-    delete_project,
-    get_project,
-    list_projects,
-    update_project,
+from app.engines.publishing.project_materials import (
+    create_project_material,
+    create_project_material_set,
+    delete_project_material,
+    ensure_project_material_access,
+    get_project_material,
+    list_project_materials,
+    update_project_material,
+    update_project_material_set,
 )
 from app.engines.publishing.project_memberships import (
     ProjectMemberNotFound,
@@ -56,10 +95,46 @@ from app.engines.publishing.project_memberships import (
     remove_project_member,
     update_project_member_role,
 )
+from app.engines.publishing.projects import (
+    ProjectNameExists,
+    create_manual_project,
+    create_project_from_session,
+    delete_project,
+    get_project,
+    list_projects,
+    update_project,
+)
+from app.engines.publishing.publication_contents import (
+    delete_publication_content,
+    ensure_content_edit_access,
+    get_publication_copy,
+    get_publication_document,
+    import_publication_materials,
+    list_publication_contents,
+    reorder_publication_images,
+    update_publication_copy,
+    upload_publication_content,
+)
+from app.engines.publishing.publication_plans import (
+    create_publication_plan,
+    delete_publication_plan,
+    get_publication_plan,
+    list_publication_plans,
+    update_publication_plan,
+)
+from app.media_storage import (
+    delete_media,
+    delete_media_prefix,
+    guess_content_type,
+    media_exists,
+    media_key_from_url,
+    media_url,
+    put_media_bytes,
+    read_media_bytes,
+)
 from app.shared.response import success_response
-from app.media_storage import delete_media, delete_media_prefix, media_key_from_url
 
-# Keep the legacy namespace for project clients; publishing/account APIs are retired.
+# Project routes retain their existing namespace alongside publication-plan APIs.
 router = APIRouter(prefix="/api/v1/publishing", tags=["projects"])
 logger = logging.getLogger(__name__)
 
@@ -67,6 +142,231 @@ logger = logging.getLogger(__name__)
 @router.get("/health")
 async def health_check():
     return success_response("Project service is running", {"status": "healthy"})
+
+
+@router.get("/publications")
+async def get_publication_plans(
+    project_id: str = Query(default=""),
+    current_user=Depends(get_current_user),
+):
+    try:
+        plans = list_publication_plans(current_user["id"], project_id)
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success_response(
+        "Publication plans retrieved",
+        [plan.model_dump() for plan in plans],
+    )
+
+
+@router.get("/publications/{plan_id}")
+async def get_publication_plan_detail(
+    plan_id: str,
+    current_user=Depends(get_current_user),
+):
+    try:
+        plan = get_publication_plan(current_user["id"], plan_id)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success_response("Publication plan retrieved", plan.model_dump())
+
+
+@router.post("/publications")
+async def create_new_publication_plan(
+    body: PublicationPlanCreate,
+    current_user=Depends(get_current_user),
+):
+    try:
+        plan = create_publication_plan(
+            current_user["id"],
+            **body.model_dump(),
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication plan created", plan.model_dump())
+
+
+@router.patch("/publications/{plan_id}")
+async def edit_publication_plan(
+    plan_id: str,
+    body: PublicationPlanUpdate,
+    current_user=Depends(get_current_user),
+):
+    try:
+        plan = update_publication_plan(
+            current_user["id"],
+            plan_id,
+            **body.model_dump(),
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication plan updated", plan.model_dump())
+
+
+@router.delete("/publications/{plan_id}")
+async def remove_publication_plan(
+    plan_id: str,
+    current_user=Depends(get_current_user),
+):
+    try:
+        delete_publication_plan(current_user["id"], plan_id)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication plan deleted")
+
+
+def _publication_content_response(item, request: Request) -> dict:
+    return {
+        **item.model_dump(),
+        "file_url": media_url(item.object_key, str(request.base_url)) if item.object_key else "",
+    }
+
+
+@router.get("/publications/{plan_id}/copy")
+async def get_saved_publication_copy(plan_id: str, current_user=Depends(get_current_user)):
+    try:
+        copy = get_publication_copy(current_user["id"], plan_id)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success_response("Publication copy retrieved", copy.model_dump())
+
+
+@router.patch("/publications/{plan_id}/copy")
+async def save_publication_copy(
+    plan_id: str, body: PublicationCopy, current_user=Depends(get_current_user),
+):
+    try:
+        copy = update_publication_copy(
+            current_user["id"], plan_id, **body.model_dump(exclude_unset=True),
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication copy updated", copy.model_dump())
+
+
+@router.get("/publications/{plan_id}/contents")
+async def get_publication_contents(plan_id: str, request: Request, current_user=Depends(get_current_user)):
+    try:
+        items = list_publication_contents(current_user["id"], plan_id)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success_response("Publication contents retrieved", [
+        _publication_content_response(item, request) for item in items
+    ])
+
+
+@router.post("/publications/{plan_id}/contents")
+async def add_publication_content(
+    plan_id: str, request: Request, file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+):
+    try:
+        ensure_content_edit_access(current_user["id"], plan_id)
+        filename = os.path.basename(file.filename or "").strip()
+        if not filename:
+            raise ValueError("Material filename is required")
+        media_type, limit = _material_kind(filename)
+        data = await file.read(limit + 1)
+        if not data:
+            raise ValueError("Material file is empty")
+        if len(data) > limit:
+            raise HTTPException(status_code=413, detail="Material file is too large")
+        item = await run_in_threadpool(
+            upload_publication_content, current_user["id"], plan_id,
+            filename=filename, media_type=media_type, data=data,
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication content added", _publication_content_response(item, request))
+
+
+@router.post("/publications/{plan_id}/contents/from-materials")
+async def add_publication_materials(
+    plan_id: str, body: PublicationContentsFromMaterials, request: Request,
+    current_user=Depends(get_current_user),
+):
+    try:
+        items = await run_in_threadpool(
+            import_publication_materials, current_user["id"], plan_id, body.material_ids,
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Material content not found") from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication contents added", [
+        _publication_content_response(item, request) for item in items
+    ])
+
+
+@router.patch("/publications/{plan_id}/contents/order")
+async def order_publication_images(
+    plan_id: str, body: PublicationContentOrder, request: Request,
+    current_user=Depends(get_current_user),
+):
+    try:
+        items = reorder_publication_images(current_user["id"], plan_id, body.content_ids)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication image order updated", [
+        _publication_content_response(item, request) for item in items
+    ])
+
+
+@router.get("/publications/{plan_id}/contents/{content_id}/content")
+async def get_publication_content_document(
+    plan_id: str, content_id: str, format: Literal["html", "text"] = Query(default="html"),
+    current_user=Depends(get_current_user),
+):
+    try:
+        content = get_publication_document(current_user["id"], plan_id, content_id)
+        if format == "text":
+            content = copy_html_to_text(content)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication content retrieved", {"content": content, "format": format})
+
+
+@router.delete("/publications/{plan_id}/contents/{content_id}")
+async def remove_publication_content(
+    plan_id: str, content_id: str, current_user=Depends(get_current_user),
+):
+    try:
+        delete_publication_content(current_user["id"], plan_id, content_id)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication content deleted")
 
 
 @router.post("/projects/from_session")
@@ -87,6 +387,336 @@ async def create_project(req: CreateProjectRequest, current_user=Depends(get_cur
     except ValueError:
         raise HTTPException(status_code=404, detail="Session not found")
     return success_response("Project saved", project.model_dump())
+
+
+def _material_kind(filename: str) -> tuple[str, int]:
+    extension = os.path.splitext(filename)[1].lower()
+    if extension in ALLOWED_IMAGE_EXTENSIONS:
+        return "image", MAX_IMAGE_SIZE_BYTES
+    if extension in ALLOWED_VIDEO_EXTENSIONS:
+        return "video", MAX_VIDEO_SIZE_BYTES
+    if extension in DOCUMENT_CONTENT_TYPES:
+        return "document", MAX_UPLOAD_SIZE_BYTES
+    raise ValueError("Unsupported project material type")
+
+
+@router.get("/projects/{project_id}/materials")
+async def get_project_materials(
+    project_id: str,
+    request: Request,
+    material_set_id: str = Query(default=""),
+    current_user=Depends(get_current_user),
+):
+    try:
+        materials = list_project_materials(
+            current_user["id"], project_id, material_set_id,
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success_response("Project materials retrieved", [
+        {
+            **material.model_dump(),
+            "covers": [
+                {**cover.model_dump(), "file_url": media_url(cover.object_key, str(request.base_url))}
+                for cover in material.covers
+            ],
+            "file_url": (
+                media_url(material.object_key, str(request.base_url))
+                if material.object_key and material.content_html is None
+                else ""
+            ),
+        }
+        for material in materials
+    ])
+
+
+@router.post("/projects/{project_id}/material-sets")
+async def create_project_material_set_route(
+    project_id: str,
+    body: ProjectMaterialSetCreate,
+    current_user=Depends(get_current_user),
+):
+    try:
+        material_set = create_project_material_set(
+            current_user["id"],
+            project_id,
+            **body.model_dump(),
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Project material set created", material_set.model_dump())
+
+
+@router.put("/projects/{project_id}/material-sets/{material_set_id}")
+async def update_project_material_set_route(
+    project_id: str,
+    material_set_id: str,
+    body: ProjectMaterialSetUpdate,
+    current_user=Depends(get_current_user),
+):
+    try:
+        material_set = update_project_material_set(
+            current_user["id"],
+            project_id,
+            material_set_id,
+            **body.model_dump(),
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Project material set updated", material_set.model_dump())
+
+
+@router.post("/projects/{project_id}/materials")
+async def upload_project_material(
+    project_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    material_set_id: str = Form(...),
+    current_user=Depends(get_current_user),
+):
+    """Upload media, or parse TXT/MD/markdown/PDF/DOCX directly to database HTML.
+
+    Document originals are never stored. Parsing errors reject the entire upload.
+    PDF/DOCX parsing is bounded; scanned PDFs require OCR and are rejected.
+    """
+    filename = os.path.basename(file.filename or "").strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Material filename is required")
+    try:
+        organization_id = ensure_project_material_access(
+            current_user["id"], project_id, material_set_id,
+        )
+        media_type, max_size = _material_kind(filename)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    content = await file.read(max_size + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="Material file is empty")
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail="Material file is too large")
+    if media_type == "document":
+        try:
+            html = await run_in_threadpool(
+                parse_document_copy, content, os.path.splitext(filename)[1],
+            )
+            material = create_project_material(
+                current_user["id"], project_id, name=filename,
+                media_type="document", mime_type="text/html",
+                file_size=len(html.encode("utf-8")), object_key="",
+                material_set_id=material_set_id, content_html=html,
+            )
+        except (ProjectNotFound, LookupError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return success_response("Project document imported", material.model_dump())
+    safe_name = re.sub(r"[^\w.\-]", "_", filename)
+    object_key = (
+        f"project-materials/{organization_id}/{project_id}/"
+        f"{uuid.uuid4().hex[:12]}_{safe_name}"
+    )
+    mime_type = (
+        DOCUMENT_CONTENT_TYPES.get(os.path.splitext(filename)[1].lower())
+        or guess_content_type(filename)
+    )
+    put_media_bytes(
+        object_key,
+        content,
+        content_type=mime_type,
+    )
+    try:
+        material = create_project_material(
+            current_user["id"],
+            project_id,
+            name=filename,
+            media_type=media_type,
+            mime_type=mime_type,
+            file_size=len(content),
+            object_key=object_key,
+            material_set_id=material_set_id,
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        delete_media(object_key)
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        delete_media(object_key)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        delete_media(object_key)
+        raise
+    return success_response("Project material uploaded", {
+        **material.model_dump(),
+        "file_url": media_url(object_key, str(request.base_url)),
+    })
+
+
+@router.post("/projects/{project_id}/materials/copy")
+async def create_project_material_copy(
+    project_id: str,
+    body: ProjectMaterialCopyCreate,
+    request: Request,
+    current_user=Depends(get_current_user),
+):
+    """Create a document in a material set, automatically numbering duplicate titles.
+
+    Nonblank titles are limited to 255 characters; dots are preserved. Content is
+    limited to 1 MiB UTF-8 before and after sanitizing. Allowed tags: p, h2, h3,
+    strong, em, s, u, ul, ol, li, blockquote, br, a. Only HTTP(S)/mailto href
+    attributes survive. Content persists in the database, not as a media object.
+    Returns the material record with empty object_key/file_url.
+    """
+    try:
+        ensure_project_material_access(
+            current_user["id"], project_id, body.material_set_id,
+        )
+        title = validate_copy_title(body.title)
+        material = create_project_material(
+            current_user["id"], project_id, name=title,
+            media_type="document", mime_type="text/html", file_size=0,
+            object_key="", material_set_id=body.material_set_id,
+            strip_extension=False, content_html=body.content,
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Project copy created", material.model_dump())
+
+
+@router.get("/projects/{project_id}/materials/{material_id}/content")
+async def get_project_material_content(
+    project_id: str,
+    material_id: str,
+    format: Literal["html", "text"] = Query(default="html"),
+    current_user=Depends(get_current_user),
+):
+    """Return sanitized HTML or plain text to project members.
+
+    Legacy media-backed documents are converted on read without changing storage.
+    Invalid, oversized, encrypted or scanned documents return explicit 400 errors.
+    Missing projects, materials, and media objects return 404.
+    """
+    try:
+        material = get_project_material(current_user["id"], project_id, material_id)
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if material.media_type != "document":
+        raise HTTPException(status_code=400, detail="Material does not support text preview")
+    try:
+        if material.content_html is not None:
+            content = sanitize_copy_html(material.content_html)
+        else:
+            if not material.object_key or not media_exists(material.object_key):
+                raise HTTPException(status_code=404, detail="Material content not found")
+            data = await run_in_threadpool(
+                read_media_bytes, material.object_key, max_bytes=MAX_UPLOAD_SIZE_BYTES,
+            )
+            if material.mime_type == "text/html":
+                content = sanitize_copy_html(data.decode("utf-8-sig"))
+            else:
+                extension = os.path.splitext(material.object_key)[1].lower()
+                if extension not in DOCUMENT_CONTENT_TYPES:
+                    extension = {
+                        mime: suffix for suffix, mime in DOCUMENT_CONTENT_TYPES.items()
+                    }.get(material.mime_type, "")
+                    if material.mime_type == "text/x-markdown":
+                        extension = ".md"
+                content = await run_in_threadpool(parse_document_copy, data, extension)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Material content not found") from exc
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Material content is not UTF-8 text") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if format == "text":
+        content = copy_html_to_text(content)
+    return success_response("Project material content retrieved", {
+        "content": content,
+        "format": format,
+    })
+
+
+@router.patch("/projects/{project_id}/materials/{material_id}/content")
+async def update_project_material_content(
+    project_id: str,
+    material_id: str,
+    body: ProjectMaterialContentUpdate,
+    current_user=Depends(get_current_user),
+):
+    """Edit sanitized HTML as creator or project manager, preserving the title.
+
+    Renaming remains a separate operation. Legacy objects remain untouched for
+    recovery; database content becomes authoritative on save.
+    """
+    try:
+        material = update_project_material(
+            current_user["id"], project_id, material_id,
+            content_html=body.content,
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Project material content updated", material.model_dump())
+
+
+@router.put("/projects/{project_id}/materials/{material_id}")
+async def update_project_material_route(
+    project_id: str,
+    material_id: str,
+    body: ProjectMaterialUpdate,
+    request: Request,
+    current_user=Depends(get_current_user),
+):
+    try:
+        material = update_project_material(
+            current_user["id"],
+            project_id,
+            material_id,
+            **body.model_dump(),
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Project material updated", {
+        **material.model_dump(),
+        "file_url": (
+            media_url(material.object_key, str(request.base_url))
+            if material.object_key and material.content_html is None else ""
+        ),
+    })
+
+
+@router.delete("/projects/{project_id}/materials/{material_id}")
+async def remove_project_material(
+    project_id: str,
+    material_id: str,
+    current_user=Depends(get_current_user),
+):
+    try:
+        object_keys = delete_project_material(
+            current_user["id"], project_id, material_id,
+        )
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    for object_key in object_keys:
+        delete_media(object_key)
+    return success_response("Project material deleted")
 
 
 @router.post("/projects/manual")
@@ -329,6 +959,8 @@ async def unbind_project_channel_account(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ProjectPermissionDenied as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return success_response("Channel account authorization removed")
 
 
@@ -340,8 +972,13 @@ async def remove_project(project_id: str, current_user=Depends(get_current_user)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ProjectPermissionDenied as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     delete_media_prefix(
         f"publishing/{current_user['organization_id']}/{project_id}",
+    )
+    delete_media_prefix(
+        f"project-materials/{current_user['organization_id']}/{project_id}",
     )
     for relative_path in case_media:
         if key := media_key_from_url(relative_path):

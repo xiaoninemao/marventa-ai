@@ -195,6 +195,14 @@ def update_script(
 def delete_script(script_id: str) -> bool:
     init_db()
     conn = _get_conn()
+    if conn.execute(
+        "SELECT 1 FROM sqlite_master "
+        "WHERE type = 'table' AND name = 'project_publications'",
+    ).fetchone():
+        conn.execute(
+            "DELETE FROM project_publications WHERE portfolio_id = ?",
+            (script_id,),
+        )
     conn.execute("DELETE FROM portfolio WHERE id = ?", (script_id,))
     conn.commit()
     conn.close()

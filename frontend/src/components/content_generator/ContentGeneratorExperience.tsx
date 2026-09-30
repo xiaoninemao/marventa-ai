@@ -31,7 +31,7 @@ import { canManageCreation } from "@/utils/creation_permissions";
 import {
   get_card_content_format,
   get_card_detail_profile,
-  get_content_preview_items,
+  get_card_preview_content,
 } from "@/components/content_generator/contentGeneratorCardDetails";
 import {
   ACTIVE_SESSION_STORAGE_KEY,
@@ -138,7 +138,7 @@ function SelectedPlanDetailPanel({
   const CARD_DETAIL_PROFILE = get_card_detail_profile(t, content_format);
   const meta = CARD_META[card.card_type] || CARD_META.script;
   const profile = CARD_DETAIL_PROFILE[card.card_type] || CARD_DETAIL_PROFILE.copy;
-  const preview_items = get_content_preview_items(card, t, content_format);
+  const preview_content = get_card_preview_content(card);
   const detail_rows = [
     { label: t("核心结构", "Core structure"), value: profile.core },
     { label: t("适用平台", "Recommended platforms"), value: profile.platforms },
@@ -189,17 +189,10 @@ function SelectedPlanDetailPanel({
         <div className="amp-content-plan-detail-content">
           <div className="amp-content-plan-detail-content-header">
             <h5>{t("内容预览", "Content preview")}</h5>
-            <span>{t("共 {count} 项", "{count} items", { count: preview_items.length })}</span>
           </div>
-          <ol className="amp-content-plan-detail-list">
-            {preview_items.map((item, index) => (
-              <li key={`${index}-${item.text}`}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <p>{item.text}</p>
-                <small>{item.label}</small>
-              </li>
-            ))}
-          </ol>
+          <div className="amp-content-plan-detail-text">
+            {preview_content || t("暂无内容", "No content yet")}
+          </div>
         </div>
       </div>
     </section>
@@ -1172,7 +1165,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
 
   if (auth_loading || !user) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="amp-page-state" role="status" aria-label={t("加载中", "Loading")}>
         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -1372,7 +1365,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           />
           </label>
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary" onClick={() => project_dialog_ref.current?.close()}>
+            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" onClick={() => project_dialog_ref.current?.close()}>
               {t("取消", "Cancel")}
             </button>
             <button
@@ -1417,7 +1410,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
               className="amp-workspace-control w-full" value={rename_name} disabled={renaming}
               onChange={(event) => set_rename_name(event.target.value)} />
             <div className="mt-6 flex justify-end gap-3">
-              <button type="button" className="amp-button amp-button-secondary" disabled={renaming}
+              <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
                 onClick={() => rename_dialog_ref.current?.close()}>{t("取消", "Cancel")}</button>
               <button type="submit" className="amp-button amp-button-primary" disabled={renaming || !rename_name.trim()}>
                 {renaming ? t("保存中...", "Saving...") : t("保存", "Save")}
@@ -1748,7 +1741,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
             <strong>{t("{count} 条活动", "{count} activities", {
               count: messages.length + activities.length,
             })}</strong>
-            <ol>
+            <ol className={messages.length === 0 && activities.length === 0 ? "amp-content-activity-empty" : undefined}>
               {messages.length > 0 ? messages.map((message, index) => (
                 <li key={index}>
                   <span>{message.role === "user" ? t("你：", "You:") : "AI："}</span>
@@ -1850,7 +1843,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
               onChange={(event) => set_rewrite_message(event.target.value)}
               rows={4} autoFocus disabled={Boolean(reply_action)}
               aria-label={t("编辑最新消息", "Edit latest message")}
-              className="mt-4 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100" />
+              className="mt-4 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100" />
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" disabled={Boolean(reply_action)}
                 onClick={() => set_show_rewrite_modal(false)}
@@ -1884,10 +1877,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                   <button
                     key={card.id}
                     onClick={() => set_modify_target_index(i)}
-                    className={`p-2 rounded-xl text-center transition-all cursor-pointer ${
+                    className={`border p-2 rounded-xl text-center transition-all cursor-pointer ${
                       i === modify_target_index
-                        ? "ring-2 ring-offset-1 ring-blue-200 dark:ring-blue-700/80"
-                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                        ? "border-blue-500"
+                        : "border-transparent bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     }`}
                     style={i === modify_target_index
                       ? { backgroundColor: meta.tintColor, color: meta.textColor }
@@ -1907,7 +1900,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
               onChange={(e) => set_modify_input(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handle_modify_card(); }}
               placeholder={t("如：缩短到100字、语气更活泼、增加emoji...", "For example: shorten to 100 characters, use a livelier tone, add emoji...")}
-              className="w-full px-3 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 mb-4"
+              className="w-full px-3 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-blue-500 mb-4"
               autoFocus
             />
 

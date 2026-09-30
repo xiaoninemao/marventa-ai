@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth_context";
@@ -19,6 +19,7 @@ const navItems: Array<{ label: string; labelEn: string; path: string; icon: Inli
   { label: "案例库", labelEn: "Case Library", path: "/case_library", icon: "case" },
   { label: "智能创作", labelEn: "Content Studio", path: "/content_generator", icon: "edit" },
   { label: "作品集", labelEn: "Portfolio", path: "/portfolio", icon: "briefcase" },
+  { label: "发布管理", labelEn: "Publishing", path: "/publishing", icon: "send" },
 ];
 
 const utilityNavItems: Array<{ label: string; labelEn: string; path: string; icon: InlineIconName }> = [
@@ -70,7 +71,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }
 
   if (loading) {
-    return <main className="flex-1 overflow-y-auto">{children}</main>;
+    return <main className="amp-redesign amp-app-pending">{children}</main>;
   }
 
   return (
@@ -142,9 +143,21 @@ export default function AppShell({ children }: { children: ReactNode }) {
               );
 
               return (
-                <Link key={item.path} href={item.path} prefetch={false} className={`amp-dashboard-nav-item ${active ? "amp-dashboard-nav-item-active" : ""}`} title={t(item.label, item.labelEn)}>
+                <Fragment key={item.path}>
+                {item.path === "/market_insight" && (
+                  <div className="amp-app-nav-divider" role="separator" aria-label={t("生产", "Production")}>
+                    <span>{t("生产", "Production")}</span>
+                  </div>
+                )}
+                <Link href={item.path} prefetch={false} className={`amp-dashboard-nav-item ${active ? "amp-dashboard-nav-item-active" : ""}`} title={t(item.label, item.labelEn)}>
                   {content}
                 </Link>
+                {item.path === "/portfolio" && (
+                  <div className="amp-app-nav-divider" role="separator" aria-label={t("运营", "Operations")}>
+                    <span>{t("运营", "Operations")}</span>
+                  </div>
+                )}
+                </Fragment>
               );
             })}
           </nav>

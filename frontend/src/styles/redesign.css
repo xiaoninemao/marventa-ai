@@ -163,7 +163,7 @@
 
 .amp-redesign .amp-input:focus {
   border-color: #3b5bff;
-  box-shadow: 0 0 0 4px rgba(59, 91, 255, 0.1);
+  box-shadow: none;
 }
 
 .amp-redesign .amp-input-icon-left,
@@ -200,7 +200,7 @@
 }
 
 .amp-redesign .amp-input-icon-button:focus-visible {
-  outline: 2px solid rgba(37, 99, 255, 0.35);
+  outline: 2px solid #175cd3;
   outline-offset: -6px;
 }
 
@@ -421,7 +421,7 @@
 }
 
 .amp-redesign .amp-modal-close:hover {
-  background: #f2f5fa;
+  background: transparent;
   color: var(--amp-text-main);
   transform: translateY(-1px);
 }
@@ -666,6 +666,38 @@
   text-overflow: ellipsis;
   transition: opacity 160ms ease, width 160ms ease;
   white-space: nowrap;
+}
+
+.amp-redesign .amp-app-nav-divider {
+  align-items: center;
+  color: #98a2b3;
+  display: flex;
+  gap: 8px;
+  margin: 6px 8px;
+  min-height: 18px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.amp-redesign .amp-app-nav-divider::before,
+.amp-redesign .amp-app-nav-divider::after {
+  background: currentColor;
+  content: "";
+  flex: 1;
+  height: 1px;
+  opacity: 0.3;
+}
+
+.amp-redesign .amp-app-nav-divider:empty {
+  gap: 0;
+}
+
+.amp-redesign.amp-app-shell-collapsed .amp-app-nav-divider {
+  gap: 0;
+}
+
+.amp-redesign.amp-app-shell-collapsed .amp-app-nav-divider > span {
+  display: none;
 }
 
 .amp-redesign.amp-app-shell-collapsed .amp-app-nav-label {
@@ -1122,11 +1154,50 @@
   min-height: 40px;
 }
 
-.amp-redesign .amp-app-content {
-  background: #f5f7fa;
+.amp-redesign.amp-app-pending {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+}
+
+.amp-redesign .amp-app-content {
+  background: #f5f7fa;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.amp-redesign .amp-page-state {
+  align-items: center;
+  color: #667085;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  font-size: 14px;
+  gap: 8px;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.amp-redesign .amp-state-page {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.amp-redesign .amp-dialog-state {
+  align-items: center;
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
 }
 
 .amp-redesign .amp-workspace-page {
@@ -1235,7 +1306,7 @@
 
 .amp-redesign .amp-workspace-control:focus {
   border-color: #84adff;
-  box-shadow: 0 0 0 3px rgba(37, 99, 255, 0.12);
+  box-shadow: none;
 }
 
 .amp-enterprise-select {
@@ -1264,8 +1335,14 @@
 .amp-enterprise-select-trigger:hover:not(:disabled),
 .amp-enterprise-select-trigger[aria-expanded="true"] {
   border-color: #84adff;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: none;
   transform: none;
+}
+
+.amp-enterprise-select-trigger:focus-visible {
+  border-color: #175cd3;
+  outline: 2px solid #175cd3;
+  outline-offset: -2px;
 }
 
 .amp-enterprise-select-trigger:disabled {
@@ -1456,6 +1533,17 @@
   transform: none;
 }
 
+.amp-redesign .amp-button-cancel,
+.amp-redesign .amp-button-cancel:hover,
+.amp-redesign .amp-button-cancel:active {
+  border: 0;
+}
+
+.amp-redesign .amp-button-cancel:focus-visible {
+  outline: 2px solid #175cd3;
+  outline-offset: 2px;
+}
+
 .amp-redesign .amp-app-content-home {
   padding: 0 28px 32px;
 }
@@ -1554,8 +1642,8 @@
 }
 
 .amp-redesign .amp-dashboard-metric-link:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.22);
-  outline-offset: 3px;
+  outline: 2px solid #175cd3;
+  outline-offset: -2px;
 }
 
 .amp-redesign .amp-dashboard-panel {

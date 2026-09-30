@@ -76,7 +76,7 @@ const quickActions = [
   { label: "市场洞察", labelEn: "Market Insight", path: "/market_insight", icon: "insight" as InlineIconName },
   { label: "案例库", labelEn: "Case Library", path: "/case_library", icon: "case" as InlineIconName },
   { label: "作品集", labelEn: "Portfolio", path: "/portfolio", icon: "briefcase" as InlineIconName },
-  { label: "组织管理", labelEn: "Organizations", path: "/organizations", icon: "organization" as InlineIconName },
+  { label: "发布管理", labelEn: "Publishing", path: "/publishing", icon: "send" as InlineIconName },
   { label: "设置", labelEn: "Settings", path: "/settings", icon: "settings" as InlineIconName },
 ];
 
@@ -165,6 +165,7 @@ export default function ModuleListing() {
                 </Link>
               ))}
               <RedesignCard className="amp-dashboard-panel amp-dashboard-quick-access">
+                <h2 className="mb-4 text-base font-semibold text-slate-950">{t("快速访问", "Quick access")}</h2>
                 <div className="amp-dashboard-quick-links">
                   {quickActions.map((item) => (
                     <Link key={item.path} href={item.path} className="text-center">
@@ -182,7 +183,7 @@ export default function ModuleListing() {
               <RedesignCard className="amp-dashboard-intro">
                 <div className="amp-dashboard-intro-copy">
                   <h2>{t("用 AI 激发营销创意，加速品牌增长", "Turn ideas into content. Build your brand with AI.")}</h2>
-                  <p>{t("智能洞察 · 案例参考 · 内容生成 · 作品管理", "Market insight · Case studies · Content creation · Portfolio management")}</p>
+                  <p>{t("智能洞察 · 案例参考 · 内容生成 · 作品与发布管理", "Market insight · Case studies · Content creation · Portfolio and publishing management")}</p>
                 </div>
                 <div className="amp-dashboard-intro-art">
                   <Image src="/assets/illustrations/dashboard-intro-art.webp" alt="" fill unoptimized loading="eager"

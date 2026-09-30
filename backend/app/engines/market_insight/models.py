@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, PrivateAttr
+
+AnalysisLocale = Literal["zh-CN", "en"]
 
 
 class CodeBlock(BaseModel):
@@ -33,6 +37,9 @@ class AIAnalysis(BaseModel):
 
 
 class ParsedDocument(BaseModel):
+    # Keep the dispatch claim with its input, not in public API serialization.
+    _analysis_attempt_id: str = PrivateAttr(default="")
+
     title: str
     source_type: str
     sections: list[Section] = []
@@ -89,3 +96,4 @@ class ManualInsightRequest(BaseModel):
 class ParseRequest(BaseModel):
     repo_url: str = Field(..., description="GitHub or GitLab repository URL")
     project_id: str
+    locale: AnalysisLocale = "zh-CN"

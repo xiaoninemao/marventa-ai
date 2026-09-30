@@ -6,7 +6,7 @@
 
 ### Turn marketing knowledge into work your team can build on.
 
-An open-source workspace for research, insight, content creation, and reusable marketing deliverables.
+An open-source workspace for research, insight, content creation, materials management, and publishing management.
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -24,6 +24,7 @@ An open-source workspace for research, insight, content creation, and reusable m
 
 | Release | Summary |
 | --- | --- |
+| [v1.2.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.2.0) | Materials management, publishing management, and improvements across existing features and the interface. |
 | v1.1.0 | Channel integrations, S3-compatible object storage, PostgreSQL production database support, and collaboration and interface improvements. |
 
 ## Product
@@ -40,7 +41,7 @@ Marventa AI brings that context into a project-centered workspace.
 Research becomes structured market insight. Cases become reusable references. Conversations become editable content cards. Final decisions become bilingual reports that remain connected to the project, the people, and the source material behind them.
 
 ```text
-Research → Understand → Create → Review → Reuse
+Research → Understand → Create → Organize materials → Arrange publication → Reuse
 ```
 
 The result is not another isolated AI response. It is a growing body of marketing knowledge your team can return to.
@@ -67,6 +68,10 @@ Reference completed insights and analyzed cases inside Content Studio. Choose a 
 
 Continue the conversation, edit individual cards, restore earlier versions, and turn approved content into a formal bilingual report with preview and PDF export.
 
+### Organize and publish
+
+Collect reusable images, videos, and copy into project material sets. Build publication plans from those materials, maintain copy with autosave, and schedule authorized Douyin publications when the backend scheduler is enabled.
+
 ## Capabilities
 
 ### Project workspaces
@@ -77,10 +82,31 @@ Continue the conversation, edit individual cards, restore earlier versions, and 
 - Creator attribution and project-aware permissions
 - Searchable project navigation across the core workflow
 
+### Materials management
+
+- Project material sets organize images, videos, and editable rich-text copy, with real-media collage covers and in-app previews.
+- Upload media or import one TXT, Markdown, PDF, or DOCX document at a time as editable copy. Imports retain readable text and supported formatting, not embedded images or complex page layouts; textless PDFs require OCR and are not supported.
+- Write and edit rich-text copy with safe, isolated previews. New copy titles come from the first sentence or non-empty line; editing the body does not change its title.
+- Rename and delete collections or individual materials without replacing existing files. Collection names are unique; duplicate filenames receive numeric suffixes.
+- Repeated file selections are detected, and original project materials remain independent of publication snapshots.
+
+### Publishing management
+
+- Create and rename project-scoped plans, then manage image or single-video media alongside a plain-text publication title and body.
+- Large image previews support insertion-based drag ordering; videos use a full-width player with controls and uncropped playback. Material imports are batched, and platform limits still apply.
+- Media changes save immediately. Title/body edits and imported copy autosave, with visible progress, failure recovery, and protection against older requests overwriting newer edits.
+- Publication settings select the channel, account, date, and time. A complete local date/time is required, with dates strictly after today; scheduled settings are locked until **Edit** is selected.
+- Cancel an existing scheduled publication or arrange a cancelled/failed plan again without deleting its content.
+- An opt-in backend scheduler uploads and creates Douyin image/video posts through official APIs, records platform results, and protects against duplicate execution.
+- Publishing and published plans lock content and settings on both server and client. Failures retain content and explain how to retry; uncertain outcomes require checking the platform first.
+
+See [Scheduled publication](#scheduled-publication) for activation, authorization requirements, platform limits, and Xiaohongshu availability.
+
 ### Market Insight
 
 - Markdown, PDF, DOCX, and repository parsing
 - Structured product and market analysis
+- Analysis follows the selected interface language, with status refresh, interruption recovery, and safe manual retries.
 - Background processing with clear completion and failure states
 - Direct use of completed insights as creative context
 
@@ -89,6 +115,7 @@ Continue the conversation, edit individual cards, restore earlier versions, and 
 - Image, video, text, and supported public-link imports
 - Background enrichment of publicly available metadata
 - On-demand structured AI analysis
+- Analysis follows the selected interface language, with consistent detail previews and upload validation.
 - Project-scoped favorites and creative references
 
 ### Content Studio
@@ -98,6 +125,7 @@ Continue the conversation, edit individual cards, restore earlier versions, and 
 - Short-video and image-text planning
 - Five structured content cards for every generation
 - Card-level editing, activity history, versioning, and rollback
+- Complete original-content previews and consistent reference-card layouts
 - Live presence for collaborators viewing the same creation
 
 ### Portfolio
@@ -123,13 +151,15 @@ Project access is deliberate and independent from organization role.
 | --- | ---: | ---: | ---: |
 | View project assets | Yes | Yes | Yes |
 | Manage an insight, case, or creation | — | Own work | All project work |
-| Manage project membership and media | — | — | Yes |
+| Edit or delete materials and publication plans | — | Own content | Yes |
+| Manage project membership | — | — | Yes |
 
 Organization administrators do not automatically inherit project-management access.
+Publication lifecycle locks also apply to creators and project managers.
 
 ## Designed for self-hosting
 
-Marventa stores business data in SQLite and feature-specific uploaded files on the local filesystem. AI services are connected through your own OpenAI-compatible credentials.
+Marventa defaults to SQLite and local uploaded files, with optional PostgreSQL and S3-compatible object storage for production. AI services are connected through your own OpenAI-compatible credentials.
 
 This gives teams control over:
 
@@ -153,9 +183,12 @@ FastAPI
           ├── Case Library
           ├── Content Studio
           ├── Portfolio
+          ├── Materials management
+          ├── Publishing management
           └── Organization and project access
           │
-          ├── SQLite + local media
+          ├── SQLite / PostgreSQL
+          ├── Local / S3-compatible media
           └── OpenAI-compatible providers
 ```
 
@@ -163,7 +196,7 @@ FastAPI
 | --- | --- |
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS |
 | Backend | FastAPI, Python 3.11+, Pydantic |
-| Storage | SQLite and local media files |
+| Storage | SQLite or PostgreSQL; local or S3-compatible media |
 | AI | OpenAI-compatible Chat Completions endpoints |
 | Browser extraction | Playwright Chromium for supported fallback flows |
 
@@ -254,10 +287,27 @@ note-publishing access. Douyin publishing requires a separately approved capabil
 must be authorized at publishing time. Connecting an account does not claim either
 publishing permission.
 
+## Scheduled publication
+
+Review existing scheduled plans before enabling the scheduler in the backend environment:
+
+```env
+PUBLISHING_SCHEDULER_ENABLED=true
+PUBLISHING_POLL_SECONDS=10
+```
+
+Restart the backend after changing configuration. The scheduler runs while the backend is running, independent of browser tabs. It is disabled by default to prevent an upgrade from unexpectedly publishing stored plans.
+
+- **Douyin image/video publishing:** requires application approval for the `video.create.bind` capability and a real account authorized for that scope. Configure the OAuth client and Fernet key above. Virtual accounts have no platform credentials and are never used for publishing requests. Expired authorization requires reconnection.
+- The adapter uses the official [video upload/create](https://developer.open-douyin.com/docs/resource/zh-CN/dop/develop/openapi/video-management/douyin/create-video/video-create) and [image upload/create](https://developer.open-douyin.com/docs/resource/zh-CN/dop/develop/openapi/video-management/douyin/create-image-text/create-image-text) APIs. Images are uploaded in saved order. Combined title, body, and tags must fit 1,000 characters; image posts allow up to 30 images and 20 MB per image. The material library itself remains unlimited.
+- Successful platform creation stores both `item_id` and the creation `video_id`, records the time, and locks the plan on both server and client. Creation acceptance is **not proof of public visibility**: platform moderation still applies.
+- Failures record a readable reason without credentials and allow manual scheduling again. Database claims and heartbeats prevent simultaneous workers from publishing the same plan. Interrupted requests are recovered as failures, not automatically resubmitted. If creation times out or its result is unclear, verify the platform account before retrying to avoid duplicates.
+- **Xiaohongshu limitation:** the official [scope documentation](https://openaccount.xiaohongshu.com/docs/scope) currently lists `write_notes` as planned and only opens `basic_info`. No verified public server-side creator upload/create contract is available. Xiaohongshu is disabled in the publication channel selector; existing plans remain viewable but must switch to Douyin before saving settings again. Account integrations are retained. Existing scheduled Xiaohongshu plans fail explicitly without a platform request; this implementation does not invent endpoints or use unofficial signing/cookie automation. A verified partner publishing specification is required to add that adapter.
+
 ## Object storage
 
 Local media remains the default for development. Production deployments can switch
-avatars, case images/videos, and market-insight source files to any S3-compatible
+avatars, case media, project materials, publication snapshots, and market-insight source files to any S3-compatible
 service, including AWS S3, Cloudflare R2, and MinIO.
 
 ```env
@@ -292,6 +342,8 @@ The migration uploads and verifies every object but retains local files. Remove 
 media only after the application has been validated against object storage.
 
 ## Production database
+
+Retired publishing-task, metric, review, global social-account, and account-memory CRUD implementations have been removed. Historical tables remain for migration, organization cleanup, and administrative export compatibility; cleanup does not delete existing stored records. Current project accounts and scheduled-publication APIs are unchanged.
 
 SQLite remains the zero-configuration default:
 
@@ -380,7 +432,7 @@ Runtime databases, uploads, logs, browser state, and environment files are exclu
 Backend:
 
 ```bash
-PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests
+PYTHONPATH=backend:backend/tests backend/.venv/bin/python -m unittest discover -s backend/tests
 backend/.venv/bin/python -m ruff check --select F,RUF100,B012,B018 backend/app backend/tests
 backend/.venv/bin/python -m vulture backend/app --min-confidence 80
 backend/.venv/bin/python -m pip check
@@ -393,7 +445,7 @@ cd frontend
 npm ci
 npm run lint
 npx tsc --noEmit
-node --test $(find src -name '*.test.ts' -type f | sort)
+npm test
 npm run build
 ```
 

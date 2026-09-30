@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth_context";
@@ -21,6 +21,7 @@ import type { ContentProject } from "@/types/publishing";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import InsightProjectSidebar from "@/components/market_insight/InsightProjectSidebar";
 import { canManageInsight } from "@/utils/insight_permissions";
+import { startPolling } from "@/utils/polling";
 
 type InsightTab = "result" | "sources";
 
@@ -56,12 +57,6 @@ export default function MarketInsightDetailPage() {
   const [sourceDownloading, setSourceDownloading] = useState(false);
   const [draft, setDraft] = useState<AIAnalysis | null>(null);
 
-  const loadInsight = useCallback(async () => {
-    const response = await fetch_history_item(insightId);
-    setInsight(response.data);
-    return response.data;
-  }, [insightId]);
-
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
   }, [authLoading, router, user]);
@@ -96,20 +91,24 @@ export default function MarketInsightDetailPage() {
   }, [insightId, locale, router, showError, user]);
 
   useEffect(() => {
-    if (insight?.status !== "analyzing") return;
-    const timer = window.setInterval(() => {
-      void loadInsight().catch((error) => {
+    if (!user || insight?.id !== insightId || insight.status !== "analyzing") return;
+    return startPolling({
+      load: () => fetch_history_item(insightId),
+      onResult: (response) => {
+        setInsight(response.data);
+        return response.data.status === "analyzing";
+      },
+      onError: (error) => {
         showError(localizeErrorMessage(error instanceof Error ? error.message : "Could not refresh insight", locale));
-      });
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [insight?.status, loadInsight, locale, showError]);
+      },
+    });
+  }, [insight?.id, insight?.status, insightId, locale, showError, user]);
 
   const retryAnalysis = async () => {
     if (!insight || retrying || !canManageInsight(user, insight)) return;
     setRetrying(true);
     try {
-      const response = await retry_history_item(insight.id);
+      const response = await retry_history_item(insight.id, locale);
       setInsight(response.data);
       setTab("result");
       showSuccess(t("已重新开始分析", "Analysis restarted"));
@@ -219,7 +218,7 @@ export default function MarketInsightDetailPage() {
   };
 
   if (authLoading || loading || !insight || !user) {
-    return <div className="p-8 text-sm text-slate-500" role="status">{t("正在加载洞察...", "Loading insight...")}</div>;
+    return <div className="amp-page-state" role="status">{t("正在加载洞察...", "Loading insight...")}</div>;
   }
 
   const analysis = insight.ai_analysis;
@@ -256,11 +255,13 @@ export default function MarketInsightDetailPage() {
               {canRetry && (
                 <button type="button" className="amp-button amp-button-secondary"
                   disabled={retrying} onClick={() => void retryAnalysis()}>
+                  <InlineIcon name="refresh" className="h-4 w-4" />
                   {retrying ? t("正在重新分析...", "Restarting...") : t("重新分析", "Retry analysis")}
                 </button>
               )}
               {canEdit && (
                 <button type="button" className="amp-button amp-button-secondary" disabled={retrying} onClick={startEditing}>
+                  <InlineIcon name="edit" className="h-4 w-4" />
                   {t("编辑", "Edit")}
                 </button>
               )}
@@ -283,7 +284,12 @@ export default function MarketInsightDetailPage() {
             </div>
           ) : !analysis ? (
             <div className="amp-projects-state amp-insight-empty-result">
-              <strong>{t("暂时没有可展示的洞察结果", "No insight result is available")}</strong>
+              <strong>{insight.status === "failed"
+                ? t("分析失败或已中断", "Analysis failed or was interrupted")
+                : t("暂时没有可展示的洞察结果", "No insight result is available")}</strong>
+              {insight.status === "failed" && <p>{canRetry
+                ? t("原始资料已保留，请点击“重新分析”重试。", "Your source material is preserved. Select Retry analysis to try again.")
+                : t("请联系创建者或项目管理员重新分析。", "Ask the creator or a project administrator to retry the analysis.")}</p>}
             </div>
           ) : editing && draft ? (
             <form className="amp-insight-edit-form" onSubmit={(event) => { event.preventDefault(); void saveInsight(); }}>
@@ -437,7 +443,7 @@ export default function MarketInsightDetailPage() {
             </div>
           </header>
           <div className="amp-insight-source-preview-body">
-            <pre>{sourcePreview?.content || t("暂无可预览内容", "No preview content available")}</pre>
+            <pre className={!sourcePreview?.content ? "amp-insight-source-preview-empty" : undefined}>{sourcePreview?.content || t("暂无可预览内容", "No preview content available")}</pre>
             {sourcePreview?.has_more && (
               <button type="button" className="amp-insight-source-preview-more"
                 disabled={previewLoadingMore} onClick={() => void loadMoreSourcePreview()}>

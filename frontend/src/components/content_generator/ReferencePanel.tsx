@@ -185,7 +185,7 @@ export default function ReferencePanel({
             <input value={search} onChange={(event) => setSearch(event.target.value)}
               aria-label={initial_tab === "insight" ? t("搜索洞察", "Search insights") : t("搜索案例", "Search cases")}
               placeholder={initial_tab === "insight" ? t("搜索洞察", "Search insights") : t("搜索案例", "Search cases")}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-8 text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100" />
+              className="h-10 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-8 text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100" />
             {search && (
               <button type="button" onClick={() => setSearch("")} aria-label={t("清除搜索", "Clear search")}
                 className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100">
@@ -202,7 +202,7 @@ export default function ReferencePanel({
                 { value: "failed", label: t("失败", "Failed") },
               ]}
               onChange={setInsightStatus} ariaLabel={t("洞察分析状态", "Insight analysis status")}
-              className="w-full shrink-0 sm:w-32" />
+              className="w-full shrink-0 whitespace-nowrap sm:w-40" />
           )}
           {initial_tab === "case" && (
             <>
@@ -212,7 +212,7 @@ export default function ReferencePanel({
                   { value: "favorites", label: t("收藏案例", "Favorite cases") },
                 ]}
                 onChange={setCaseSource} ariaLabel={t("筛选案例来源", "Filter case source")}
-                className="w-[calc(50%_-_4px)] shrink-0 sm:w-32" />
+                className="w-[calc(50%_-_4px)] min-w-40 shrink-0 whitespace-nowrap sm:w-40" />
               <EnterpriseSelect value={caseFilter}
                 options={[
                   { value: "all", label: t("全部形式", "All formats") },
@@ -225,13 +225,13 @@ export default function ReferencePanel({
           )}
         </div>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3">
           {loading ? (
-            <div className="flex h-32 items-center justify-center" role="status">
+            <div className="amp-dialog-state" role="status">
               <span className="text-sm text-zinc-500">{t("正在加载…", "Loading…")}</span>
             </div>
           ) : loadError ? (
-            <div className="flex h-40 flex-col items-center justify-center text-center" role="alert">
+            <div className="amp-dialog-state" role="alert">
               <p className="text-sm text-zinc-500">{localizeErrorMessage(loadError, locale)}</p>
               <button type="button" className="amp-button amp-button-secondary mt-3"
                 onClick={() => setLoadAttempt((current) => current + 1)}>{t("重试", "Retry")}</button>
@@ -252,7 +252,7 @@ export default function ReferencePanel({
                       aria-pressed={selected}
                       aria-label={t("选择洞察：{title}", "Select insight: {title}", { title: item.title || item.filename })}>
                       <strong title={item.title || item.filename}>{item.title || item.filename}</strong>
-                      <p>{summary}</p>
+                      <p title={summary}><span>{summary}</span></p>
                       <span className={`amp-insight-status amp-insight-status-${item.status}`}>
                         {item.status === "analyzing"
                           ? t("分析中", "Analyzing")
@@ -267,7 +267,7 @@ export default function ReferencePanel({
                   );
                 })}
               </div>
-            ) : <p className="py-12 text-center text-sm text-zinc-400">{search ? t("没有匹配的洞察", "No matching insights") : t("暂无项目洞察", "No project insights yet")}</p>
+            ) : <p className="amp-dialog-state text-sm text-zinc-400">{search ? t("没有匹配的洞察", "No matching insights") : t("暂无项目洞察", "No project insights yet")}</p>
           ) : visibleCases.length ? (
             <div className="amp-reference-card-grid">
               {visibleCases.map((item) => (
@@ -277,7 +277,7 @@ export default function ReferencePanel({
                   onOpen={() => toggleCase(item)} />
               ))}
             </div>
-          ) : <p className="py-12 text-center text-sm text-zinc-400">{search
+          ) : <p className="amp-dialog-state text-sm text-zinc-400">{search
             ? t("没有匹配的已分析案例", "No matching analyzed cases")
             : caseSource === "favorites" ? t("暂无已分析收藏案例", "No analyzed favorite cases yet") : t("暂无已分析案例", "No analyzed cases yet")}</p>}
         </main>

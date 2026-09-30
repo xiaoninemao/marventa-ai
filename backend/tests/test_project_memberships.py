@@ -696,10 +696,6 @@ class ProjectMembershipTests(unittest.TestCase):
             [item.id for item in portfolio_storage.list_scripts(self.member["id"], self.project.id)],
             [script.id],
         )
-        with self.assertRaises(ValueError):
-            publishing_storage.create_task_from_session(
-                self.member["id"], session.id, project_id=self.project.id,
-            )
 
     def test_empty_content_canvas_is_persisted_and_listed(self):
         create_response = self.client.post(
@@ -1962,6 +1958,511 @@ class ProjectMembershipTests(unittest.TestCase):
             },
         )
 
+    def test_publication_draft_requires_only_project_and_name(self):
+        portfolio_storage.init_db()
+        base = "/api/v1/publishing/publications"
+        headers = self.headers(self.owner["id"])
+        response = self.client.post(base, headers=headers, json={
+            "project_id": self.project.id, "name": "  Launch plan  ",
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        draft = response.json()["data"]
+        self.assertEqual(draft["name"], "Launch plan")
+        self.assertEqual(draft["status"], "draft")
+        self.assertEqual(draft["portfolio_id"], "")
+        self.assertEqual(draft["channel_account_id"], "")
+        self.assertEqual(draft["platform"], "")
+        self.assertFalse(draft["publishing_ready"])
+        self.assertEqual(draft["missing_scope"], "")
+        path = f"{base}/{draft['id']}"
+        self.assertEqual(self.client.get(path, headers=headers).json()["data"], draft)
+        self.assertEqual(self.client.get(
+            path, headers=self.headers(self.outsider["id"]),
+        ).status_code, 404)
+        self.assertEqual(self.client.get(base + "/unknown", headers=headers).status_code, 404)
+        for payload in ({}, {"name": " "}, {"scheduled_for": "invalid"}):
+            self.assertEqual(self.client.patch(path, headers=headers, json=payload).status_code, 400)
+        for key in ("name", "portfolio_id", "channel_account_id", "scheduled_for", "note", "status"):
+            self.assertEqual(self.client.patch(
+                path, headers=headers, json={key: None},
+            ).status_code, 422)
+        self.assertEqual(self.client.patch(
+            path, headers=headers, json={"project_id": "other"},
+        ).status_code, 422)
+        updated = self.client.patch(path, headers=headers, json={
+            "name": " Settings ", "note": " Persisted ",
+            "portfolio_id": "", "channel_account_id": "", "scheduled_for": "",
+            "status": "cancelled",
+        })
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["data"]["name"], "Settings")
+        self.assertEqual(updated.json()["data"]["note"], "Persisted")
+        self.assertEqual(self.client.get(path, headers=headers).json()["data"], updated.json()["data"])
+        self.assertEqual(self.client.patch(
+            path, headers=headers, json={"note": "Edit cancelled"},
+        ).json()["data"]["status"], "cancelled")
+        listed = self.client.get(
+            base, headers=headers, params={"project_id": self.project.id},
+        ).json()["data"]
+        self.assertEqual([item["id"] for item in listed], [draft["id"]])
+        for name in ("", "   "):
+            self.assertEqual(self.client.post(base, headers=headers, json={
+                "project_id": self.project.id, "name": name,
+            }).status_code, 400)
+        self.assertEqual(self.client.post(
+            base, headers=self.headers(self.outsider["id"]),
+            json={"project_id": self.project.id, "name": "Denied"},
+        ).status_code, 404)
+        self.assertEqual(self.client.patch(
+            f"{base}/{draft['id']}", headers=headers,
+            json={"status": "scheduled"},
+        ).status_code, 400)
+        self.assertEqual(self.client.patch(
+            f"{base}/{draft['id']}", headers=headers,
+            json={"status": "cancelled"},
+        ).status_code, 200)
+        self.assertEqual(self.client.delete(
+            f"{base}/{draft['id']}", headers=headers,
+        ).status_code, 200)
+
+    def test_publication_plans_are_project_scoped_and_creator_managed(self):
+        portfolio_storage.init_db()
+        portfolio_id = "publication-portfolio"
+        account_id = "publication-account"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO portfolio (
+                    id, user_id, title, content, source_session_id,
+                    created_at, updated_at, organization_id, project_id, status
+                ) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, 'completed')
+                """,
+                (
+                    portfolio_id, self.owner["id"], "Launch portfolio", "Content",
+                    "2026-01-01", "2026-01-01", self.organization["id"],
+                    self.project.id,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO project_channel_accounts (
+                    id, project_id, platform, account_name, platform_user_id,
+                    profile_url, notes, created_by_user_id, authorization_status,
+                    scopes, credential_blob, token_expires_at,
+                    refresh_token_expires_at, last_refreshed_at,
+                    created_at, updated_at
+                ) VALUES (?, ?, 'douyin', 'Launch account', 'open-100', '', '',
+                          ?, 'active', ?, '', '', '', '', ?, ?)
+                """,
+                (
+                    account_id, self.project.id, self.owner["id"],
+                    '["user_info"]', "2026-01-01", "2026-01-01",
+                ),
+            )
+        base = "/api/v1/publishing/publications"
+        created = self.client.post(
+            base,
+            headers=self.headers(self.owner["id"]),
+            json={
+                "project_id": self.project.id,
+                "portfolio_id": portfolio_id,
+                "channel_account_id": account_id,
+                "note": "Review before publishing",
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        plan = created.json()["data"]
+        self.assertEqual(plan["status"], "draft")
+        self.assertFalse(plan["publishing_ready"])
+        self.assertEqual(plan["missing_scope"], "video.create.bind")
+        path = f"{base}/{plan['id']}"
+        headers = self.headers(self.owner["id"])
+        self.assertEqual(self.client.post(
+            path + "/contents", headers=headers, files={"file": ("release.txt", b"Release", "text/plain")},
+        ).status_code, 200)
+        configured = self.client.patch(path, headers=headers, json={
+            "name": "Configured", "portfolio_id": portfolio_id,
+            "channel_account_id": account_id, "scheduled_for": "2026-10-02T08:30:00Z",
+            "note": "Saved settings", "status": "scheduled",
+        })
+        self.assertEqual(configured.status_code, 200, configured.text)
+        self.assertEqual(self.client.get(path, headers=headers).json()["data"], configured.json()["data"])
+        for field in ("channel_account_id", "scheduled_for"):
+            self.assertEqual(self.client.patch(
+                path, headers=headers, json={field: "", "status": "scheduled"},
+            ).status_code, 400)
+        for field in ("portfolio_id", "channel_account_id"):
+            self.assertEqual(self.client.patch(
+                path, headers=headers, json={field: "missing"},
+            ).status_code, 404)
+        other_project = publishing_storage.create_manual_project(self.owner["id"], title="Other plan project")
+        for table, row_id, field in (
+            ("portfolio", portfolio_id, "portfolio_id"),
+            ("project_channel_accounts", account_id, "channel_account_id"),
+        ):
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(f"UPDATE {table} SET project_id = ? WHERE id = ?", (other_project.id, row_id))
+            self.assertEqual(self.client.patch(
+                path, headers=headers, json={field: row_id, "status": "draft"},
+            ).status_code, 404)
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(f"UPDATE {table} SET project_id = ? WHERE id = ?", (self.project.id, row_id))
+        self.assertEqual(self.client.get(path, headers=self.headers(self.admin["id"])).status_code, 404)
+        other_org = auth_storage.create_organization(self.owner["id"], "Plan scope organization")
+        auth_storage.switch_organization(self.owner["id"], other_org["id"])
+        self.assertEqual(self.client.get(path, headers=headers).status_code, 404)
+        self.assertEqual(self.client.patch(path, headers=headers, json={"note": "Denied"}).status_code, 404)
+        auth_storage.switch_organization(self.owner["id"], self.organization["id"])
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE portfolio SET status = 'generating' WHERE id = ?", (portfolio_id,))
+        self.assertEqual(self.client.patch(
+            path, headers=headers, json={"note": "Plan content is independent of legacy work"},
+        ).status_code, 200)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE portfolio SET status = 'completed' WHERE id = ?", (portfolio_id,))
+            conn.execute("UPDATE project_channel_accounts SET authorization_status = 'revoked' WHERE id = ?", (account_id,))
+        self.assertEqual(self.client.patch(path, headers=headers, json={"note": "Invalid account"}).status_code, 404)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE project_channel_accounts SET authorization_status = 'active' WHERE id = ?", (account_id,))
+        cleared = self.client.patch(path, headers=headers, json={
+            "portfolio_id": "", "channel_account_id": "", "scheduled_for": "", "status": "draft",
+        })
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual(cleared.json()["data"]["portfolio_id"], "")
+        self.assertEqual(self.client.patch(path, headers=headers, json={
+            "portfolio_id": portfolio_id, "channel_account_id": account_id,
+            "scheduled_for": "2026-10-02T08:30:00Z", "status": "scheduled",
+        }).status_code, 200)
+
+        self.assertEqual(self.client.post(
+            f"/api/v1/publishing/projects/{self.project.id}/members",
+            headers=self.headers(self.owner["id"]),
+            json={"email": "member@example.com", "role": "member"},
+        ).status_code, 200)
+        member_headers = self.headers(self.member["id"])
+        self.assertEqual(self.client.get(path, headers=member_headers).status_code, 200)
+        self.assertEqual(self.client.patch(
+            path, headers=member_headers, json={"name": "Denied"},
+        ).status_code, 403)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE project_memberships SET role = 'admin' WHERE project_id = ? AND user_id = ?",
+                (self.project.id, self.member["id"]),
+            )
+        self.assertEqual(self.client.patch(path, headers=member_headers, json={"note": "Admin edit"}).status_code, 200)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE project_memberships SET role = 'member' WHERE project_id = ? AND user_id = ?",
+                (self.project.id, self.member["id"]),
+            )
+            conn.execute("UPDATE project_publications SET status = 'published' WHERE id = ?", (plan["id"],))
+        self.assertEqual(self.client.patch(path, headers=headers, json={"name": "Published edit"}).status_code, 400)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE project_publications SET status = 'scheduled' WHERE id = ?", (plan["id"],))
+        listed = self.client.get(
+            base,
+            headers=member_headers,
+            params={"project_id": self.project.id},
+        )
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([item["id"] for item in listed.json()["data"]], [plan["id"]])
+        self.assertEqual(self.client.delete(
+            f"{base}/{plan['id']}",
+            headers=member_headers,
+        ).status_code, 403)
+        cancelled = self.client.patch(
+            f"{base}/{plan['id']}",
+            headers=self.headers(self.owner["id"]),
+            json={"status": "cancelled"},
+        )
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(cancelled.json()["data"]["status"], "cancelled")
+        self.assertEqual(self.client.delete(
+            f"{base}/{plan['id']}",
+            headers=self.headers(self.owner["id"]),
+        ).status_code, 200)
+        recreated = self.client.post(
+            base,
+            headers=self.headers(self.owner["id"]),
+            json={
+                "project_id": self.project.id,
+                "portfolio_id": portfolio_id,
+                "channel_account_id": account_id,
+            },
+        )
+        self.assertEqual(recreated.status_code, 200, recreated.text)
+        self.assertEqual(self.client.delete(
+            f"/api/v1/publishing/projects/{self.project.id}"
+            f"/channel-accounts/{account_id}",
+            headers=self.headers(self.owner["id"]),
+        ).status_code, 200)
+        self.assertEqual(
+            self.client.get(base, headers=member_headers).json()["data"],
+            [],
+        )
+
+    def test_material_set_counts_reflect_uploads_rename_and_deletion(self):
+        base = f"/api/v1/publishing/projects/{self.project.id}"
+        headers = self.headers(self.owner["id"])
+        created = self.client.post(
+            base + "/material-sets", headers=headers, json={"name": "Summary"},
+        ).json()["data"]
+        other = self.client.post(
+            base + "/material-sets", headers=headers, json={"name": "Empty"},
+        ).json()["data"]
+        self.assertEqual(created["material_count"], 0)
+        items = []
+        for filename, mime in (("image.gif", "image/gif"), ("video.mp4", "video/mp4")):
+            response = self.client.post(
+                base + "/materials", headers=headers,
+                data={"material_set_id": created["id"]},
+                files={"file": (filename, b"summary-test", mime)},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            items.append(response.json()["data"])
+        summaries = {
+            item["id"]: item
+            for item in self.client.get(base + "/materials", headers=headers).json()["data"]
+        }
+        self.assertEqual(summaries[created["id"]]["material_count"], 2)
+        self.assertEqual(summaries[created["id"]]["image_count"], 1)
+        self.assertEqual(summaries[created["id"]]["video_count"], 1)
+        self.assertEqual(summaries[other["id"]]["material_count"], 0)
+        self.assertEqual(summaries[other["id"]]["covers"], [])
+        self.assertEqual(
+            {cover["id"] for cover in summaries[created["id"]]["covers"]},
+            {item["id"] for item in items},
+        )
+        for cover in summaries[created["id"]]["covers"]:
+            self.assertIn("/media/project-materials/", cover["file_url"])
+        renamed = self.client.put(
+            base + f"/material-sets/{created['id']}", headers=headers,
+            json={"name": "Renamed summary"},
+        )
+        self.assertEqual(renamed.status_code, 200, renamed.text)
+        self.assertEqual(renamed.json()["data"]["material_count"], 2)
+        self.assertEqual(self.client.delete(
+            base + f"/materials/{items[0]['id']}", headers=headers,
+        ).status_code, 200)
+        summaries = {
+            item["id"]: item
+            for item in self.client.get(base + "/materials", headers=headers).json()["data"]
+        }
+        self.assertEqual(summaries[created["id"]]["material_count"], 1)
+        self.assertEqual(summaries[created["id"]]["image_count"], 0)
+        self.assertEqual(summaries[created["id"]]["video_count"], 1)
+        self.assertEqual(
+            [cover["id"] for cover in summaries[created["id"]]["covers"]],
+            [items[1]["id"]],
+        )
+
+    def test_material_uploads_automatically_number_duplicate_names(self):
+        base = f"/api/v1/publishing/projects/{self.project.id}"
+        headers = self.headers(self.owner["id"])
+        collections = []
+        for name in ("First set", "Second set"):
+            response = self.client.post(
+                base + "/material-sets", headers=headers, json={"name": name},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            collections.append(response.json()["data"]["id"])
+
+        uploaded = []
+        for filename, expected_name in (
+            ("cover.png", "cover"),
+            ("cover.png", "cover (1)"),
+            ("cover (2).png", "cover (2)"),
+            ("cover.jpg", "cover (3)"),
+        ):
+            response = self.client.post(
+                base + "/materials", headers=headers,
+                data={"material_set_id": collections[0]},
+                files={"file": (filename, expected_name.encode(), "image/png")},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            material = response.json()["data"]
+            self.assertEqual(material["name"], expected_name)
+            self.assertEqual(
+                (self.media_root / material["object_key"]).read_bytes(),
+                expected_name.encode(),
+            )
+            uploaded.append(material)
+
+        self.assertEqual(len({item["object_key"] for item in uploaded}), 4)
+        for item in uploaded:
+            self.assertEqual(
+                (self.media_root / item["object_key"]).read_bytes(),
+                item["name"].encode(),
+            )
+        response = self.client.post(
+            base + "/materials", headers=headers,
+            data={"material_set_id": collections[1]},
+            files={"file": ("cover.png", b"other collection", "image/png")},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["name"], "cover")
+        self.assertEqual(self.client.put(
+            base + f"/materials/{uploaded[-1]['id']}", headers=headers,
+            json={"name": "cover"},
+        ).status_code, 400)
+        listed = self.client.get(
+            base + "/materials", headers=headers,
+            params={"material_set_id": collections[0]},
+        )
+        self.assertEqual(
+            [item["name"] for item in listed.json()["data"]],
+            ["cover", "cover (1)", "cover (2)", "cover (3)"],
+        )
+        summaries = self.client.get(base + "/materials", headers=headers).json()["data"]
+        first_set = next(item for item in summaries if item["id"] == collections[0])
+        self.assertEqual(len(first_set["covers"]), 3)
+        self.assertTrue({cover["id"] for cover in first_set["covers"]} <= {item["id"] for item in uploaded})
+
+    def test_material_set_names_are_unique_on_create_and_rename(self):
+        base = f"/api/v1/publishing/projects/{self.project.id}"
+        headers = self.headers(self.owner["id"])
+        created = self.client.post(
+            base + "/material-sets", headers=headers, json={"name": "Campaign"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        original_id = created.json()["data"]["id"]
+        for name in ("Campaign", "  Campaign  "):
+            with self.subTest(name=name):
+                duplicate = self.client.post(
+                    base + "/material-sets", headers=headers, json={"name": name},
+                )
+                self.assertEqual(duplicate.status_code, 400, duplicate.text)
+                self.assertEqual(
+                    duplicate.json()["detail"],
+                    "A material set with this name already exists",
+                )
+        second = self.client.post(
+            base + "/material-sets", headers=headers, json={"name": "Second"},
+        )
+        self.assertEqual(second.status_code, 200, second.text)
+        duplicate_rename = self.client.put(
+            base + f"/material-sets/{second.json()['data']['id']}",
+            headers=headers, json={"name": " Campaign "},
+        )
+        self.assertEqual(duplicate_rename.status_code, 400, duplicate_rename.text)
+        self.assertEqual(
+            duplicate_rename.json()["detail"],
+            "A material set with this name already exists",
+        )
+        unchanged = self.client.put(
+            base + f"/material-sets/{original_id}",
+            headers=headers, json={"name": " Campaign "},
+        )
+        self.assertEqual(unchanged.status_code, 200, unchanged.text)
+        listed = self.client.get(base + "/materials", headers=headers)
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(
+            {item["name"] for item in listed.json()["data"]},
+            {"Campaign", "Second"},
+        )
+
+    def test_project_materials_are_independent_project_scoped_files(self):
+        base = f"/api/v1/publishing/projects/{self.project.id}/materials"
+        material_set = self.client.post(
+            f"/api/v1/publishing/projects/{self.project.id}/material-sets",
+            headers=self.headers(self.owner["id"]),
+            json={"name": "Campaign"},
+        )
+        self.assertEqual(material_set.status_code, 200, material_set.text)
+        material_set_data = material_set.json()["data"]
+        self.assertEqual(material_set_data["node_type"], "collection")
+        self.assertEqual(self.client.post(
+            base,
+            headers=self.headers(self.owner["id"]),
+            data={"material_set_id": material_set_data["id"]},
+            files={"file": ("notes.html", b"<p>copy</p>", "text/html")},
+        ).status_code, 400)
+        uploaded = self.client.post(
+            base,
+            headers=self.headers(self.owner["id"]),
+            data={"material_set_id": material_set_data["id"]},
+            files={
+                "file": (
+                    "campaign-cover.png",
+                    b"\x89PNG\r\n\x1a\nproject-material",
+                    "image/png",
+                ),
+            },
+        )
+        self.assertEqual(uploaded.status_code, 200, uploaded.text)
+        material = uploaded.json()["data"]
+        self.assertEqual(material["media_type"], "image")
+        self.assertEqual(material["parent_id"], material_set_data["id"])
+        self.assertEqual(material["node_type"], "file")
+        self.assertEqual(material["name"], "campaign-cover")
+        self.assertIn("/media/project-materials/", material["file_url"])
+        stored_file = self.media_root / material["object_key"]
+        self.assertEqual(stored_file.read_bytes(), b"\x89PNG\r\n\x1a\nproject-material")
+        self.assertEqual(self.client.post(
+            f"/api/v1/publishing/projects/{self.project.id}/members",
+            headers=self.headers(self.owner["id"]),
+            json={"email": "member@example.com", "role": "member"},
+        ).status_code, 200)
+        member_headers = self.headers(self.member["id"])
+        material_path = f"{base}/{material['id']}"
+        self.assertEqual(self.client.put(
+            material_path,
+            headers=member_headers,
+            json={"name": "Member rename.png"},
+        ).status_code, 403)
+        renamed_material = self.client.put(
+            material_path,
+            headers=self.headers(self.owner["id"]),
+            json={"name": "Campaign hero.png"},
+        )
+        self.assertEqual(renamed_material.status_code, 200, renamed_material.text)
+        self.assertEqual(renamed_material.json()["data"]["name"], "Campaign hero.png")
+        material_set_path = (
+            f"/api/v1/publishing/projects/{self.project.id}"
+            f"/material-sets/{material_set_data['id']}"
+        )
+        self.assertEqual(self.client.put(
+            material_set_path,
+            headers=member_headers,
+            json={"name": "Member rename"},
+        ).status_code, 403)
+        renamed = self.client.put(
+            material_set_path,
+            headers=self.headers(self.owner["id"]),
+            json={"name": "Campaign assets"},
+        )
+        self.assertEqual(renamed.status_code, 200, renamed.text)
+        self.assertEqual(renamed.json()["data"]["name"], "Campaign assets")
+        listed = self.client.get(base, headers=member_headers)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in listed.json()["data"]],
+            [material_set_data["id"]],
+        )
+        material_list = self.client.get(
+            base,
+            headers=member_headers,
+            params={"material_set_id": material_set_data["id"]},
+        )
+        self.assertEqual(
+            [item["id"] for item in material_list.json()["data"]],
+            [material["id"]],
+        )
+        self.assertEqual(self.client.delete(
+            f"{base}/{material_set_data['id']}",
+            headers=member_headers,
+        ).status_code, 403)
+        self.assertEqual(self.client.get(
+            "/api/v1/publishing/projects/unknown/materials",
+            headers=self.headers(self.outsider["id"]),
+        ).status_code, 404)
+        self.assertEqual(self.client.delete(
+            f"{base}/{material_set_data['id']}",
+            headers=self.headers(self.owner["id"]),
+        ).status_code, 200)
+        self.assertFalse(stored_file.exists())
+        self.assertEqual(self.client.get(base, headers=member_headers).json()["data"], [])
+
     def test_project_member_cannot_customize_delete_or_invite(self):
         project_path = f"/api/v1/publishing/projects/{self.project.id}"
         self.assertEqual(self.client.post(
@@ -1990,9 +2491,17 @@ class ProjectMembershipTests(unittest.TestCase):
         )
 
     def test_project_owner_can_delete_and_publish_tasks_are_unlinked(self):
-        task = publishing_storage.create_task_from_project(
-            self.owner["id"], self.project.id,
-        )
+        task_id = "legacy-project-task"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """INSERT INTO publish_tasks (
+                    id, user_id, project_id, source_session_id, created_at, updated_at
+                ) VALUES (?, ?, ?, '', ?, ?)""",
+                (
+                    task_id, self.owner["id"], self.project.id,
+                    "2025-01-01 00:00:00", "2025-01-01 00:00:00",
+                ),
+            )
         insight = market_insight_storage.save_manual_insight(
             market_insight_storage.AIAnalysis(product_name="Deleted with project"),
             owner_id=self.owner["id"],
@@ -2039,7 +2548,12 @@ class ProjectMembershipTests(unittest.TestCase):
             200,
         )
         self.assertIsNone(publishing_storage.get_project(self.project.id))
-        self.assertEqual(publishing_storage.get_task(task.id).project_id, "")
+        with sqlite3.connect(self.db_path) as conn:
+            archived_task = conn.execute(
+                "SELECT project_id FROM publish_tasks WHERE id = ?", (task_id,),
+            ).fetchone()
+        self.assertIsNotNone(archived_task)
+        self.assertEqual(archived_task[0], "")
         self.assertIsNone(market_insight_storage.get_insight(insight.id))
         self.assertIsNone(case_storage.get_case(case.id))
         self.assertIsNone(content_storage.get_session(session.id))

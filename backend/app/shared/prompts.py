@@ -1,6 +1,5 @@
 from typing import Literal
 
-
 MASTER_SYSTEM_PROMPT = """You are Marventa AI's senior marketing strategist and content specialist.
 
 Scope and working principles:
@@ -35,6 +34,7 @@ def build_system_prompt(
     task_instructions: str,
     *,
     language_mode: Literal["default", "edit", "bilingual_report"] = "default",
+    output_locale: Literal["zh-CN", "en"] | None = None,
 ) -> str:
     if language_mode == "default":
         language_instruction = OUTPUT_LANGUAGE_INSTRUCTION
@@ -44,4 +44,15 @@ def build_system_prompt(
         language_instruction = BILINGUAL_REPORT_INSTRUCTION
     else:
         raise ValueError(f"Unsupported prompt language mode: {language_mode}")
+    if output_locale is not None:
+        if output_locale not in {"zh-CN", "en"}:
+            raise ValueError(f"Unsupported output locale: {output_locale}")
+        if language_mode != "bilingual_report":
+            language = "Simplified Chinese" if output_locale == "zh-CN" else "English"
+            language_instruction = (
+                f"The user's explicitly requested output language is {language} ({output_locale}). "
+                "Write all natural-language output values in this language regardless of the source language. "
+                "Keep JSON field names, identifiers, original product and brand names, "
+                "and canonical platform values unchanged."
+            )
     return "\n\n".join((MASTER_SYSTEM_PROMPT, task_instructions.strip(), language_instruction))

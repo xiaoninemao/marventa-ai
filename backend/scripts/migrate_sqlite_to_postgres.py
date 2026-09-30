@@ -27,6 +27,10 @@ _TABLE_ORDER = (
     "creation_presence_leases",
     "portfolio",
     "project_channel_accounts",
+    "project_publications",
+    "publication_executions",
+    "publication_contents",
+    "project_materials",
     "project_channel_authorization_states",
     "notifications",
     "account_memories",
@@ -40,6 +44,7 @@ _SCHEMA_METADATA_TABLES = {
     "auth_schema_migrations",
     "storage_schema_migrations",
     "market_insight_migrations",
+    "publishing_migrations",
 }
 
 
@@ -56,7 +61,9 @@ def _initialize_postgres(database_url: str) -> None:
     from app.auth.storage import init_users_db
     from app.engines.case_library.import_tasks import init_import_tasks_db
     from app.engines.case_library.storage import init_db as init_case_library_db
-    from app.engines.content_generator.storage import init_db as init_content_generator_db
+    from app.engines.content_generator.storage import (
+        init_db as init_content_generator_db,
+    )
     from app.engines.market_insight.storage import init_db as init_market_insight_db
     from app.engines.portfolio.storage import init_db as init_portfolio_db
     from app.engines.publishing.storage import init_db as init_publishing_db
@@ -186,6 +193,23 @@ def main() -> int:
             ):
                 target.execute(insert_sql, tuple(row[column] for column in columns))
         print(f"copied {table}: {source_counts[table]}")
+
+    from app.engines.publishing.storage import (
+        backfill_publication_copy_text,
+        backfill_publication_media_modes,
+        backfill_publication_positions,
+    )
+
+    with target:
+        backfill_publication_copy_text(target)
+        for table, column, backfill in (
+            ("project_publications", "media_mode", backfill_publication_media_modes),
+            ("publication_contents", "position", backfill_publication_positions),
+        ):
+            if table in source_tables and column not in {
+                row["name"] for row in source.execute(f"PRAGMA table_info({table})").fetchall()
+            }:
+                backfill(target)
 
     identity_columns = target.execute(
         """

@@ -30,16 +30,58 @@ class PublishingRetirementTests(unittest.TestCase):
         self.user = auth_storage.create_user("owner", "owner@example.com", "test-hash")
         self.headers = {"Authorization": "Bearer " + create_access_token(self.user["id"])}
         self.project = storage.create_manual_project(self.user["id"], title="Existing project")
-        self.task = storage.create_task_from_project(self.user["id"], self.project.id)
-        self.account = storage.create_social_account(
-            self.user["id"], "xiaohongshu", "Existing account", "",
-            credential_blob="synthetic-legacy-credential",
-        )
-        self.memory = storage.create_account_memory(
-            self.user["id"], "Existing account", brand_positioning="Retired private context",
-        )
-        storage.upsert_publish_metric(self.task.id, self.user["id"], views=100)
-        storage.generate_review_for_task(self.task.id)
+        self.task = SimpleNamespace(id="legacy-task")
+        self.account = SimpleNamespace(id="legacy-account", account_name="Existing account")
+        self.memory = SimpleNamespace(id="legacy-memory", brand_positioning="Retired private context")
+        now = "2025-01-01 00:00:00"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """INSERT INTO publish_tasks (
+                    id, user_id, project_id, source_session_id, status,
+                    final_snapshot, metrics, review, created_at, updated_at
+                ) VALUES (?, ?, ?, '', 'reviewed', ?, ?, ?, ?, ?)""",
+                (
+                    self.task.id, self.user["id"], self.project.id,
+                    '{"title":"Historical draft"}', '{"views":100}',
+                    '{"summary":"Historical review"}', now, now,
+                ),
+            )
+            conn.execute(
+                """INSERT INTO social_accounts (
+                    id, user_id, platform, account_name, session_dir,
+                    credential_blob, profile, created_at, updated_at
+                ) VALUES (?, ?, 'xiaohongshu', ?, '', ?, ?, ?, ?)""",
+                (
+                    self.account.id, self.user["id"], self.account.account_name,
+                    "synthetic-legacy-credential", '{"nickname":"Historical account"}', now, now,
+                ),
+            )
+            conn.execute(
+                """INSERT INTO account_memories (
+                    id, user_id, account_name, brand_positioning,
+                    ai_operation_lessons, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    self.memory.id, self.user["id"], self.account.account_name,
+                    self.memory.brand_positioning, '["Historical lesson"]', now, now,
+                ),
+            )
+            conn.execute(
+                """INSERT INTO publish_metrics (
+                    id, task_id, user_id, views, raw_data, created_at, updated_at
+                ) VALUES ('legacy-metric', ?, ?, 100, ?, ?, ?)""",
+                (self.task.id, self.user["id"], '{"views":100}', now, now),
+            )
+            conn.execute(
+                """INSERT INTO publish_reviews (
+                    id, task_id, user_id, summary, success_reasons, created_at, updated_at
+                ) VALUES ('legacy-review', ?, ?, ?, ?, ?, ?)""",
+                (
+                    self.task.id, self.user["id"], "Historical review",
+                    '["Historical reason"]', now, now,
+                ),
+            )
+        storage.init_db()
         self.app = FastAPI()
         self.app.include_router(publishing.router)
         self.app.include_router(content_generator.router)
@@ -98,6 +140,14 @@ class PublishingRetirementTests(unittest.TestCase):
                 "/api/v1/publishing/account_memories",
             )), path)
         expected_project_methods = {
+            "/publications": {"get", "post"},
+            "/publications/{plan_id}": {"get", "patch", "delete"},
+            "/publications/{plan_id}/copy": {"get", "patch"},
+            "/publications/{plan_id}/contents": {"get", "post"},
+            "/publications/{plan_id}/contents/from-materials": {"post"},
+            "/publications/{plan_id}/contents/order": {"patch"},
+            "/publications/{plan_id}/contents/{content_id}/content": {"get"},
+            "/publications/{plan_id}/contents/{content_id}": {"delete"},
             "/projects": {"get"},
             "/projects/manual": {"post"},
             "/projects/from_session": {"post"},
@@ -108,6 +158,12 @@ class PublishingRetirementTests(unittest.TestCase):
             "/projects/{project_id}/channel-accounts/authorization": {"post"},
             "/projects/{project_id}/channel-accounts/authorization/xiaohongshu/poll": {"post"},
             "/projects/{project_id}/channel-accounts/{account_id}": {"delete"},
+            "/projects/{project_id}/materials": {"get", "post"},
+            "/projects/{project_id}/materials/copy": {"post"},
+            "/projects/{project_id}/materials/{material_id}/content": {"get", "patch"},
+            "/projects/{project_id}/material-sets": {"post"},
+            "/projects/{project_id}/material-sets/{material_set_id}": {"put"},
+            "/projects/{project_id}/materials/{material_id}": {"delete", "put"},
             "/channel-accounts/oauth/douyin/callback": {"get"},
         }
         for path, methods in expected_project_methods.items():
@@ -115,6 +171,15 @@ class PublishingRetirementTests(unittest.TestCase):
         self.assertNotIn("/api/v1/publishing/projects/{project_id}/media", paths)
         self.assertNotIn("/api/v1/publishing/projects/{project_id}/media/{media_id}", paths)
         models = schema["components"]["schemas"]
+        copy_model = models["ProjectMaterialCopyCreate"]
+        self.assertEqual(set(copy_model["required"]), {"material_set_id", "title", "content"})
+        self.assertEqual(copy_model["properties"]["title"]["maxLength"], 255)
+        self.assertEqual(copy_model["properties"]["content"]["maxLength"], 1024 * 1024)
+        self.assertEqual(
+            set(models["ProjectMaterialContentUpdate"]["required"]), {"content"},
+        )
+        self.assertEqual(set(models["ProjectMaterialContentUpdate"]["properties"]), {"content"})
+        self.assertFalse(models["ProjectMaterialContentUpdate"]["additionalProperties"])
         for name in (
             "CreateTaskRequest", "CreateTaskFromProjectRequest", "UpdateTaskRequest",
             "GenerateReviewRequest", "UpsertMetricRequest", "PublishExecuteRequest",
@@ -146,6 +211,23 @@ class PublishingRetirementTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertIs(getattr(storage, name), getattr(project_memberships, name))
         self.assertIs(storage.ContentProject, publishing_models.ContentProject)
+
+    def test_retired_storage_apis_and_record_models_are_removed(self):
+        for name in (
+            "create_task_from_session", "create_task_from_project", "get_task", "update_task",
+            "upsert_publish_metric", "get_publish_metric", "save_publish_review",
+            "get_publish_review", "create_social_account", "list_social_accounts",
+            "get_social_account", "update_social_account", "create_account_memory",
+            "get_account_memory", "upsert_account_memory", "generate_review_for_task",
+        ):
+            with self.subTest(api=name):
+                self.assertFalse(hasattr(storage, name))
+        for name in (
+            "PublishTask", "PublishMetric", "PublishReview",
+            "SocialAccount", "AccountMemory", "ReviewConclusion",
+        ):
+            with self.subTest(model=name):
+                self.assertFalse(hasattr(publishing_models, name))
 
     def test_project_crud_still_works_on_legacy_namespace(self):
         base = "/api/v1/publishing/projects"

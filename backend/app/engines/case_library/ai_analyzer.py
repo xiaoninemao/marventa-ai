@@ -3,12 +3,22 @@ from __future__ import annotations
 import base64
 import os
 import threading
+from typing import Literal
+
 from openai import OpenAI
-from app.config import CASE_ANALYSIS_AI_API_KEY, CASE_ANALYSIS_AI_BASE_URL, CASE_ANALYSIS_AI_MODEL
-from app.engines.case_library.models import CaseAIAnalysis, validate_generated_case_analysis
+
+from app.config import (
+    CASE_ANALYSIS_AI_API_KEY,
+    CASE_ANALYSIS_AI_BASE_URL,
+    CASE_ANALYSIS_AI_MODEL,
+)
+from app.engines.case_library.models import (
+    CaseAIAnalysis,
+    validate_generated_case_analysis,
+)
 from app.shared.prompts import build_system_prompt
 
-SYSTEM_PROMPT = build_system_prompt("""Analyze the supplied short-video or image-text marketing case and extract actionable insights grounded in its title, description, tags, content type, category, and supplied images or video screenshots.
+TASK_INSTRUCTIONS = """Analyze the supplied short-video or image-text marketing case and extract actionable insights grounded in its title, description, tags, content type, category, and supplied images or video screenshots.
 
 Return these structured fields:
 1. content_analysis: a comprehensive analysis of structure, core message, visual style, and storytelling; at least 80 characters.
@@ -30,7 +40,9 @@ For video cases, also provide these fields with at least 30 characters each:
 - script_structure: narrative organization of subtitles, voiceover, or copy.
 For non-video cases, return empty strings for all four video-specific fields.
 
-Develop every text field fully and respect all array-size limits. Highlights, improvements, related approaches, and headline suggestions must each contain at least 6 characters per item. Ground every conclusion in the supplied evidence; avoid generic claims. Do not use Markdown formatting in the output.""")
+Develop every text field fully and respect all array-size limits. Highlights, improvements, related approaches, and headline suggestions must each contain at least 6 characters per item. Ground every conclusion in the supplied evidence; avoid generic claims. Do not use Markdown formatting in the output."""
+
+SYSTEM_PROMPT = build_system_prompt(TASK_INSTRUCTIONS, output_locale="zh-CN")
 
 ANALYSIS_PROMPT = """Analyze this marketing case and return a structured JSON analysis.
 
@@ -91,6 +103,8 @@ def analyze_case(
     tags: list[str],
     image_paths: list[str] | None = None,
     video_url: str = "",
+    *,
+    locale: Literal["zh-CN", "en"] = "zh-CN",
 ) -> CaseAIAnalysis:
     video_hint = ""
     if content_type == "video" and video_url:
@@ -124,7 +138,8 @@ def analyze_case(
 
     client = _get_client()
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": SYSTEM_PROMPT if locale == "zh-CN"
+         else build_system_prompt(TASK_INSTRUCTIONS, output_locale=locale)},
         {"role": "user", "content": user_content},
     ]
     last_error: Exception | None = None
@@ -167,6 +182,8 @@ def analyze_async(
     image_paths: list[str] | None = None,
     video_url: str = "",
     cleanup_paths: list[str] | None = None,
+    *,
+    locale: Literal["zh-CN", "en"] = "zh-CN",
 ) -> None:
     """Run AI analysis in a background thread and update the DB on completion."""
 
@@ -175,7 +192,7 @@ def analyze_async(
         try:
             analysis = analyze_case(
                 title, content_type, description, tags,
-                image_paths=image_paths, video_url=video_url,
+                image_paths=image_paths, video_url=video_url, locale=locale,
             )
             update_case_ai(case_id, "completed", analysis)
         except Exception:

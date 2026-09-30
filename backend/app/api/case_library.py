@@ -4,22 +4,44 @@ import os
 import re
 import tempfile
 import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends, Form, Request
-from pydantic import BaseModel
-from app.engines.case_library.models import CaseUpdate
-from app.engines.case_library.storage import (
-    create_case, list_user_cases, list_favorited_cases,
-    get_case, update_case, delete_case,
+from typing import Annotated, Literal
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
 )
-from app.engines.case_library.favorites import add_favorite, remove_favorite, is_favorited, get_favorite_ids
-from app.shared.response import success_response
+from pydantic import BaseModel
+
 from app.auth.dependencies import (
     get_current_user,
     get_optional_user,
 )
 from app.config import (
-    ALLOWED_VIDEO_EXTENSIONS, ALLOWED_IMAGE_EXTENSIONS,
-    MAX_VIDEO_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES,
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_VIDEO_EXTENSIONS,
+    MAX_IMAGE_SIZE_BYTES,
+    MAX_VIDEO_SIZE_BYTES,
+)
+from app.engines.case_library.favorites import (
+    add_favorite,
+    get_favorite_ids,
+    is_favorited,
+    remove_favorite,
+)
+from app.engines.case_library.models import CaseUpdate
+from app.engines.case_library.storage import (
+    create_case,
+    delete_case,
+    get_case,
+    list_favorited_cases,
+    list_user_cases,
+    update_case,
 )
 from app.media_storage import (
     delete_media,
@@ -28,6 +50,7 @@ from app.media_storage import (
     media_key_from_url,
     put_media_bytes,
 )
+from app.shared.response import success_response
 
 router = APIRouter(prefix="/api/v1/case_library", tags=["case_library"])
 
@@ -361,6 +384,7 @@ async def delete_case_item(
 @router.post("/cases/{case_id}/analyze")
 async def analyze_case_item(
     case_id: str,
+    locale: Annotated[Literal["zh-CN", "en"], Query()] = "zh-CN",
     current_user=Depends(get_current_user),
     images: list[UploadFile] | None = File(None),
 ):
@@ -369,8 +393,8 @@ async def analyze_case_item(
     if case.ai_status == "analyzing":
         raise HTTPException(status_code=409, detail="AI analysis is already in progress")
 
-    from app.engines.case_library.storage import update_case_ai
     from app.engines.case_library.ai_analyzer import analyze_async
+    from app.engines.case_library.storage import update_case_ai
 
     # Build image paths from existing case media
     image_paths: list[str] = []
@@ -422,6 +446,7 @@ async def analyze_case_item(
         image_paths=image_paths if image_paths else None,
         video_url=video_path,
         cleanup_paths=cleanup_paths,
+        locale=locale,
     )
     return success_response("AI analysis started", {"status": "analyzing"})
 

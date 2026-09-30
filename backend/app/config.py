@@ -1,4 +1,6 @@
+import math
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -60,6 +62,10 @@ XIAOHONGSHU_CHANNEL_CLIENT_NAME = _env(
     "XIAOHONGSHU_CHANNEL_CLIENT_NAME", "Marventa AI",
 )
 FRONTEND_BASE_URL = _env("FRONTEND_BASE_URL", "http://127.0.0.1:3000")
+PUBLISHING_SCHEDULER_ENABLED = _env("PUBLISHING_SCHEDULER_ENABLED", "false").lower() == "true"
+PUBLISHING_POLL_SECONDS = float(_env("PUBLISHING_POLL_SECONDS", "10"))
+if not math.isfinite(PUBLISHING_POLL_SECONDS) or PUBLISHING_POLL_SECONDS < 1:
+    raise ValueError("PUBLISHING_POLL_SECONDS must be at least 1")
 
 # ---- File Handling ----
 ALLOWED_DOCUMENT_TYPES = {
