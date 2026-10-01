@@ -25,7 +25,7 @@
 | 版本 | 更新摘要 |
 | --- | --- |
 | [v1.2.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.2.0) | 新增素材管理、发布管理，并优化现有功能与界面交互。 |
-| v1.1.0 | 渠道集成、S3 兼容对象存储、PostgreSQL 生产数据库支持，以及协作与界面优化。 |
+| [v1.1.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.1.0) | 渠道集成、S3 兼容对象存储、PostgreSQL 生产数据库支持，以及协作与界面优化。 |
 
 ## 产品价值
 

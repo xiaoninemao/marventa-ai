@@ -25,7 +25,7 @@ An open-source workspace for research, insight, content creation, materials mana
 | Release | Summary |
 | --- | --- |
 | [v1.2.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.2.0) | Materials management, publishing management, and improvements across existing features and the interface. |
-| v1.1.0 | Channel integrations, S3-compatible object storage, PostgreSQL production database support, and collaboration and interface improvements. |
+| [v1.1.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.1.0) | Channel integrations, S3-compatible object storage, PostgreSQL production database support, and collaboration and interface improvements. |
 
 ## Product
 
