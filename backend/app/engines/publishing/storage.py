@@ -1,37 +1,59 @@
 """Publishing schema migrations and compatibility exports for active project storage."""
 
 from __future__ import annotations
+
 import sqlite3
+import threading
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from app.config import DB_PATH
 from app.database import connect_database
-from app.engines.publishing.material_copy import copy_html_to_text
-from app.engines.publishing.models import ContentProject as ContentProject
 from app.engines.publishing import (
     project_channel_accounts,
-    project_memberships,
     project_materials,
+    project_memberships,
     projects,
     publication_plans,
 )
+from app.engines.publishing.material_copy import copy_html_to_text
+from app.engines.publishing.models import ContentProject as ContentProject
+
 # Keep the original storage-module imports available to existing project clients.
 from app.engines.publishing.project_memberships import (
     ProjectNotFound as ProjectNotFound,
+)
+from app.engines.publishing.project_memberships import (
     ProjectPermissionDenied as ProjectPermissionDenied,
 )
 from app.engines.publishing.projects import (
     PROJECT_AVATAR_COLORS as PROJECT_AVATAR_COLORS,
+)
+from app.engines.publishing.projects import (
     PROJECT_AVATAR_ICONS,
+)
+from app.engines.publishing.projects import (
     ProjectNameExists as ProjectNameExists,
+)
+from app.engines.publishing.projects import (
     create_manual_project as create_manual_project,
+)
+from app.engines.publishing.projects import (
     create_project_from_session as create_project_from_session,
+)
+from app.engines.publishing.projects import (
     delete_project as delete_project,
+)
+from app.engines.publishing.projects import (
     get_project as get_project,
+)
+from app.engines.publishing.projects import (
     list_projects as list_projects,
+)
+from app.engines.publishing.projects import (
     update_project as update_project,
 )
 from app.storage_schema import ensure_json_columns, ensure_organization_scope
@@ -106,6 +128,9 @@ def _create_project_materials_table(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_project_material_collections(conn: sqlite3.Connection) -> None:
+    if getattr(conn, "dialect", "") == "postgresql":
+        _create_project_materials_table(conn)
+        return
     definition = conn.execute(
         "SELECT sql FROM sqlite_master "
         "WHERE type = 'table' AND name = 'project_materials'",
@@ -232,8 +257,35 @@ def _strip_project_material_extensions(conn: sqlite3.Connection) -> None:
     )
 
 
+_schema_guard = threading.RLock()
+_initialized_postgres_databases: set[str] = set()
+
+
 def init_db() -> None:
-    conn = _get_conn()
+    from app.config import DATABASE_URL
+
+    with _schema_guard:
+        with closing(_get_conn()) as conn, conn:
+            postgres = getattr(conn, "dialect", "") == "postgresql"
+            if postgres:
+                conn.execute("SELECT pg_advisory_xact_lock(hashtext('marventa.publishing.schema'))")
+            _initialize_schema(conn)
+        if postgres:
+            _initialized_postgres_databases.add(DATABASE_URL)
+
+
+def _ensure_db_initialized() -> None:
+    from app.config import DATABASE_URL
+
+    if DATABASE_URL:
+        with _schema_guard:
+            if DATABASE_URL not in _initialized_postgres_databases:
+                init_db()
+    else:
+        init_db()
+
+
+def _initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS content_projects (
             id TEXT PRIMARY KEY,
@@ -695,12 +747,10 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS idx_accounts_org_platform_name "
         "ON social_accounts(organization_id, platform, account_name)"
     )
-    conn.commit()
-    conn.close()
 
 
-project_memberships.configure(_get_conn, init_db, _now)
-projects.configure(_get_conn, init_db, _now)
-project_channel_accounts.configure(_get_conn, init_db, _now)
-publication_plans.configure(_get_conn, init_db, _now)
-project_materials.configure(_get_conn, init_db, _now)
+project_memberships.configure(_get_conn, _ensure_db_initialized, _now)
+projects.configure(_get_conn, _ensure_db_initialized, _now)
+project_channel_accounts.configure(_get_conn, _ensure_db_initialized, _now)
+publication_plans.configure(_get_conn, _ensure_db_initialized, _now)
+project_materials.configure(_get_conn, _ensure_db_initialized, _now)

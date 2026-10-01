@@ -343,6 +343,8 @@ media only after the application has been validated against object storage.
 
 ## Production database
 
+**v1.2.0 PostgreSQL notice:** the original tag has a publishing-schema initialization issue that can fail or block requests. SQLite is unaffected. The corrective changes on `main` are verified against PostgreSQL 16; PostgreSQL deployments should use `main` until a patch release is published. The v1.2.0 tag has not been rewritten.
+
 Retired publishing-task, metric, review, global social-account, and account-memory CRUD implementations have been removed. Historical tables remain for migration, organization cleanup, and administrative export compatibility; cleanup does not delete existing stored records. Current project accounts and scheduled-publication APIs are unchanged.
 
 SQLite remains the zero-configuration default:
@@ -430,6 +432,8 @@ Runtime databases, uploads, logs, browser state, and environment files are exclu
 ## Development
 
 Backend:
+
+Set `TEST_POSTGRES_URL` only to a disposable test database: the integration tests recreate its `public` schema.
 
 ```bash
 PYTHONPATH=backend:backend/tests backend/.venv/bin/python -m unittest discover -s backend/tests

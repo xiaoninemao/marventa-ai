@@ -21,6 +21,7 @@ jobs:
 
   postgresql:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16-alpine
@@ -46,4 +47,5 @@ jobs:
       - working-directory: backend
         env:
           TEST_POSTGRES_URL: postgresql://marventa:marventa@127.0.0.1:5432/marventa_test
-        run: python -m unittest tests.test_postgresql_integration
+          PGOPTIONS: "-c lock_timeout=5000 -c statement_timeout=30000"
+        run: python -m unittest tests.test_postgresql_integration -v
