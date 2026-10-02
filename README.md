@@ -22,12 +22,6 @@ An open-source workspace for research, insight, content creation, materials mana
 
 ---
 
-| Release | Summary |
-| --- | --- |
-| [v1.2.1](https://github.com/xiaoninemao/marventa-ai/releases/tag/v1.2.1) | Creation-flow and empty-state interface optimizations, plus database compatibility fixes. |
-| [v1.2.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.2.0) | Materials management, publishing management, and improvements across existing features and the interface. |
-| [v1.1.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.1.0) | Channel integrations, S3-compatible object storage, PostgreSQL production database support, and collaboration and interface improvements. |
-
 ## Product
 
 Marketing work rarely begins with a lack of ideas. It begins with scattered context:
