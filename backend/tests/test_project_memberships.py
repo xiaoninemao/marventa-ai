@@ -137,6 +137,48 @@ class ProjectMembershipTests(unittest.TestCase):
                 self.owner["id"], title=self.project.title,
             )
 
+    def test_project_creation_repairs_retired_json_guards_without_losing_existing_projects(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript("""
+                CREATE TRIGGER trg_content_projects_marketing_channels_json_insert
+                BEFORE INSERT ON content_projects
+                WHEN NEW.marketing_channels IS NOT NULL
+                    AND json_valid(NEW.marketing_channels) = 0
+                BEGIN
+                    SELECT RAISE(ABORT, 'Invalid retired JSON');
+                END;
+                CREATE TRIGGER trg_content_projects_marketing_channels_json_update
+                BEFORE UPDATE OF marketing_channels ON content_projects
+                WHEN NEW.marketing_channels IS NOT NULL
+                    AND json_valid(NEW.marketing_channels) = 0
+                BEGIN
+                    SELECT RAISE(ABORT, 'Invalid retired JSON');
+                END;
+            """)
+        response = self.client.post(
+            "/api/v1/publishing/projects/manual",
+            headers=self.headers(self.owner["id"]),
+            json={"title": "Recovered project"},
+        )
+        self.assertEqual(response.status_code, 200)
+        created = response.json()["data"]
+        self.assertEqual(created["title"], "Recovered project")
+        self.assertEqual(created["role"], "owner")
+        projects = publishing_storage.list_projects(self.owner["id"])
+        self.assertEqual({project.id for project in projects}, {self.project.id, created["id"]})
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' "
+                    "AND name IN (?, ?)",
+                    (
+                        "trg_content_projects_marketing_channels_json_insert",
+                        "trg_content_projects_marketing_channels_json_update",
+                    ),
+                ).fetchone()[0],
+                0,
+            )
+
     def test_insight_requires_project_and_inherits_project_access(self):
         manual_path = "/api/v1/market_insight/manual"
         missing_project = self.client.post(

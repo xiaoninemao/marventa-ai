@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 from app.database import is_postgresql
 
-
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -46,13 +45,29 @@ def ensure_json_columns(
     table: str,
     columns: tuple[str, ...],
 ) -> None:
+    """Validate JSON fields and retire SQLite guards for removed columns."""
     table = _identifier(table)
     available = _columns(conn, table)
+    columns = tuple(_identifier(column) for column in columns)
     for column in columns:
-        column = _identifier(column)
         if column not in available:
             raise RuntimeError(f"{table}.{column} does not exist")
-        if is_postgresql(conn):
+
+    postgres = is_postgresql(conn)
+    if not postgres:
+        managed_trigger = re.compile(
+            rf"trg_{re.escape(table)}_([A-Za-z_][A-Za-z0-9_]*)_json_(?:insert|update)"
+        )
+        for (name,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?",
+            (table,),
+        ).fetchall():
+            match = managed_trigger.fullmatch(name)
+            if match and match.group(1) not in available:
+                conn.execute(f"DROP TRIGGER {_identifier(name)}")
+
+    for column in columns:
+        if postgres:
             continue
         conn.execute(f"""
             CREATE TRIGGER IF NOT EXISTS trg_{table}_{column}_json_insert
