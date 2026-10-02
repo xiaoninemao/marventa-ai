@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import CaseCard from "@/components/case_library/case_card";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import { useI18n } from "@/contexts/i18n_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import { fetch_history, fetch_my_cases, fetch_my_favorites } from "@/services/api_client";
@@ -267,7 +268,10 @@ export default function ReferencePanel({
                   );
                 })}
               </div>
-            ) : <p className="amp-dialog-state text-sm text-zinc-400">{search ? t("没有匹配的洞察", "No matching insights") : t("暂无项目洞察", "No project insights yet")}</p>
+            ) : <div className="amp-dialog-state amp-empty-state text-sm text-zinc-400">
+              <EmptyStateIcon name={search ? "search" : "insight"} />
+              <p>{search ? t("没有匹配的洞察", "No matching insights") : t("暂无项目洞察", "No project insights yet")}</p>
+            </div>
           ) : visibleCases.length ? (
             <div className="amp-reference-card-grid">
               {visibleCases.map((item) => (
@@ -277,9 +281,12 @@ export default function ReferencePanel({
                   onOpen={() => toggleCase(item)} />
               ))}
             </div>
-          ) : <p className="amp-dialog-state text-sm text-zinc-400">{search
-            ? t("没有匹配的已分析案例", "No matching analyzed cases")
-            : caseSource === "favorites" ? t("暂无已分析收藏案例", "No analyzed favorite cases yet") : t("暂无已分析案例", "No analyzed cases yet")}</p>}
+          ) : <div className="amp-dialog-state amp-empty-state text-sm text-zinc-400">
+            <EmptyStateIcon name={search ? "search" : "case"} />
+            <p>{search
+              ? t("没有匹配的已分析案例", "No matching analyzed cases")
+              : caseSource === "favorites" ? t("暂无已分析收藏案例", "No analyzed favorite cases yet") : t("暂无已分析案例", "No analyzed cases yet")}</p>
+          </div>}
         </main>
 
         <footer className="flex shrink-0 gap-2 px-4 py-3">

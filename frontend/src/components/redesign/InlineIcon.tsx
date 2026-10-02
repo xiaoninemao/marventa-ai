@@ -1,6 +1,7 @@
 import type { ReactNode, SVGProps } from "react";
 
 export type InlineIconName =
+  | "alert"
   | "arrowLeft"
   | "bell"
   | "bold"
@@ -66,6 +67,7 @@ interface InlineIconProps extends SVGProps<SVGSVGElement> {
 }
 
 const paths: Record<InlineIconName, ReactNode> = {
+  alert: <><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v4M12 17h.01" /></>,
   arrowLeft: <path d="m15 18-6-6 6-6" />,
   bold: <path strokeWidth="2.5" d="M6 12h8a4 4 0 0 1 0 8H6V4h7a4 4 0 0 1 0 8" />,
   heading: <path d="M5 4v16M19 4v16M5 12h14M3 4h4M17 4h4M3 20h4M17 20h4" />,

@@ -11,6 +11,7 @@ import type { OrganizationDetails } from "@/types/auth";
 import { organizationName, organizationRole } from "@/utils/organizations";
 import OrganizationAvatar from "@/components/layout/organization_avatar";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
 
 export default function OrganizationsPage() {
@@ -117,7 +118,10 @@ export default function OrganizationsPage() {
       </div>
 
       {organizationsLoading ? <p role="status" className="amp-page-state">{t("正在加载组织...", "Loading organizations...")}</p>
-        : organizations.length === 0 && !organizationsError ? <p className="amp-page-state">{t("暂未读取到组织，请尝试刷新。", "No organizations were returned. Try refreshing.")}</p>
+        : organizations.length === 0 && !organizationsError ? <div className="amp-page-state amp-empty-state">
+          <EmptyStateIcon name="organization" />
+          <p>{t("暂未读取到组织，请尝试刷新。", "No organizations were returned. Try refreshing.")}</p>
+        </div>
           : <div className="grid gap-4">{organizations.map((item) => (
             <article key={item.id} data-organization-id={item.id} className="amp-workspace-card p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">

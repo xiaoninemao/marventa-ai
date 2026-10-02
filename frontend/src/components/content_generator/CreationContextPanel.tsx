@@ -6,6 +6,7 @@ import { useI18n } from "@/contexts/i18n_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import { fetch_case, fetch_history_item } from "@/services/api_client";
 import InlineIcon, { type InlineIconName } from "@/components/redesign/InlineIcon";
+import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import CaseCard from "@/components/case_library/case_card";
 import type { CaseItem } from "@/types/case_library";
 
@@ -58,9 +59,12 @@ function ContextReferences({ kind, ids }: { kind: "insights" | "cases"; ids: str
   }, [ids, kind, attempt]);
 
   if (!ids.length) {
-    return <p className="amp-content-context-empty">{kind === "insights"
-      ? t("尚未引用市场洞察", "No market insights selected")
-      : t("尚未引用案例", "No cases selected")}</p>;
+    return <div className="amp-content-context-empty amp-empty-state">
+      <EmptyStateIcon name={kind === "insights" ? "insight" : "case"} />
+      <p>{kind === "insights"
+        ? t("尚未引用市场洞察", "No market insights selected")
+        : t("尚未引用案例", "No cases selected")}</p>
+    </div>;
   }
   if (loading) return <p className="amp-content-context-empty" role="status">{t("正在加载引用内容…", "Loading references…")}</p>;
   if (error) {

@@ -39,6 +39,7 @@ import type { HistoryRecord } from "@/types/market_insight";
 import type { CaseItem } from "@/types/case_library";
 import type { SessionRecord } from "@/types/content_generator";
 import InlineIcon, { type InlineIconName } from "@/components/redesign/InlineIcon";
+import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
@@ -1220,10 +1221,11 @@ export default function ProjectDetailPage() {
                   <p>{t("点击右上角“添加渠道”绑定发布账号。", "Use Add channel to bind a publishing account.")}</p>
                 </div>
               ) : visibleChannelAccounts.length === 0 ? (
-                <div className="amp-project-channel-filter-empty">
-                  {channelSearch.trim()
+                <div className="amp-project-channel-filter-empty amp-empty-state">
+                  <EmptyStateIcon name={channelSearch.trim() ? "search" : "user"} />
+                  <p>{channelSearch.trim()
                     ? t("未找到匹配账号，请调整关键词或应用筛选。", "No matching accounts. Try another search term or application.")
-                    : t("该应用暂无授权账号", "No authorized accounts for this application")}
+                    : t("该应用暂无授权账号", "No authorized accounts for this application")}</p>
                 </div>
               ) : visibleChannelAccounts.map((account) => {
                 const channel = MARKETING_CHANNELS.find((item) => item.key === account.platform)!;

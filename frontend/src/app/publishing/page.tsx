@@ -60,6 +60,7 @@ function PublishingOverview() {
   const selectedProjectId = searchParams.get("project") || "";
   const [formProjectId, setFormProjectId] = useState(selectedProjectId);
   const [planName, setPlanName] = useState("");
+  const hasFormProject = projects.some((project) => project.id === formProjectId);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
@@ -114,7 +115,8 @@ function PublishingOverview() {
   }, [menuPlanId]);
 
   const openCreateDialog = () => {
-    const projectId = selectedProjectId || projects[0]?.id || "";
+    const projectId = projects.find((project) => project.id === selectedProjectId)?.id
+      || projects[0]?.id || "";
     setFormProjectId(projectId);
     setPlanName("");
     dialogRef.current?.showModal();
@@ -122,7 +124,15 @@ function PublishingOverview() {
 
   const createPlan = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!formProjectId || !planName.trim()) return;
+    if (saving) return;
+    if (!hasFormProject) {
+      showError(t("请选择所属项目", "Select a project"));
+      return;
+    }
+    if (!planName.trim()) {
+      showError(t("发布计划名称不能为空", "Publication plan name is required"));
+      return;
+    }
     setSaving(true);
     try {
       const response = await create_publication_plan({
@@ -274,7 +284,7 @@ function PublishingOverview() {
               : t("汇总当前组织所有可访问项目的发布计划。", "Publication plans across accessible projects.")}</p>
           </div>
           <button type="button" className="amp-button amp-button-primary"
-            disabled={saving || projects.length === 0}
+            disabled={saving}
             onClick={() => void openCreateDialog()}>
             {t("创建计划", "Create plan")}
           </button>
@@ -454,9 +464,20 @@ function PublishingOverview() {
               }))}
               onChange={setFormProjectId}
               ariaLabel={t("选择项目", "Choose project")}
-              disabled={saving || Boolean(selectedProjectId)}
+              placeholder={loading
+                ? t("正在加载项目...", "Loading projects...")
+                : projects.length ? t("请选择项目", "Choose a project") : t("暂无可用项目", "No projects available")}
+              disabled={saving || loading || projects.length === 0
+                || projects.some((project) => project.id === selectedProjectId)}
               className="mt-2 w-full" />
           </label>
+          {!loading && projects.length === 0 && (
+            <p className="text-sm text-slate-500">
+              {t("请先创建项目，再安排发布。", "Create a project before preparing a publication.")}
+              {" "}<Link href="/projects" className="text-blue-600 hover:underline"
+                onClick={() => dialogRef.current?.close()}>{t("前往项目", "Go to projects")}</Link>
+            </p>
+          )}
           <label>
             <span>{t("名称", "Name")}</span>
             <input value={planName} maxLength={120} required
@@ -470,8 +491,8 @@ function PublishingOverview() {
               {t("取消", "Cancel")}
             </button>
             <button type="submit" className="amp-button amp-button-primary"
-              disabled={saving || !formProjectId || !planName.trim()}>
-              {saving ? t("保存中...", "Saving...") : t("保存计划", "Save plan")}
+              disabled={saving || loading || !hasFormProject || !planName.trim()}>
+              {saving ? t("创建中...", "Creating...") : t("创建计划", "Create plan")}
             </button>
           </div>
         </form>

@@ -8,6 +8,7 @@ import { useI18n } from "@/contexts/i18n_context";
 import { useToast } from "@/contexts/toast_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
 import MaterialDocumentThumbnail from "@/components/projects/MaterialDocumentThumbnail";
 import PublicationContentMedia from "./PublicationContentMedia";
@@ -395,7 +396,10 @@ export default function PublicationContentPanel({ plan, editable, disabled, onCh
           {pickerLoading ? <div className="amp-dialog-state" role="status">{t("加载中…", "Loading…")}</div>
             : pickerError ? <div className="amp-dialog-state" role="alert"><p>{pickerError}</p>
               <button type="button" className="amp-button amp-button-secondary" onClick={() => setPickerAttempt((value) => value + 1)}>{t("重试", "Retry")}</button></div>
-              : !candidates.length ? <div className="amp-dialog-state">{t("暂无可选素材", "No materials available")}</div>
+              : !candidates.length ? <div className="amp-dialog-state amp-empty-state">
+                <EmptyStateIcon name="collection" />
+                <p>{t("暂无可选素材", "No materials available")}</p>
+              </div>
                 : <div className="amp-publication-picker-grid">{candidates.map((material) => !setId ? (
                   <button key={material.id} type="button" className="amp-publication-set-option" disabled={busy}
                     onClick={() => setSetId(material.id)}>

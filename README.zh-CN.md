@@ -24,6 +24,7 @@
 
 | 版本 | 更新摘要 |
 | --- | --- |
+| [v1.2.1](https://github.com/xiaoninemao/marventa-ai/releases/tag/v1.2.1) | 优化创建流程与空状态图标，并修复数据库兼容问题。 |
 | [v1.2.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.2.0) | 新增素材管理、发布管理，并优化现有功能与界面交互。 |
 | [v1.1.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.1.0) | 渠道集成、S3 兼容对象存储、PostgreSQL 生产数据库支持，以及协作与界面优化。 |
 
@@ -336,7 +337,7 @@ cd backend
 
 ## 生产数据库
 
-**v1.2.0 PostgreSQL 提示：**原始标签存在发布数据表初始化兼容问题，可能报错或阻塞请求，SQLite 不受影响。`main` 中的修复已通过 PostgreSQL 16 实测；使用 PostgreSQL 的部署请先采用 `main`，等待后续补丁版本。v1.2.0 标签未被改写。
+**v1.2.0 PostgreSQL 提示：**原始标签存在发布数据表初始化兼容问题，可能报错或阻塞请求，SQLite 不受影响。相关修复已通过 PostgreSQL 16 实测，并包含在 [v1.2.1](https://github.com/xiaoninemao/marventa-ai/releases/tag/v1.2.1) 中；PostgreSQL 部署请使用 v1.2.1 或更新版本。v1.2.0 标签未被改写。
 
 旧发布任务、统计、复盘、全局社交账号和账号记忆的 CRUD 实现已移除。历史表仍用于迁移、组织清理和管理导出兼容，代码清理不会删除已有记录；现有项目账号和定时发布接口不变。
 

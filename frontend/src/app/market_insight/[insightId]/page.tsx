@@ -19,6 +19,7 @@ import {
 import type { AIAnalysis, HistoryRecord, InsightSource, SourcePreview } from "@/types/market_insight";
 import type { ContentProject } from "@/types/publishing";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import InsightProjectSidebar from "@/components/market_insight/InsightProjectSidebar";
 import { canManageInsight } from "@/utils/insight_permissions";
 import { startPolling } from "@/utils/polling";
@@ -283,7 +284,8 @@ export default function MarketInsightDetailPage() {
               <p>{t("分析完成后，本页面会自动更新。", "This page updates automatically when analysis is complete.")}</p>
             </div>
           ) : !analysis ? (
-            <div className="amp-projects-state amp-insight-empty-result">
+            <div className="amp-projects-state amp-insight-empty-result amp-empty-state">
+              <EmptyStateIcon name={insight.status === "failed" ? "alert" : "insight"} />
               <strong>{insight.status === "failed"
                 ? t("分析失败或已中断", "Analysis failed or was interrupted")
                 : t("暂时没有可展示的洞察结果", "No insight result is available")}</strong>
@@ -443,7 +445,12 @@ export default function MarketInsightDetailPage() {
             </div>
           </header>
           <div className="amp-insight-source-preview-body">
-            <pre className={!sourcePreview?.content ? "amp-insight-source-preview-empty" : undefined}>{sourcePreview?.content || t("暂无可预览内容", "No preview content available")}</pre>
+            {sourcePreview?.content ? <pre>{sourcePreview.content}</pre> : (
+              <div className="amp-insight-source-preview-empty amp-empty-state">
+                <EmptyStateIcon name="file" />
+                <p>{t("暂无可预览内容", "No preview content available")}</p>
+              </div>
+            )}
             {sourcePreview?.has_more && (
               <button type="button" className="amp-insight-source-preview-more"
                 disabled={previewLoadingMore} onClick={() => void loadMoreSourcePreview()}>

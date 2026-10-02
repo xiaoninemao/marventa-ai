@@ -25,6 +25,7 @@ import ContentGeneratorCardWorkspace from "@/components/content_generator/Conten
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import ContentProjectSidebar from "@/components/content_generator/ContentProjectSidebar";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
 import { canManageCreation } from "@/utils/creation_permissions";
@@ -1340,8 +1341,20 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
         >
           <h2 id="select-content-project-title" className="text-xl font-semibold">{t("新建创作", "New creation")}</h2>
-          <p className="mt-2 text-sm text-slate-500">{t("填写创作名称并选择所属项目。", "Name the creation and select its project.")}</p>
+          <p className="mt-2 text-sm text-slate-500">{t("选择所属项目并填写创作名称。", "Select a project and name the creation.")}</p>
           <label className="mt-5 block text-sm font-medium text-slate-700">
+            {t("所属项目", "Project")}
+            <EnterpriseSelect
+              value={new_project_id}
+              options={available_projects.map((project) => ({ value: project.id, label: project.title }))}
+              onChange={set_new_project_id}
+              ariaLabel={t("选择所属项目", "Select project")}
+              placeholder={available_projects.length ? t("请选择项目", "Choose a project") : t("暂无可用项目", "No projects available")}
+              disabled={available_projects.length === 0}
+              className="mt-2 w-full"
+            />
+          </label>
+          <label className="mt-4 block text-sm font-medium text-slate-700">
             {t("创作名称", "Creation name")}
             <input
               autoFocus
@@ -1351,18 +1364,6 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
               placeholder={t("请输入创作名称", "Enter a creation name")}
               className="amp-workspace-control mt-2 w-full font-normal"
             />
-          </label>
-          <label className="mt-4 block text-sm font-medium text-slate-700">
-            {t("所属项目", "Project")}
-          <EnterpriseSelect
-            value={new_project_id}
-            options={available_projects.map((project) => ({ value: project.id, label: project.title }))}
-            onChange={set_new_project_id}
-            ariaLabel={t("选择所属项目", "Select project")}
-            placeholder={available_projects.length ? t("请选择项目", "Choose a project") : t("暂无可用项目", "No projects available")}
-            disabled={available_projects.length === 0}
-            className="mt-2 w-full"
-          />
           </label>
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" className="amp-button amp-button-secondary amp-button-cancel" onClick={() => project_dialog_ref.current?.close()}>
@@ -1710,7 +1711,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
         ) : assistant_tab === "cards" ? (
           <div className="amp-content-side-panel amp-content-card-panel">
             {versions.length === 0 && (
-              <div className="amp-content-version-empty">
+              <div className="amp-content-version-empty amp-empty-state">
+                {(!versions_loading || generation_status_error) && (
+                  <EmptyStateIcon name={generation_status_error ? "alert" : "history"} />
+                )}
                 <strong>
                   {generation_status_error
                     ? t("无法加载版本记录", "Could not load version history")
@@ -1754,7 +1758,12 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                   <p>{get_activity_text(activity, t, locale)}</p>
                 </li>
               ))}
-              {messages.length === 0 && activities.length === 0 && <li><p>{t("暂无活动记录", "No activity yet")}</p></li>}
+              {messages.length === 0 && activities.length === 0 && (
+                <li className="amp-empty-state">
+                  <EmptyStateIcon name="listBullet" />
+                  <p>{t("暂无活动记录", "No activity yet")}</p>
+                </li>
+              )}
             </ol>
           </div>
         )}

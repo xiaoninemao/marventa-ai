@@ -1536,6 +1536,12 @@
   text-align: center;
 }
 
+.amp-redesign .amp-content-activity .amp-content-activity-empty > li {
+  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .amp-redesign .amp-content-activity li > span {
   color: #344054;
   flex: 0 0 auto;
@@ -1576,15 +1582,13 @@
 
 .amp-redesign .amp-content-result-empty-icon {
   align-items: center;
-  background: #eff6ff;
-  border-radius: 16px;
   color: #3b82f6;
   display: flex;
   flex-shrink: 0;
-  height: 64px;
+  height: 32px;
   justify-content: center;
-  margin-bottom: 20px;
-  width: 64px;
+  margin-bottom: 12px;
+  width: 32px;
 }
 
 .amp-redesign .amp-content-result-empty-icon svg {
@@ -2934,6 +2938,9 @@
   flex: 1;
   justify-content: center;
   text-align: center;
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.75;
 }
 
 .amp-redesign .amp-insight-source-preview-body pre {
@@ -4094,6 +4101,26 @@
 
 .amp-redesign .amp-projects-state p {
   font-size: 14px;
+}
+
+.amp-redesign .amp-empty-state {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  text-align: center;
+}
+
+.amp-redesign .amp-empty-state-icon {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #98a2b3;
+  display: block;
+  flex: 0 0 auto;
+  height: 28px;
+  width: 28px;
 }
 
 .amp-redesign .amp-insight-empty-result {

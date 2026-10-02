@@ -24,6 +24,7 @@ An open-source workspace for research, insight, content creation, materials mana
 
 | Release | Summary |
 | --- | --- |
+| [v1.2.1](https://github.com/xiaoninemao/marventa-ai/releases/tag/v1.2.1) | Creation-flow and empty-state interface optimizations, plus database compatibility fixes. |
 | [v1.2.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.2.0) | Materials management, publishing management, and improvements across existing features and the interface. |
 | [v1.1.0](https://github.com/xiaoninemao/Marventa-AI/releases/tag/v1.1.0) | Channel integrations, S3-compatible object storage, PostgreSQL production database support, and collaboration and interface improvements. |
 
@@ -343,7 +344,7 @@ media only after the application has been validated against object storage.
 
 ## Production database
 
-**v1.2.0 PostgreSQL notice:** the original tag has a publishing-schema initialization issue that can fail or block requests. SQLite is unaffected. The corrective changes on `main` are verified against PostgreSQL 16; PostgreSQL deployments should use `main` until a patch release is published. The v1.2.0 tag has not been rewritten.
+**v1.2.0 PostgreSQL notice:** the original tag has a publishing-schema initialization issue that can fail or block requests. SQLite is unaffected. The corrective changes are verified against PostgreSQL 16 and included in [v1.2.1](https://github.com/xiaoninemao/marventa-ai/releases/tag/v1.2.1); PostgreSQL deployments should use v1.2.1 or later. The v1.2.0 tag has not been rewritten.
 
 Retired publishing-task, metric, review, global social-account, and account-memory CRUD implementations have been removed. Historical tables remain for migration, organization cleanup, and administrative export compatibility; cleanup does not delete existing stored records. Current project accounts and scheduled-publication APIs are unchanged.
 
