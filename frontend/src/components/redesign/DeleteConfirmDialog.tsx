@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
+import { useI18n } from "@/contexts/i18n_context";
+import { useToast } from "@/contexts/toast_context";
+import { GuardedButton } from "./GuardedControls";
 
 interface DeleteConfirmDialogProps {
   open: boolean;
@@ -25,6 +28,9 @@ export default function DeleteConfirmDialog({
   onCancel,
   onConfirm,
 }: DeleteConfirmDialogProps) {
+  const { t } = useI18n();
+  const { showWarning } = useToast();
+  const blockedReason = t("正在删除，请等待操作完成。", "Deletion is in progress. Please wait for it to finish.");
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -41,14 +47,15 @@ export default function DeleteConfirmDialog({
       onCancel={(event) => {
         event.preventDefault();
         if (!busy) onCancel();
+        else showWarning(blockedReason);
       }}>
       <h2 id={titleId} className="text-xl font-semibold">{title}</h2>
       <p className="mt-3 text-sm leading-6 text-slate-600">{message}</p>
       <div className="mt-6 flex justify-end gap-3">
-        <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={busy}
-          onClick={onCancel}>{cancelLabel}</button>
-        <button type="button" className="amp-button amp-project-delete-confirm" disabled={busy}
-          onClick={onConfirm}>{busy ? busyLabel : confirmLabel}</button>
+        <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={busy}
+          blockedReason={blockedReason} onClick={onCancel}>{cancelLabel}</GuardedButton>
+        <GuardedButton type="button" className="amp-button amp-project-delete-confirm" disabled={busy}
+          blockedReason={blockedReason} onClick={onConfirm}>{busy ? busyLabel : confirmLabel}</GuardedButton>
       </div>
     </dialog>
   );

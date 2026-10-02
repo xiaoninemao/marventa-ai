@@ -1,5 +1,7 @@
 "use client";
 
+import { GuardedButton } from "@/components/redesign/GuardedControls";
+
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/contexts/auth_context";
@@ -10,11 +12,12 @@ import { localizeErrorMessage } from "@/i18n/errors";
 import { organizationName } from "@/utils/organizations";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import OrganizationAvatar from "@/components/layout/organization_avatar";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 export default function OrganizationSwitcher() {
   const { user, organizations, organizationsLoading, organizationsError, organizationBusy, reloadOrganizations, switchOrganization } = useAuth();
   const { t, locale } = useI18n();
-  const { showError } = useToast();
+  const { showError, showWarning } = useToast();
   const current = user?.current_organization ?? user?.default_organization;
   const name = current ? organizationName(current, t) : t("组织", "Organization");
   const count = organizationsLoading ? 0 : organizationsError ? 1 : organizations.length;
@@ -25,6 +28,7 @@ export default function OrganizationSwitcher() {
   }, [organizationsError, locale, showError]);
 
   const selectOrganization = async (id: string) => {
+    if (organizationBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     try {
       await switchOrganization(id);
       closeMenu();
@@ -53,22 +57,22 @@ export default function OrganizationSwitcher() {
       {open && createPortal(
         <div ref={menuRef} id={menuId} className="amp-redesign amp-language-menu amp-organization-menu"
           role="menu" tabIndex={-1} aria-label={t("切换组织", "Switch organization")} style={position} onKeyDown={handleMenuKeyDown}>
-          {organizationsLoading ? <p className="amp-organization-menu-message" role="status">{t("正在加载组织...", "Loading organizations...")}</p>
+          {organizationsLoading ? <p className="amp-organization-menu-message" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</p>
             : organizationsError ? (
               <div className="amp-organization-menu-message">
-                <button type="button" role="menuitem" tabIndex={-1} className="amp-language-option" onClick={reloadOrganizations}>{t("重新加载", "Retry")}</button>
+                <button type="button" role="menuitem" tabIndex={-1} className="amp-language-option" onClick={reloadOrganizations}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
               </div>
             ) : organizations.map((item) => (
-              <button key={item.id} type="button" role="menuitemradio" tabIndex={-1}
-                aria-checked={current?.id === item.id} disabled={organizationBusy}
+              <GuardedButton key={item.id} type="button" role="menuitemradio" tabIndex={-1}
+                aria-checked={current?.id === item.id} disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 className="amp-language-option amp-organization-option" title={organizationName(item, t)}
                 onClick={() => { if (current?.id === item.id) closeMenu(); else void selectOrganization(item.id); }}>
                 <OrganizationAvatar organization={item} className="h-10 w-10 text-sm" />
                 <span className="amp-organization-option-copy"><strong>{organizationName(item, t)}</strong></span>
                 {current?.id === item.id && <InlineIcon name="check" />}
-              </button>
+              </GuardedButton>
               ))}
-            {organizationBusy && <p className="amp-organization-menu-message" role="status">{t("正在更新组织...", "Updating organization...")}</p>}
+            {organizationBusy && <p className="amp-organization-menu-message" role="status">{t(CHINESE_PROGRESS.processing, ENGLISH_PROGRESS.processing)}</p>}
         </div>, document.body,
       )}
     </div>

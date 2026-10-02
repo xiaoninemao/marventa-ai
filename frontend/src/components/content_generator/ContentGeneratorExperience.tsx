@@ -15,6 +15,8 @@ import type { ContentProject } from "@/types/publishing";
 import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
 import { useToast } from "@/contexts/toast_context";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_ACTIONS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
+import { GuardedButton, GuardedInput, GuardedTextarea } from "@/components/redesign/GuardedControls";
 import type { Translate } from "@/i18n/locale";
 import ReferencePanel, { type RefLabel } from "@/components/content_generator/ReferencePanel";
 import ContentGeneratorEmptyState from "@/components/content_generator/ContentGeneratorEmptyState";
@@ -23,6 +25,8 @@ import CreationContextPanel, { type CreationContextPage } from "@/components/con
 import ContentGeneratorSkeleton from "@/components/content_generator/ContentGeneratorSkeleton";
 import ContentGeneratorCardWorkspace from "@/components/content_generator/ContentGeneratorCardWorkspace";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
+import Pagination from "@/components/redesign/Pagination";
+import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
@@ -31,6 +35,7 @@ import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
 import { canManageCreation } from "@/utils/creation_permissions";
 import {
   get_card_content_format,
+  get_card_display_title,
   get_card_detail_profile,
   get_card_preview_content,
 } from "@/components/content_generator/contentGeneratorCardDetails";
@@ -125,11 +130,13 @@ const get_activity_text = (activity: CreationActivity, t: Translate, locale: str
 function SelectedPlanDetailPanel({
   card,
   disabled,
+  blockedReason,
   on_modify,
   on_copy,
 }: {
   card: ContentCard;
   disabled: boolean;
+  blockedReason: string;
   on_modify: () => void;
   on_copy: () => void;
 }) {
@@ -157,7 +164,7 @@ function SelectedPlanDetailPanel({
             style={{ backgroundColor: meta.accentColor, color: "#ffffff" }}>
             {get_card_icon(card, meta.icon)}
           </span>
-          <h4 style={{ color: meta.accentColor }}>{card.title}</h4>
+          <h4 style={{ color: meta.accentColor }}>{get_card_display_title(card, t)}</h4>
           <span className="amp-content-plan-detail-format"
             style={{
               backgroundColor: meta.tintColor,
@@ -167,13 +174,13 @@ function SelectedPlanDetailPanel({
             {profile.format}
           </span>
           <div className="amp-content-plan-detail-actions">
-            <button type="button" onClick={on_modify} disabled={disabled}>
+            <GuardedButton type="button" onClick={on_modify} disabled={disabled} blockedReason={blockedReason}>
               <InlineIcon name="sparkle" />
-              {t("AI 修改", "Edit with AI")}
-            </button>
+              {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
+            </GuardedButton>
             <button type="button" onClick={on_copy}>
               <InlineIcon name="copy" />
-              {t("复制内容", "Copy content")}
+              {t(CHINESE_ACTIONS.copy, ENGLISH_ACTIONS.copy)}
             </button>
           </div>
         </header>
@@ -253,7 +260,7 @@ function FlipCard3D({
             </span>
           </div>
           <div className="relative flex-1 flex flex-col justify-center">
-            <h3 className="text-lg font-bold mb-2 line-clamp-2">{card.title}</h3>
+            <h3 className="text-lg font-bold mb-2 line-clamp-2">{get_card_display_title(card, t)}</h3>
             <p className="text-sm text-slate-600 dark:text-zinc-300 line-clamp-3 leading-relaxed">{card.preview}</p>
           </div>
           <div className="relative text-xs text-slate-400 dark:text-zinc-500 flex items-center gap-1.5">
@@ -283,7 +290,7 @@ function FlipCard3D({
               {get_card_icon(card, meta.icon)}
             </div>
             <div className="min-w-0">
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 block truncate">{card.title}</span>
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 block truncate">{get_card_display_title(card, t)}</span>
               <span className="text-[10px] text-zinc-400">{t("{type} · 要点", "{type} · Key points", { type: meta.label })}</span>
             </div>
           </div>
@@ -400,13 +407,14 @@ function CreationVersionHistory({
               {expanded && (
                 <div className="amp-content-card-version-detail">
                   <ul>
-                    {displayedCards.map((card) => <li key={card.id}>{card.title}</li>)}
+                    {displayedCards.map((card) => <li key={card.id}>{get_card_display_title(card, t)}</li>)}
                   </ul>
                   {canRestore && version.id !== latestVersion?.id && (
-                    <button type="button" onClick={onRestore} disabled={restoring}>
+                    <GuardedButton type="button" onClick={onRestore} disabled={restoring}
+                      blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
                       <InlineIcon name="history" />
-                      {restoring ? t("恢复中...", "Restoring...") : t("恢复此版本", "Restore this version")}
-                    </button>
+                      {restoring ? t(CHINESE_PROGRESS.restoring, ENGLISH_PROGRESS.restoring) : t(CHINESE_ACTIONS.restore, ENGLISH_ACTIONS.restore)}
+                    </GuardedButton>
                   )}
                 </div>
               )}
@@ -484,6 +492,15 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   const rename_dialog_ref = useRef<HTMLDialogElement>(null);
   const menu_ref = useRef<HTMLDivElement>(null);
   const can_manage_session = session ? canManageCreation(user, session) : false;
+  const permissionReason = t("仅创建者、项目所有者或项目管理员可修改此创作", "Only the creator, project owner or project administrator can modify this creation.");
+  const operationReason = session && !can_manage_session
+    ? permissionReason
+    : session?.status === "generating"
+      ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.")
+      : t("正在处理中，请稍候。", "Please wait for the current operation to finish.");
+  const replyReason = reply_action
+    ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.")
+    : operationReason;
 
   // Auth guard
   useEffect(() => {
@@ -608,9 +625,15 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
 
   const handle_modify_card = useCallback(async () => {
     const instruction = modify_input.trim();
-    if (!instruction || !session || modifying || !can_manage_session) return;
+    if (!instruction || !session || modifying || !can_manage_session || sending || session.status === "generating") {
+      showWarning(!session ? t("请先创建或打开一个创作", "Create or open a creation first.")
+        : modifying ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.")
+          : !can_manage_session || sending || session.status === "generating" ? operationReason
+            : t("请输入修改要求", "Enter editing instructions."));
+      return;
+    }
     const card = (session?.cards || [])[modify_target_index];
-    if (!card) return;
+    if (!card) { showWarning(t("请先选择要修改的卡片", "Select a card to edit first.")); return; }
     set_modifying(true);
     set_modify_input("");
 
@@ -638,10 +661,16 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
       set_modifying(false);
       modify_abort_ref.current = null;
     }
-  }, [can_manage_session, modify_input, session, modifying, modify_target_index, show_failure, show_success]);
+  }, [can_manage_session, modify_input, session, modifying, modify_target_index, sending, operationReason, showWarning, t, show_failure, show_success]);
 
   const handle_generate_document = useCallback(async () => {
-    if (!session || generating_doc || !can_manage_session) return;
+    if (!session || generating_doc || !can_manage_session || sending || session.status === "generating" || !session.cards?.length) {
+      showWarning(!session ? t("请先创建或打开一个创作", "Create or open a creation first.")
+        : generating_doc ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.")
+          : !can_manage_session || sending || session.status === "generating" ? operationReason
+            : t("请先生成内容卡片，再生成作品", "Generate content cards before generating a work."));
+      return;
+    }
     add_pending_document_session(session.id);
     set_generating_doc(true);
     try {
@@ -673,7 +702,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     } finally {
       set_generating_doc(false);
     }
-  }, [can_manage_session, session, generating_doc, show_failure, show_success, show_warning]);
+  }, [can_manage_session, session, generating_doc, sending, operationReason, showWarning, t, show_failure, show_success, show_warning]);
 
   // ── Reset: clear everything ──
 
@@ -708,7 +737,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   const start_new_creation = useCallback(async () => {
     const target_project_id = new_project_id;
     const title = new_creation_name.trim();
-    if (!target_project_id || !title) return;
+    if (!target_project_id || !title) {
+      showWarning(!target_project_id ? t("请选择所属项目", "Select a project first.") : t("请输入创作名称", "Enter a creation name."));
+      return;
+    }
     await handle_reset();
     try {
       const response = await create_session(target_project_id, title);
@@ -720,7 +752,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     } catch (createError) {
       set_error(createError instanceof Error ? createError.message : { zh: "新建创作失败", en: "Could not create creation" });
     }
-  }, [handle_reset, new_creation_name, new_project_id, router, showSuccess, t]);
+  }, [handle_reset, new_creation_name, new_project_id, router, showSuccess, showWarning, t]);
 
   const close_workspace = useCallback(async () => {
     const target_project_id = project_id;
@@ -815,10 +847,17 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   }, [session?.id, version_refresh_key]);
 
   const handle_restore_selected_version = useCallback(async () => {
-    if (!session || !selected_version_id || restoring_version) return;
+    if (!session || !selected_version_id || restoring_version || !can_manage_session) {
+      showWarning(restoring_version ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.")
+        : session && !can_manage_session ? permissionReason : t("请先选择要恢复的版本", "Select a version to restore first."));
+      return;
+    }
     const selected = versions.find((version) => version.id === selected_version_id);
     const latest = versions[versions.length - 1];
-    if (!selected || selected.id === latest?.id) return;
+    if (!selected || selected.id === latest?.id) {
+      showWarning(t("只能恢复已有的历史版本", "Only an existing previous version can be restored."));
+      return;
+    }
 
     set_restoring_version(true);
     try {
@@ -845,7 +884,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     } finally {
       set_restoring_version(false);
     }
-  }, [restoring_version, selected_version_id, session, show_failure, show_success, versions]);
+  }, [restoring_version, selected_version_id, session, can_manage_session, permissionReason, showWarning, t, show_failure, show_success, versions]);
 
   const confirm_delete_session = useCallback(async () => {
     if (!delete_target) return;
@@ -887,7 +926,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
 
   const confirm_rename_session = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!rename_target || renaming) return;
+    if (!rename_target || renaming) {
+      showWarning(renaming ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请先选择要重命名的创作", "Select a creation to rename first."));
+      return;
+    }
     if (!canManageCreation(user, rename_target)) {
       showError(t("你没有重命名该创作的权限", "You do not have permission to rename this creation"));
       return;
@@ -928,7 +970,11 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
 
   const handle_send = useCallback(async () => {
     const text = input.trim();
-    if (!text || sending || (session && !can_manage_session)) return;
+    if (sending || session?.status === "generating" || (session && !can_manage_session)) {
+      showWarning(operationReason);
+      return;
+    }
+    if (!text) { showWarning(t("请输入消息内容", "Enter a message first.")); return; }
     const draft_insight_ids = [...insight_ids];
     const draft_case_ids = [...case_ids];
     const draft_preferences = [...selected_chips];
@@ -960,7 +1006,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
       let created_session_id = "";
       try {
         if (!project_id) {
-          set_error({ zh: "请选择所属项目", en: "Select a project first" });
+          showWarning(t("请选择所属项目", "Select a project first."));
           return;
         }
         const res = await create_session(project_id, t("未命名创作", "Untitled creation"));
@@ -1025,10 +1071,11 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     }
   }, [
     input, sending, session, can_manage_session, messages, insight_ids, case_ids, selected_chips,
-    insight_labels, case_labels, project_id, t,
+    insight_labels, case_labels, project_id, t, showWarning, operationReason,
   ]);
 
   const handle_keydown = useCallback((e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handle_send();
@@ -1044,7 +1091,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   }, []);
 
   const handle_regenerate_reply = useCallback(async () => {
-    if (!session || reply_action || !can_manage_session) return;
+    if (!session || reply_action || !can_manage_session || session.status === "generating") {
+      showWarning(!session ? t("请先打开一个创作", "Open a creation first.") : replyReason);
+      return;
+    }
     set_reply_action("regenerate");
     try {
       const response = await regenerate_latest_reply(session.id);
@@ -1058,11 +1108,16 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     } finally {
       set_reply_action(null);
     }
-  }, [apply_replaced_reply, can_manage_session, reply_action, session, show_failure, show_success]);
+  }, [apply_replaced_reply, can_manage_session, reply_action, session, replyReason, showWarning, t, show_failure, show_success]);
 
   const handle_rewrite_reply = useCallback(async () => {
     const message = rewrite_message.trim();
-    if (!session || !message || reply_action || !can_manage_session) return;
+    if (!session || !message || reply_action || !can_manage_session || session.status === "generating") {
+      showWarning(!session ? t("请先打开一个创作", "Open a creation first.")
+        : reply_action || !can_manage_session || session.status === "generating" ? replyReason
+          : t("请输入改写后的消息", "Enter the updated message."));
+      return;
+    }
     set_reply_action("rewrite");
     try {
       const response = await rewrite_latest_reply(session.id, message);
@@ -1086,12 +1141,20 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     session,
     show_failure,
     show_success,
+    replyReason,
+    showWarning,
+    t,
   ]);
 
   // ── Generate ──
 
   const handle_generate = useCallback(async () => {
-    if (!session || sending || !can_manage_session) return;
+    if (!session || sending || !can_manage_session || session.status === "generating" || messages.length < 2) {
+      showWarning(!session ? t("请先创建或打开一个创作", "Create or open a creation first.")
+        : sending || !can_manage_session || session.status === "generating" ? operationReason
+          : t("请先发送消息并等待至少一条回复，再生成内容卡片", "Send a message and wait for a reply first."));
+      return;
+    }
 
     set_error(null);
     set_sending(true);
@@ -1102,7 +1165,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
         set_sessions((current) => current.map((item) => (
           item.id === session.id ? { ...item, status: "generating" } : item
         )));
-        show_info({ zh: "正在生成内容卡片...", en: "Generating content cards..." });
+        show_info({ zh: "正在生成内容卡片...", en: ENGLISH_PROGRESS.generating });
 
         const interval = setInterval(async () => {
           try {
@@ -1138,7 +1201,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     } finally {
       set_sending(false);
     }
-  }, [can_manage_session, session, sending, show_info, show_success]);
+  }, [can_manage_session, session, sending, messages.length, operationReason, showWarning, t, show_info, show_success]);
 
   // ── Filtered sessions ──
 
@@ -1161,6 +1224,12 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     });
     return result;
   }, [sessions, filter_text, locale, sort_order, status_filter]);
+  const paginationResetKey = JSON.stringify([filter_text, status_filter, sort_order, selected_project_id]);
+  const pagination = usePagination(filtered_sessions, paginationResetKey, 12);
+
+  useEffect(() => {
+    set_menu_session_id(null);
+  }, [pagination.page, pagination.pageSize, paginationResetKey]);
 
   // ── Render ──
 
@@ -1175,7 +1244,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   if (canvasId && !workspace_open) {
     return (
       <div className="amp-content-detail-loading" role="status">
-        {session_loading ? t("正在加载创作...", "Loading creation...") : t("无法加载该创作", "Could not load this creation")}
+        {session_loading ? t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading) : t("无法加载该创作", "Could not load this creation")}
       </div>
     );
   }
@@ -1193,7 +1262,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                 : t("汇总当前组织所有可访问项目中的创作。", "Creations across all accessible projects in this organization.")}</p>
             </div>
             <button type="button" className="amp-button amp-button-primary" onClick={open_new_creation}>
-              {t("新建创作", "New creation")}
+              {t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
             </button>
           </div>
 
@@ -1234,16 +1303,17 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           </div>
 
           {session_loading ? (
-            <div className="amp-projects-state" role="status">{t("正在加载创作...", "Loading creations...")}</div>
+            <div className="amp-projects-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>
           ) : filtered_sessions.length === 0 ? (
             <div className="amp-projects-state">
               <span className="amp-projects-empty-icon"><InlineIcon name="edit" /></span>
               <strong>{filter_text ? t("没有匹配的创作", "No matching creations") : t("暂无创作", "No creations yet")}</strong>
-              <p>{t("点击“新建创作”，开始生成营销内容方案。", "Select “New creation” to start generating a marketing content plan.")}</p>
+              <p>{t("点击“新建创作”，开始生成营销内容方案。", "Select Create to start a marketing content plan.")}</p>
             </div>
           ) : (
+            <>
             <div className="amp-content-canvas-grid">
-              {filtered_sessions.map((item) => {
+              {pagination.pageItems.map((item) => {
                 const projectTitle = available_projects.find((project) => project.id === item.project_id)?.title
                   || t("未关联项目", "No project");
                 const cardCount = item.cards?.length || 0;
@@ -1277,7 +1347,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                                 >
                                   <i style={{ backgroundColor: cardMeta.accentColor }} />
                                   <b style={{ color: cardMeta.textColor }}>{cardMeta.label}</b>
-                                  <small>{card.title}</small>
+                                  <small>{get_card_display_title(card, t)}</small>
                                 </span>
                               );
                             })
@@ -1314,17 +1384,19 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                       </button>
                       {menu_session_id === item.id && (
                         <div role="menu" className="amp-insight-card-popover">
-                          <button type="button" role="menuitem" disabled={!canManageCreation(user, item)}
+                          <GuardedButton type="button" role="menuitem" disabled={!canManageCreation(user, item)}
+                            blockedReason={t("仅创建者、项目所有者或项目管理员可重命名此创作", "Only the creator, project owner or project administrator can rename this creation.")}
                             onClick={() => open_rename_dialog(item)}>
-                            <InlineIcon name="edit" />{t("重命名", "Rename")}
-                          </button>
-                          <button type="button" role="menuitem" className="amp-insight-card-delete"
+                            <InlineIcon name="edit" />{t(CHINESE_ACTIONS.rename, ENGLISH_ACTIONS.rename)}
+                          </GuardedButton>
+                          <GuardedButton type="button" role="menuitem" className="amp-insight-card-delete"
+                            blockedReason={t("仅创建者、项目所有者或项目管理员可删除此创作", "Only the creator, project owner or project administrator can delete this creation.")}
                             disabled={!canManageCreation(user, item)} onClick={() => {
                             set_menu_session_id(null);
                             set_delete_target(item);
                           }}>
-                            <InlineIcon name="trash" />{t("删除", "Delete")}
-                          </button>
+                            <InlineIcon name="trash" />{t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                          </GuardedButton>
                         </div>
                       )}
                     </div>
@@ -1332,6 +1404,11 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                 );
               })}
             </div>
+            <Pagination page={pagination.page} pageSize={pagination.pageSize}
+              pageSizeOptions={DEFAULT_PAGE_SIZE_OPTIONS}
+              totalItems={pagination.totalItems} totalPages={pagination.totalPages}
+              onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+            </>
           )}
         </main>
 
@@ -1349,8 +1426,9 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
               options={available_projects.map((project) => ({ value: project.id, label: project.title }))}
               onChange={set_new_project_id}
               ariaLabel={t("选择所属项目", "Select project")}
-              placeholder={available_projects.length ? t("请选择项目", "Choose a project") : t("暂无可用项目", "No projects available")}
+              placeholder={available_projects.length ? t("请选择项目", `${ENGLISH_ACTIONS.select} a project`) : t("暂无可用项目", "No projects available")}
               disabled={available_projects.length === 0}
+              disabledReason={t("请先创建项目。", "Create a project first.")}
               className="mt-2 w-full"
             />
           </label>
@@ -1367,19 +1445,20 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           </label>
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" className="amp-button amp-button-secondary amp-button-cancel" onClick={() => project_dialog_ref.current?.close()}>
-              {t("取消", "Cancel")}
+              {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
             </button>
-            <button
+            <GuardedButton
               type="button"
               className="amp-button amp-button-primary"
               disabled={!new_project_id || !new_creation_name.trim()}
+              blockedReason={!new_project_id ? t("请选择所属项目", "Select a project first.") : t("请输入创作名称", "Enter a creation name.")}
               onClick={() => {
                 project_dialog_ref.current?.close();
                 void start_new_creation();
               }}
             >
-              {t("新建创作", "Create")}
-            </button>
+              {t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+            </GuardedButton>
           </div>
         </dialog>
 
@@ -1391,9 +1470,9 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
             "“{title}” cannot be recovered after deletion. Delete it?",
             { title: delete_target?.title || t("未命名创作", "Untitled creation") },
           )}
-          cancelLabel={t("取消", "Cancel")}
-          confirmLabel={t("删除", "Delete")}
-          busyLabel={t("删除中...", "Deleting...")}
+          cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+          confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+          busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}
           onCancel={() => set_delete_target(null)}
           onConfirm={() => void confirm_delete_session()}
         />
@@ -1401,21 +1480,29 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           ref={rename_dialog_ref}
           aria-labelledby="rename-creation-title"
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-          onCancel={(event) => { if (renaming) event.preventDefault(); }}
+          onCancel={(event) => {
+            if (renaming) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}
           onClose={() => { if (!renaming) set_rename_target(null); }}
         >
           <h2 id="rename-creation-title" className="text-lg font-semibold">{t("重命名创作", "Rename creation")}</h2>
           <form className="mt-5" onSubmit={confirm_rename_session}>
             <label htmlFor="rename-creation-name" className="mb-2 block text-sm font-medium">{t("创作名称", "Creation name")}</label>
-            <input id="rename-creation-name" autoFocus required maxLength={80}
+            <GuardedInput id="rename-creation-name" autoFocus required maxLength={80}
               className="amp-workspace-control w-full" value={rename_name} disabled={renaming}
+              blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               onChange={(event) => set_rename_name(event.target.value)} />
             <div className="mt-6 flex justify-end gap-3">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
-                onClick={() => rename_dialog_ref.current?.close()}>{t("取消", "Cancel")}</button>
-              <button type="submit" className="amp-button amp-button-primary" disabled={renaming || !rename_name.trim()}>
-                {renaming ? t("保存中...", "Saving...") : t("保存", "Save")}
-              </button>
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
+                blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                onClick={() => rename_dialog_ref.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={renaming || !rename_name.trim()}
+                blockedReason={renaming ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入创作名称", "Enter a creation name.")}>
+                {renaming ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+              </GuardedButton>
             </div>
           </form>
         </dialog>
@@ -1441,9 +1528,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
       <section className="amp-content-assistant-panel" aria-label={t("AI 创作助手", "AI creative assistant")}>
         <header className="amp-content-editor-header">
           <div>
-            <button type="button" onClick={() => void close_workspace()}>
+            <button type="button" className="amp-project-detail-back"
+              aria-label={t("返回创作列表", "Back to creation list")}
+              onClick={() => void close_workspace()}>
               <InlineIcon name="arrowLeft" />
-              {t("返回创作列表", "Back to creation list")}
             </button>
             {session && <CreationPresence sessionId={session.id} />}
           </div>
@@ -1532,8 +1620,9 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                         </div>
                         {m.role === "user" && i === latest_user_message_index && !sending && (
                           <div className="amp-content-message-actions">
-                            <button type="button"
+                            <GuardedButton type="button"
                               disabled={Boolean(reply_action) || is_generating || !can_manage_session}
+                              blockedReason={replyReason}
                               aria-label={t("改写最新消息", "Edit latest message")}
                               title={t("改写最新消息", "Edit latest message")}
                               onClick={() => {
@@ -1541,15 +1630,16 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                                 set_show_rewrite_modal(true);
                               }}>
                               <InlineIcon name="pen" />
-                            </button>
-                            <button type="button"
+                            </GuardedButton>
+                            <GuardedButton type="button"
                               disabled={Boolean(reply_action) || is_generating || !can_manage_session}
+                              blockedReason={replyReason}
                               aria-label={t("重新生成回复", "Regenerate reply")}
                               title={t("重新生成回复", "Regenerate reply")}
                               onClick={() => void handle_regenerate_reply()}>
                               <InlineIcon name="refresh"
                                 className={reply_action === "regenerate" ? "animate-spin" : ""} />
-                            </button>
+                            </GuardedButton>
                           </div>
                         )}
                       </div>
@@ -1574,7 +1664,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
             {/* Input area */}
             <div className="amp-content-assistant-composer">
               <div className="amp-content-prompt-row">
-                <textarea
+                <GuardedTextarea
                   ref={prompt_input_ref}
                   value={input}
                   onChange={(e) => set_input(e.target.value)}
@@ -1583,14 +1673,16 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                   rows={2}
                   className="amp-content-prompt-input"
                   disabled={sending || is_generating || Boolean(session && !can_manage_session)}
+                  blockedReason={operationReason}
                 />
                 <div className="amp-content-prompt-toolbar">
-                <button type="button"
+                <GuardedButton type="button"
                   onClick={() => {
                     set_reference_panel_tab("insight");
                     set_show_ref_panel(true);
                   }}
                   disabled={sending || is_generating || Boolean(session && !can_manage_session)}
+                  blockedReason={operationReason}
                   className="amp-content-preference-toggle relative shrink-0"
                   aria-label={t("引用洞察", "Reference insights")}
                   title={t("引用洞察", "Reference insights")}
@@ -1601,13 +1693,14 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                       {insight_ids.length}
                     </span>
                   )}
-                </button>
-                <button type="button"
+                </GuardedButton>
+                <GuardedButton type="button"
                   onClick={() => {
                     set_reference_panel_tab("case");
                     set_show_ref_panel(true);
                   }}
                   disabled={sending || is_generating || Boolean(session && !can_manage_session)}
+                  blockedReason={operationReason}
                   className="amp-content-preference-toggle relative shrink-0"
                   aria-label={t("引用案例", "Reference cases")}
                   title={t("引用案例", "Reference cases")}
@@ -1618,14 +1711,15 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                       {case_ids.length}
                     </span>
                   )}
-                </button>
+                </GuardedButton>
                 <div className="shrink-0">
-                  <button
+                  <GuardedButton
                     onClick={() => set_show_chip_popover(!show_chip_popover)}
                     disabled={sending || is_generating || Boolean(session && !can_manage_session)}
+                    blockedReason={operationReason}
                     className={`amp-content-preference-toggle relative${show_chip_popover || selected_chips.length > 0 ? " is-active" : ""}`}
                     aria-expanded={show_chip_popover}
-                    title={t("选择偏好", "Choose preferences")}
+                    title={t("选择偏好", `${ENGLISH_ACTIONS.select} preferences`)}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
@@ -1635,13 +1729,13 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                         {selected_chips.length}
                       </span>
                     )}
-                  </button>
+                  </GuardedButton>
                   {show_chip_popover && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => set_show_chip_popover(false)} />
                       <div className="absolute bottom-full left-0 mb-2 w-72 max-w-full max-h-80 overflow-y-auto bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-4 z-50">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{t("选择偏好", "Choose preferences")}</p>
+                          <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{t("选择偏好", `${ENGLISH_ACTIONS.select} preferences`)}</p>
                           {selected_chips.length > 0 && (
                             <button
                               onClick={() => set_selected_chips([])}
@@ -1678,28 +1772,32 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                     </>
                   )}
                 </div>
-                <button type="button"
+                <GuardedButton type="button"
                   className="amp-content-chat-generate"
                   onClick={handle_generate}
                   disabled={!session || messages.length < 2 || sending || is_generating || !can_manage_session}
+                  blockedReason={!session ? t("请先创建或打开一个创作", "Create or open a creation first.")
+                    : sending || is_generating || !can_manage_session ? operationReason
+                      : t("请先发送消息并等待至少一条回复，再生成内容卡片", "Send a message and wait for a reply first.")}
                   aria-busy={is_generating}
                 >
                   <InlineIcon name="wand" />
                   {is_generating
-                    ? t("生成中...", "Generating...")
-                    : t("生成内容卡片", "Generate cards")}
-                </button>
+                    ? t(CHINESE_PROGRESS.generating, ENGLISH_PROGRESS.generating)
+                    : t("生成内容卡片", `${ENGLISH_ACTIONS.generate} cards`)}
+                </GuardedButton>
                 {input.trim().length > 0 && (
-                  <button
+                  <GuardedButton
                     onClick={handle_send}
                     aria-label={t("发送消息", "Send message")}
                     disabled={sending || is_generating || Boolean(session && !can_manage_session)}
+                    blockedReason={operationReason}
                     className="amp-content-send-button"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                     </svg>
-                  </button>
+                  </GuardedButton>
                 )}
                 </div>
               </div>
@@ -1719,7 +1817,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                   {generation_status_error
                     ? t("无法加载版本记录", "Could not load version history")
                     : versions_loading
-                      ? t("正在加载版本记录...", "Loading version history...")
+                      ? t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)
                       : t("暂无版本记录", "No version history yet")}
                 </strong>
                 {!versions_loading && (
@@ -1778,6 +1876,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           session={session}
           locale={locale}
           disabled={sending || is_generating || !can_manage_session}
+          blockedReason={operationReason}
           generating_document={generating_doc}
           active_card_index={active_card_index}
           flipped_ids={flipped_ids}
@@ -1799,6 +1898,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                   <SelectedPlanDetailPanel
                     card={card}
                     disabled={sending || is_generating || !can_manage_session}
+                    blockedReason={operationReason}
                     on_modify={() => {
                       set_modify_target_index(active_card_index);
                       set_modify_input("");
@@ -1840,7 +1940,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog"
           aria-modal="true" aria-labelledby="rewrite-message-title">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => { if (!reply_action) set_show_rewrite_modal(false); }} />
+            onClick={() => {
+              if (reply_action) showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+              else set_show_rewrite_modal(false);
+            }} />
           <div className="relative mx-4 w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
             <h3 id="rewrite-message-title" className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
               {t("改写最新消息", "Edit latest message")}
@@ -1848,23 +1951,26 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
             <p className="mt-1 text-xs text-zinc-500">
               {t("修改用户消息后，将重新生成对应的 AI 回复。", "Update the user message, then regenerate its AI reply.")}
             </p>
-            <textarea value={rewrite_message}
+            <GuardedTextarea value={rewrite_message}
               onChange={(event) => set_rewrite_message(event.target.value)}
               rows={4} autoFocus disabled={Boolean(reply_action)}
+              blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               aria-label={t("编辑最新消息", "Edit latest message")}
               className="mt-4 w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100" />
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" disabled={Boolean(reply_action)}
+              <GuardedButton type="button" disabled={Boolean(reply_action)}
+                blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => set_show_rewrite_modal(false)}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800">
-                {t("取消", "Cancel")}
-              </button>
-              <button type="button"
+                className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+              </GuardedButton>
+              <GuardedButton type="button"
                 disabled={Boolean(reply_action) || !rewrite_message.trim()}
+                blockedReason={reply_action ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入改写后的消息", "Enter the updated message.")}
                 onClick={() => void handle_rewrite_reply()}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
-                {reply_action === "rewrite" ? t("生成中...", "Generating...") : t("保存并重新生成", "Save and regenerate")}
-              </button>
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                {reply_action === "rewrite" ? t(CHINESE_PROGRESS.generating, ENGLISH_PROGRESS.generating) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+              </GuardedButton>
             </div>
           </div>
         </div>
@@ -1878,7 +1984,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
             <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">{t("AI 修改卡片", "Edit card with AI")}</h3>
 
             {/* Card selector */}
-            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">{t("选择要修改的卡片", "Choose a card to edit")}</label>
+            <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">{t("选择要修改的卡片", `${ENGLISH_ACTIONS.select} a card to edit`)}</label>
             <div className="grid grid-cols-5 gap-1.5 mb-4">
               {(session?.cards || []).map((card, i) => {
                 const meta = CARD_META[card.card_type] || CARD_META.script;
@@ -1907,7 +2013,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
             <input
               value={modify_input}
               onChange={(e) => set_modify_input(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handle_modify_card(); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) handle_modify_card(); }}
               placeholder={t("如：缩短到100字、语气更活泼、增加emoji...", "For example: shorten to 100 characters, use a livelier tone, add emoji...")}
               className="w-full px-3 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-blue-500 mb-4"
               autoFocus
@@ -1930,12 +2036,13 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                     : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
                 }`}
               >
-                {modifying ? t("中止", "Stop") : t("取消", "Cancel")}
+                {modifying ? t("中止", "Stop") : t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
               </button>
-              <button
+              <GuardedButton
                 onClick={handle_modify_card}
                 disabled={modifying || !modify_input.trim()}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 cursor-pointer"
+                blockedReason={modifying ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入修改要求", "Enter editing instructions.")}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 {modifying ? (
                   <>
@@ -1943,12 +2050,12 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    {t("修改中...", "Updating...")}
+                    {t(CHINESE_PROGRESS.editing, ENGLISH_PROGRESS.editing)}
                   </>
                 ) : (
-                  t("确认修改", "Confirm changes")
+                  t(CHINESE_ACTIONS.confirm, ENGLISH_ACTIONS.confirm)
                 )}
-              </button>
+              </GuardedButton>
             </div>
           </div>
         </div>

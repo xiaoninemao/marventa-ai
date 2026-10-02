@@ -9,6 +9,7 @@ import InlineIcon, { type InlineIconName } from "@/components/redesign/InlineIco
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import CaseCard from "@/components/case_library/case_card";
 import type { CaseItem } from "@/types/case_library";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 export type CreationContextPage = "insights" | "cases";
 
@@ -66,7 +67,7 @@ function ContextReferences({ kind, ids }: { kind: "insights" | "cases"; ids: str
         : t("尚未引用案例", "No cases selected")}</p>
     </div>;
   }
-  if (loading) return <p className="amp-content-context-empty" role="status">{t("正在加载引用内容…", "Loading references…")}</p>;
+  if (loading) return <p className="amp-content-context-empty" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</p>;
   if (error) {
     return (
       <div className="amp-content-context-error" role="alert">
@@ -75,7 +76,7 @@ function ContextReferences({ kind, ids }: { kind: "insights" | "cases"; ids: str
           setError(null);
           setLoading(true);
           setAttempt((current) => current + 1);
-        }}>{t("重试", "Retry")}</button>
+        }}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
       </div>
     );
   }

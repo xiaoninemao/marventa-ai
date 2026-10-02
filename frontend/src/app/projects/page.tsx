@@ -1,5 +1,7 @@
 "use client";
 
+import { GuardedButton, GuardedInput, GuardedTextarea } from "@/components/redesign/GuardedControls";
+
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -18,7 +20,10 @@ import InlineIcon from "@/components/redesign/InlineIcon";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import ProjectQuickSidebar from "@/components/projects/ProjectQuickSidebar";
+import Pagination from "@/components/redesign/Pagination";
+import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
 import { userAvatarColor as memberAvatarColor, userAvatarInitial } from "@/utils/user_avatar";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 type ProjectSort = "latest" | "oldest" | "name";
 
@@ -61,7 +66,7 @@ export default function ProjectsPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const customizeDialogRef = useRef<HTMLDialogElement>(null);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
@@ -142,6 +147,12 @@ export default function ProjectsPage() {
     });
   }, [locale, projects, query, sort]);
 
+  const projectPagination = usePagination(visibleProjects, JSON.stringify([query, sort]), 12);
+
+  useEffect(() => {
+    setMenuProjectId(null);
+  }, [projectPagination.page, projectPagination.pageSize, query, sort]);
+
   const openCreateDialog = () => {
     setTitle("");
     setDescription("");
@@ -150,9 +161,10 @@ export default function ProjectsPage() {
 
   const createProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (creating) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const normalizedTitle = title.trim();
     if (!normalizedTitle) {
-      showError(t("项目名称不能为空", "Project name is required"));
+      showError(t("请填写名称。", "Enter a name."));
       return;
     }
     const duplicate = projects.some(
@@ -187,12 +199,20 @@ export default function ProjectsPage() {
   };
 
   const openDeleteDialog = (project: ContentProject) => {
+    if (project.role !== "owner" && project.role !== "admin") {
+      showWarning(t("仅项目所有者或管理员可以删除项目。", "Only project owners or administrators can delete the project."));
+      return;
+    }
     setMenuProjectId(null);
     setDeletingProject(project);
     requestAnimationFrame(() => deleteDialogRef.current?.showModal());
   };
 
   const openCustomizeDialog = (project: ContentProject) => {
+    if (project.role !== "owner" && project.role !== "admin") {
+      showWarning(t("仅项目所有者或管理员可以修改项目。", "Only project owners or administrators can edit the project."));
+      return;
+    }
     setMenuProjectId(null);
     setCustomizingProject(project);
     setCustomTitle(project.title);
@@ -204,10 +224,15 @@ export default function ProjectsPage() {
 
   const customizeProject = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!customizingProject) return;
+    if (projectActionBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!customizingProject) { showWarning(t("请选择项目。", "Select a project.")); return; }
+    if (customizingProject.role !== "owner" && customizingProject.role !== "admin") {
+      showWarning(t("仅项目所有者或管理员可以修改项目。", "Only project owners or administrators can edit the project."));
+      return;
+    }
     const title = customTitle.trim();
     if (!title) {
-      showError(t("项目名称不能为空", "Project name is required"));
+      showError(t("请填写名称。", "Enter a name."));
       return;
     }
     const duplicate = projects.some(
@@ -240,7 +265,12 @@ export default function ProjectsPage() {
   };
 
   const deleteProject = async () => {
-    if (!deletingProject) return;
+    if (projectActionBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!deletingProject) { showWarning(t("请选择项目。", "Select a project.")); return; }
+    if (deletingProject.role !== "owner" && deletingProject.role !== "admin") {
+      showWarning(t("仅项目所有者或管理员可以删除项目。", "Only project owners or administrators can delete the project."));
+      return;
+    }
     setProjectActionBusy(true);
     try {
       await delete_content_project(deletingProject.id);
@@ -256,7 +286,7 @@ export default function ProjectsPage() {
   };
 
   if (loading || !user) {
-    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
 
   return (
@@ -269,7 +299,7 @@ export default function ProjectsPage() {
             <p>{t("在一个空间中管理市场洞察、案例、智能创作与作品。", "Manage market insights, cases, generated content, and portfolio work in one place.")}</p>
           </div>
           <button type="button" className="amp-button amp-button-primary" onClick={openCreateDialog}>
-            {t("创建项目", "Create project")}
+            {t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
           </button>
         </div>
 
@@ -297,7 +327,7 @@ export default function ProjectsPage() {
         </div>
 
         {projectsLoading ? (
-          <div className="amp-projects-state" role="status">{t("正在加载项目...", "Loading projects...")}</div>
+          <div className="amp-projects-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>
         ) : visibleProjects.length === 0 ? (
           <div className="amp-projects-state">
             <span className="amp-projects-empty-icon"><InlineIcon name="folder" /></span>
@@ -308,7 +338,7 @@ export default function ProjectsPage() {
           </div>
         ) : (
           <div className="amp-projects-grid">
-            {visibleProjects.map((project) => (
+            {projectPagination.pageItems.map((project) => (
               <article key={project.id} className="amp-project-card">
                 <button type="button" className="amp-project-card-open" onClick={() => openProject(project.id)} aria-label={t("打开项目 {name}", "Open project {name}", { name: project.title })}>
                   <span className="amp-project-avatar amp-project-custom-avatar"
@@ -353,26 +383,35 @@ export default function ProjectsPage() {
                   </button>
                   {menuProjectId === project.id && (
                     <div role="menu" className="amp-project-card-popover">
-                    <button type="button" role="menuitem"
-                      disabled={project.role !== "owner" && project.role !== "admin"}
-                      aria-disabled={project.role !== "owner" && project.role !== "admin"}
+                    <GuardedButton type="button" role="menuitem"
+                      disabled={project.role !== "owner" && project.role !== "admin"} blockedReason={t("仅项目所有者或管理员可以修改或删除项目。", "Only project owners or administrators can edit or delete the project.")}
                       onClick={() => openCustomizeDialog(project)}>
                       <InlineIcon name="edit" />
-                      {t("自定义", "Customize")}
-                    </button>
-                    <button type="button" role="menuitem" className="amp-project-card-delete"
-                      disabled={project.role !== "owner" && project.role !== "admin"}
-                      aria-disabled={project.role !== "owner" && project.role !== "admin"}
+                      {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
+                    </GuardedButton>
+                    <GuardedButton type="button" role="menuitem" className="amp-project-card-delete"
+                      disabled={project.role !== "owner" && project.role !== "admin"} blockedReason={t("仅项目所有者或管理员可以修改或删除项目。", "Only project owners or administrators can edit or delete the project.")}
                       onClick={() => openDeleteDialog(project)}>
                       <InlineIcon name="trash" />
-                      {t("删除", "Delete")}
-                    </button>
+                      {t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                    </GuardedButton>
                     </div>
                   )}
                 </div>
               </article>
             ))}
           </div>
+        )}
+        {!projectsLoading && visibleProjects.length > 0 && (
+          <Pagination
+            page={projectPagination.page}
+            pageSize={projectPagination.pageSize}
+            pageSizeOptions={DEFAULT_PAGE_SIZE_OPTIONS}
+            totalItems={projectPagination.totalItems}
+            totalPages={projectPagination.totalPages}
+            onPageChange={projectPagination.setPage}
+            onPageSizeChange={projectPagination.setPageSize}
+          />
         )}
       </main>
 
@@ -382,7 +421,8 @@ export default function ProjectsPage() {
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-lg bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
         onCancel={(event) => {
           event.preventDefault();
-          if (!creating) setDialogOpen(false);
+          if (creating) showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          else setDialogOpen(false);
         }}
         onClose={() => setDialogOpen(false)}
       >
@@ -390,40 +430,45 @@ export default function ProjectsPage() {
         <p className="mt-1 text-sm text-slate-500">{t("创建后可添加市场洞察、案例、智能创作和作品等资产。", "Add market insights, cases, generated content, portfolio work, and other assets after creating the project.")}</p>
         <form onSubmit={createProject} className="mt-6">
           <label htmlFor="project-title" className="mb-2 block text-sm font-medium">{t("项目名称", "Project name")}</label>
-          <input
+          <GuardedInput
             id="project-title"
             autoFocus
             required
             maxLength={120}
             value={title}
-            disabled={creating}
+            disabled={creating} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             onChange={(event) => setTitle(event.target.value)}
             placeholder={t("例如：秋季新品推广", "For example: Fall product launch")}
             className="amp-workspace-control w-full"
           />
           <label htmlFor="project-description" className="mb-2 mt-5 block text-sm font-medium">{t("项目描述", "Description")}</label>
-          <textarea
+          <GuardedTextarea
             id="project-description"
             rows={4}
             maxLength={500}
             value={description}
-            disabled={creating}
+            disabled={creating} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             onChange={(event) => setDescription(event.target.value)}
             placeholder={t("简要说明项目目标（可选）", "Briefly describe the project goal (optional)")}
             className="amp-workspace-control w-full resize-none"
           />
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={creating} onClick={() => setDialogOpen(false)}>{t("取消", "Cancel")}</button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={creating}>
-              {creating ? t("创建中...", "Creating...") : t("创建", "Create")}
-            </button>
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={creating} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onClick={() => setDialogOpen(false)}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={creating} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
+              {creating ? t(CHINESE_PROGRESS.creating, ENGLISH_PROGRESS.creating) : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
 
       <dialog ref={customizeDialogRef} aria-labelledby="customize-project-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-2xl bg-white p-0 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (projectActionBusy) event.preventDefault(); }}
+        onCancel={(event) => {
+          if (projectActionBusy) {
+            event.preventDefault();
+            showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          }
+        }}
         onClose={() => { if (!projectActionBusy) setCustomizingProject(null); }}>
         <form className="amp-project-customize amp-project-customize-dialog" onSubmit={customizeProject}>
           <h2 id="customize-project-title">{t("自定义项目", "Customize project")}</h2>
@@ -433,14 +478,14 @@ export default function ProjectsPage() {
             </span>
             <label>
               <span>{t("项目名称", "Project name")}</span>
-              <input value={customTitle} maxLength={120} disabled={projectActionBusy}
+              <GuardedInput value={customTitle} maxLength={120} disabled={projectActionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onChange={(event) => setCustomTitle(event.target.value)}
                 className="amp-workspace-control" />
             </label>
           </div>
           <label className="amp-project-customize-description">
             <span>{t("项目描述", "Description")}</span>
-            <textarea value={customDescription} maxLength={500} rows={3} disabled={projectActionBusy}
+            <GuardedTextarea value={customDescription} maxLength={500} rows={3} disabled={projectActionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               onChange={(event) => setCustomDescription(event.target.value)}
               className="amp-workspace-control" />
           </label>
@@ -468,18 +513,23 @@ export default function ProjectsPage() {
             </div>
           </fieldset>
           <div className="amp-project-customize-actions">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={projectActionBusy}
-              onClick={() => customizeDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={projectActionBusy}>
-              {projectActionBusy ? t("保存中...", "Saving...") : t("保存", "Save")}
-            </button>
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={projectActionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+              onClick={() => customizeDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={projectActionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
+              {projectActionBusy ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
 
       <dialog ref={deleteDialogRef} aria-labelledby="delete-project-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (projectActionBusy) event.preventDefault(); }}
+        onCancel={(event) => {
+          if (projectActionBusy) {
+            event.preventDefault();
+            showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          }
+        }}
         onClose={() => { if (!projectActionBusy) setDeletingProject(null); }}>
         <h2 id="delete-project-title" className="text-xl font-semibold">{t("删除项目", "Delete project")}</h2>
         <p className="mt-3 text-sm leading-6 text-slate-600">
@@ -488,12 +538,12 @@ export default function ProjectsPage() {
           })}
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={projectActionBusy}
-            onClick={() => deleteDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-          <button type="button" className="amp-button amp-project-delete-confirm" disabled={projectActionBusy}
+          <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={projectActionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+            onClick={() => deleteDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+          <GuardedButton type="button" className="amp-button amp-project-delete-confirm" disabled={projectActionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             onClick={() => void deleteProject()}>
-            {projectActionBusy ? t("删除中...", "Deleting...") : t("确认删除", "Delete")}
-          </button>
+            {projectActionBusy ? t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting) : t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+          </GuardedButton>
         </div>
       </dialog>
     </div>

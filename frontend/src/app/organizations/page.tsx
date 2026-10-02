@@ -1,5 +1,7 @@
 "use client";
 
+import { GuardedButton, GuardedInput } from "@/components/redesign/GuardedControls";
+
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,11 +15,14 @@ import OrganizationAvatar from "@/components/layout/organization_avatar";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
+import Pagination from "@/components/redesign/Pagination";
+import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 export default function OrganizationsPage() {
   const { user, loading, organizations, organizationsLoading, organizationsError, organizationBusy, createOrganization, deleteOrganization, switchOrganization } = useAuth();
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -28,6 +33,11 @@ export default function OrganizationsPage() {
   const [organizationToDelete, setOrganizationToDelete] = useState<OrganizationDetails | null>(null);
   const organizationMenuRef = useRef<HTMLDivElement>(null);
   const current = user?.current_organization ?? user?.default_organization;
+  const organizationPagination = usePagination(organizations, current?.id ?? "", 6);
+
+  useEffect(() => {
+    setOrganizationMenuId(null);
+  }, [organizationPagination.page, organizationPagination.pageSize, current?.id]);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -60,6 +70,12 @@ export default function OrganizationsPage() {
   }, [organizationMenuId]);
 
   const openEditor = () => {
+    if (organizationBusy || organizationsLoading) {
+      showWarning(organizationBusy
+        ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.")
+        : t("正在加载组织，请稍候。", "Organizations are loading. Please wait."));
+      return;
+    }
     setName("");
     setFormError(null);
     setActionError(null);
@@ -68,20 +84,22 @@ export default function OrganizationsPage() {
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (organizationBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const trimmed = name.trim();
-    if (!trimmed) { showError(t("组织名称不能为空", "Organization name is required")); return; }
+    if (!trimmed) { showError(t("请填写名称。", "Enter a name.")); return; }
     if (trimmed.length > 80) { showError(t("组织名称不能超过 80 个字符", "Organization name must be at most 80 characters")); return; }
     setFormError(null);
     try {
       await createOrganization(trimmed);
       setEditorOpen(false);
-      showSuccess(t("组织已创建，可点击“切换到此组织”开始使用。", 'Organization created. Select "Switch to organization" to make it your current organization.'));
+      showSuccess(t("组织已创建，可点击“切换到此组织”开始使用。", "Organization created. Select Switch to use this organization."));
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not create organization");
     }
   };
 
   const activate = async (id: string) => {
+    if (organizationBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     setActionError(null);
     try {
       await switchOrganization(id);
@@ -92,7 +110,14 @@ export default function OrganizationsPage() {
   };
 
   const removeOrganization = async () => {
-    if (!organizationToDelete) return;
+    if (organizationBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!organizationToDelete) { showWarning(t("请先选择要删除的组织。", "Select an organization.")); return; }
+    if (organizationToDelete.role !== "owner" || organizationToDelete.is_default) {
+      showWarning(organizationToDelete.is_default
+        ? t("默认组织不能删除。", "The default organization cannot be deleted.")
+        : t("仅组织所有者可以删除组织。", "Only the organization owner can delete the organization."));
+      return;
+    }
     setActionError(null);
     try {
       await deleteOrganization(organizationToDelete.id);
@@ -103,7 +128,7 @@ export default function OrganizationsPage() {
     }
   };
 
-  if (loading || !user) return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
+  if (loading || !user) return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
 
   return (
     <div className="amp-redesign amp-workspace-page amp-state-page max-w-5xl">
@@ -113,16 +138,16 @@ export default function OrganizationsPage() {
       </header>
       <div className="amp-workspace-command-bar">
         <h2 className="amp-workspace-section-title">{t("所属组织", "Your organizations")} {!organizationsLoading && !organizationsError && `(${organizations.length})`}</h2>
-        <button type="button" className="amp-button amp-button-primary" disabled={organizationBusy || organizationsLoading}
-          onClick={openEditor}>{t("创建组织", "Create organization")}</button>
+        <GuardedButton type="button" className="amp-button amp-button-primary" disabled={organizationBusy || organizationsLoading} blockedReason={organizationBusy ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("正在加载组织，请稍候。", "Organizations are loading. Please wait.")}
+          onClick={openEditor}>{t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}</GuardedButton>
       </div>
 
-      {organizationsLoading ? <p role="status" className="amp-page-state">{t("正在加载组织...", "Loading organizations...")}</p>
+      {organizationsLoading ? <p role="status" className="amp-page-state">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</p>
         : organizations.length === 0 && !organizationsError ? <div className="amp-page-state amp-empty-state">
           <EmptyStateIcon name="organization" />
           <p>{t("暂未读取到组织，请尝试刷新。", "No organizations were returned. Try refreshing.")}</p>
         </div>
-          : <div className="grid gap-4">{organizations.map((item) => (
+          : <div className="grid gap-4">{organizationPagination.pageItems.map((item) => (
             <article key={item.id} data-organization-id={item.id} className="amp-workspace-card p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <Link href={`/organizations/${encodeURIComponent(item.id)}`}
@@ -146,8 +171,8 @@ export default function OrganizationsPage() {
                   {(current?.id !== item.id || (item.role === "owner" && !item.is_default)) && (
                     <div ref={organizationMenuId === item.id ? organizationMenuRef : undefined}
                       className="relative inline-flex">
-                      <button type="button" className="amp-member-action-more"
-                        disabled={organizationBusy}
+                      <GuardedButton type="button" className="amp-member-action-more"
+                        disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                         aria-haspopup="menu"
                         aria-expanded={organizationMenuId === item.id}
                         aria-label={t(
@@ -158,7 +183,7 @@ export default function OrganizationsPage() {
                         onClick={() => setOrganizationMenuId((value) =>
                           value === item.id ? null : item.id)}>
                         <InlineIcon name="more" className="h-5 w-5" strokeWidth={3} />
-                      </button>
+                      </GuardedButton>
                       {organizationMenuId === item.id && (
                         <div role="menu" className="amp-member-action-menu"
                           onKeyDown={(event) => {
@@ -168,27 +193,27 @@ export default function OrganizationsPage() {
                             }
                           }}>
                           {current?.id !== item.id && (
-                            <button type="button" role="menuitem"
-                              disabled={organizationBusy}
+                            <GuardedButton type="button" role="menuitem"
+                              disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                               onClick={() => {
                                 setOrganizationMenuId(null);
                                 void activate(item.id);
                               }}>
                               <InlineIcon name="organization" />
-                              {t("切换到此组织", "Switch to organization")}
-                            </button>
+                              {t("切换到此组织", "Switch")}
+                            </GuardedButton>
                           )}
                           {item.role === "owner" && !item.is_default && (
-                            <button type="button" role="menuitem"
+                            <GuardedButton type="button" role="menuitem"
                               className="amp-member-action-danger"
-                              disabled={organizationBusy}
+                              disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                               onClick={() => {
                                 setOrganizationMenuId(null);
                                 setOrganizationToDelete(item);
                               }}>
                               <InlineIcon name="trash" />
-                              {t("删除组织", "Delete organization")}
-                            </button>
+                              {t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                            </GuardedButton>
                           )}
                         </div>
                       )}
@@ -198,23 +223,38 @@ export default function OrganizationsPage() {
               </div>
             </article>
           ))}</div>}
+      {!organizationsLoading && organizations.length > 0 && (
+        <Pagination
+          page={organizationPagination.page}
+          pageSize={organizationPagination.pageSize}
+          pageSizeOptions={DEFAULT_PAGE_SIZE_OPTIONS}
+          totalItems={organizationPagination.totalItems}
+          totalPages={organizationPagination.totalPages}
+          onPageChange={organizationPagination.setPage}
+          onPageSizeChange={organizationPagination.setPageSize}
+        />
+      )}
 
       <dialog ref={dialogRef} aria-labelledby="organization-dialog-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { event.preventDefault(); if (!organizationBusy) setEditorOpen(false); }}
+        onCancel={(event) => {
+          event.preventDefault();
+          if (organizationBusy) showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          else setEditorOpen(false);
+        }}
         onClose={() => setEditorOpen(false)}>
         <h2 id="organization-dialog-title" className="mb-5 text-lg font-semibold">{t("创建组织", "Create organization")}</h2>
         <form onSubmit={save} noValidate>
           <label htmlFor="organization-name" className="mb-2 block text-sm font-medium">{t("组织名称", "Organization name")}</label>
-          <input id="organization-name" autoFocus value={name} maxLength={80} disabled={organizationBusy}
+          <GuardedInput id="organization-name" autoFocus value={name} maxLength={80} disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             onChange={(event) => setName(event.target.value)} placeholder={t("例如：产品团队", "For example: Product Team")}
             className="amp-workspace-control w-full" />
           <p className="mt-2 text-xs leading-5 text-slate-500">{t("最多 80 个字符。自定义名称按原文保存，不会自动翻译。", "Up to 80 characters. Custom names are saved as entered and are not translated.")}</p>
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={organizationBusy} onClick={() => setEditorOpen(false)}>{t("取消", "Cancel")}</button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={organizationBusy}>
-              {organizationBusy ? t("保存中...", "Saving...") : t("创建", "Create")}
-            </button>
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onClick={() => setEditorOpen(false)}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
+              {organizationBusy ? t(CHINESE_PROGRESS.creating, ENGLISH_PROGRESS.creating) : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
@@ -227,9 +267,9 @@ export default function OrganizationsPage() {
           "All projects, insights, cases, portfolio work, and memberships in this organization will be permanently deleted. Delete “{name}”?",
           { name: organizationToDelete ? organizationName(organizationToDelete, t) : "" },
         )}
-        cancelLabel={t("取消", "Cancel")}
-        confirmLabel={t("删除组织", "Delete organization")}
-        busyLabel={t("删除中...", "Deleting...")}
+        cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+        confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+        busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}
         busy={organizationBusy}
         onCancel={() => setOrganizationToDelete(null)}
         onConfirm={() => void removeOrganization()}

@@ -5,12 +5,15 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import { useToast } from "@/contexts/toast_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { GuardedButton, GuardedInput } from "@/components/redesign/GuardedControls";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
+import Pagination from "@/components/redesign/Pagination";
 import PortfolioProjectSidebar from "@/components/portfolio/PortfolioProjectSidebar";
 import {
   delete_script,
@@ -21,6 +24,7 @@ import {
 import type { PortfolioScript } from "@/types/portfolio";
 import type { ContentProject } from "@/types/publishing";
 import { parsePortfolioReport } from "@/utils/portfolio_report";
+import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
 
 const PENDING_DOCUMENTS_STORAGE_KEY = "amp-content-generator-pending-documents-v1";
 type WorkStatusFilter = "all" | PortfolioScript["status"];
@@ -165,14 +169,28 @@ function PortfolioOverview() {
       return sort === "oldest" ? difference : -difference;
     });
   }, [locale, query, scripts, sort, status, t]);
+  const paginationResetKey = JSON.stringify([query, status, sort, selectedProjectId, locale]);
+  const pagination = usePagination(visibleScripts, paginationResetKey, 12);
+
+  useEffect(() => {
+    setMenuScriptId(null);
+  }, [pagination.page, pagination.pageSize, paginationResetKey]);
 
   const canManage = (script: PortfolioScript) => Boolean(user && (
     script.user_id === user.id
     || script.project_role === "owner"
     || script.project_role === "admin"
   ));
+  const busyReason = deleting ? t("正在删除作品，请稍候。", "A work is being deleted. Please wait.")
+    : t("作品名称正在保存，请稍候。", "The work name is being saved. Please wait.");
+  const permissionReason = t("仅作品创建者和项目管理员可以重命名或删除作品。", "Only the work creator and project managers can rename or delete this work.");
+  const currentRename = scripts.find((script) => script.id === renamingScript?.id);
+  const renameLocked = renaming || deleting || !currentRename || !canManage(currentRename);
+  const renameReason = renaming || deleting ? busyReason : !currentRename
+    ? t("此作品已不可用，请刷新列表。", "This work is unavailable. Refresh the list.") : permissionReason;
 
   const openRenameDialog = (script: PortfolioScript) => {
+    if (renaming || deleting || !canManage(script)) { showError(renaming || deleting ? busyReason : permissionReason); return; }
     setMenuScriptId(null);
     setRenamingScript(script);
     setRenameName(script.title);
@@ -181,7 +199,7 @@ function PortfolioOverview() {
 
   const renameScript = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!renamingScript) return;
+    if (!renamingScript || renameLocked) { showError(renameReason); return; }
     const title = renameName.trim();
     if (!title) {
       showError(t("作品名称不能为空", "Work name is required"));
@@ -207,6 +225,10 @@ function PortfolioOverview() {
 
   const deleteScript = async () => {
     if (!pendingDelete) return;
+    const current = scripts.find((script) => script.id === pendingDelete.id);
+    if (renaming || deleting || !current || !canManage(current)) {
+      showError(renaming || deleting ? busyReason : permissionReason); return;
+    }
     const target = pendingDelete;
     setPendingDelete(null);
     setDeleting(true);
@@ -222,7 +244,7 @@ function PortfolioOverview() {
   };
 
   if (authLoading || !user) {
-    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
 
   return (
@@ -284,8 +306,9 @@ function PortfolioOverview() {
               : t("在智能创作中生成作品后，内容会自动保存到这里。", "Work generated in Content Studio is saved here automatically.")}</p>
           </div>
         ) : (
+          <>
           <div className="amp-insight-grid">
-            {visibleScripts.map((script) => {
+            {pagination.pageItems.map((script) => {
               const report = parsePortfolioReport(script.title, script.content, script.updated_at, t, locale);
               const projectTitle = script.project_title
                 || projects.find((project) => project.id === script.project_id)?.title
@@ -327,15 +350,15 @@ function PortfolioOverview() {
                     </button>
                     {menuScriptId === script.id && (
                       <div role="menu" className="amp-insight-card-popover">
-                        <button type="button" role="menuitem" disabled={!canManage(script)}
+                        <GuardedButton blockedReason={renaming || deleting ? busyReason : permissionReason} type="button" role="menuitem" disabled={renaming || deleting || !canManage(script)}
                           onClick={() => openRenameDialog(script)}>
-                          <InlineIcon name="edit" />{t("重命名", "Rename")}
-                        </button>
-                        <button type="button" role="menuitem" className="amp-insight-card-delete"
-                          disabled={!canManage(script)}
+                          <InlineIcon name="edit" />{t(CHINESE_ACTIONS.rename, ENGLISH_ACTIONS.rename)}
+                        </GuardedButton>
+                        <GuardedButton blockedReason={renaming || deleting ? busyReason : permissionReason} type="button" role="menuitem" className="amp-insight-card-delete"
+                          disabled={renaming || deleting || !canManage(script)}
                           onClick={() => { setMenuScriptId(null); setPendingDelete(script); }}>
-                          <InlineIcon name="trash" />{t("删除", "Delete")}
-                        </button>
+                          <InlineIcon name="trash" />{t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                        </GuardedButton>
                       </div>
                     )}
                   </div>
@@ -343,26 +366,35 @@ function PortfolioOverview() {
               );
             })}
           </div>
+          {pagination.totalItems > 0 && <Pagination
+            page={pagination.page}
+            pageSize={pagination.pageSize}
+            pageSizeOptions={DEFAULT_PAGE_SIZE_OPTIONS}
+            totalItems={pagination.totalItems}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize} />}
+          </>
         )}
       </main>
 
       <dialog ref={renameDialogRef} aria-labelledby="rename-work-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (renaming) event.preventDefault(); else setRenamingScript(null); }}>
+        onCancel={(event) => { if (renaming) { event.preventDefault(); showError(busyReason); } else setRenamingScript(null); }}>
         <form onSubmit={(event) => void renameScript(event)}>
           <h2 id="rename-work-title" className="text-lg font-semibold">{t("重命名作品", "Rename work")}</h2>
           <label className="mt-5 block">
             <span className="mb-2 block text-sm font-medium">{t("作品名称", "Work name")}</span>
-            <RedesignInput value={renameName} onChange={(event) => setRenameName(event.target.value)} autoFocus />
+            <GuardedInput blockedReason={renameReason} disabled={renameLocked} className="amp-workspace-control w-full" value={renameName} onChange={(event) => setRenameName(event.target.value)} autoFocus />
           </label>
           <div className="mt-6 flex justify-end gap-2">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
+            <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
               onClick={() => { renameDialogRef.current?.close(); setRenamingScript(null); }}>
-              {t("取消", "Cancel")}
-            </button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={renaming}>
-              {renaming ? t("保存中...", "Saving...") : t("保存", "Save")}
-            </button>
+              {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+            </GuardedButton>
+            <GuardedButton blockedReason={renameLocked ? renameReason : t("请输入作品名称。", "Enter a work name.")} type="submit" className="amp-button amp-button-primary" disabled={renameLocked || !renameName.trim()}>
+              {renaming ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
@@ -371,9 +403,9 @@ function PortfolioOverview() {
         open={Boolean(pendingDelete)}
         title={t("删除作品", "Delete work")}
         message={t("删除后将无法恢复，确认删除“{title}”吗？", "This cannot be undone. Delete “{title}”?", { title: pendingDelete?.title || "" })}
-        cancelLabel={t("取消", "Cancel")}
-        confirmLabel={t("删除", "Delete")}
-        busyLabel={t("删除中...", "Deleting...")}
+        cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+        confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+        busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}
         busy={deleting}
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => void deleteScript()}

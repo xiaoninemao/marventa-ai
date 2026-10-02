@@ -72,10 +72,13 @@ Collect reusable images, videos, and copy into project material sets. Build publ
 ### Project workspaces
 
 - Explicit project membership and roles
+- Workspace actions explain unmet requirements, permission restrictions, editing locks, and pending operations through localized toasts instead of gray controls; action guards and server validation remain enforced.
+- Chinese and English action captions use shared concise verbs and consistent progress labels; contextual headings and accessible descriptions retain the details needed to identify the action.
 - Project-bound insights, cases, creations, media, and portfolio work
 - Platform-authorized Xiaohongshu and Douyin account connections at project level
 - Creator attribution and project-aware permissions
 - Searchable project navigation across the core workflow
+- Project, Case Library, Content Studio, Portfolio, Publishing, and Organization lists include page navigation, totals, and page-size selection in a bottom-aligned, sticky footer. Searches and filters reset the page, and deleting the last item on a page returns to a valid page. The home dashboard remains a five-project preview.
 
 ### Materials management
 
@@ -112,6 +115,7 @@ See [Scheduled publication](#scheduled-publication) for activation, authorizatio
 - On-demand structured AI analysis
 - Analysis follows the selected interface language, with consistent detail previews and upload validation.
 - Project-scoped favorites and creative references
+- The case submission action is labeled **Upload** for both media uploads and public-link imports.
 
 ### Content Studio
 
@@ -120,10 +124,13 @@ See [Scheduled publication](#scheduled-publication) for activation, authorizatio
 - Short-video and image-text planning
 - Five structured content cards for every generation
 - Card-level editing, activity history, versioning, and rollback
+- Standard card titles follow the interface language without changing custom titles or translating stored content.
 - Complete original-content previews and consistent reference-card layouts
 - Live presence for collaborators viewing the same creation
 
 ### Portfolio
+
+- Reports are read-only in the detail view, with bilingual preview and PDF export.
 
 - Dedicated work list and report detail views
 - Background generation states

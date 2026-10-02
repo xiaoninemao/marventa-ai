@@ -30,6 +30,6 @@ test("unselected reference panels use the matching insight or case icon", () => 
 
 test("loading references do not display empty-state icons", () => {
   const html = renderContext("insights", ["loading-reference"]);
-  assert.match(html, /Loading references/);
+  assert.match(html, /Loading\.\.\./);
   assert.doesNotMatch(html, /data-empty-state-icon=/);
 });

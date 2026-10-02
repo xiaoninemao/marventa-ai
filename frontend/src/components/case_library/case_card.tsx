@@ -5,7 +5,9 @@ import Image from "next/image";
 import type { CaseItem } from "@/types/case_library";
 import { useI18n } from "@/contexts/i18n_context";
 import type { Translate } from "@/i18n/locale";
+import { ENGLISH_ACTIONS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { GuardedButton } from "@/components/redesign/GuardedControls";
 import { API_BASE } from "@/services/api_core";
 
 function contentTypeLabel(type: CaseItem["content_type"], t: Translate): string {
@@ -134,17 +136,18 @@ export default function CaseCard({
                   onFavorite?.(item.id, is_favorited);
                 }}>
                   <InlineIcon name="star" />
-                  {is_favorited ? t("取消收藏", "Remove favorite") : t("收藏", "Favorite")}
+                  {is_favorited ? t("取消收藏", `${ENGLISH_ACTIONS.remove} favorite`) : t("收藏", "Favorite")}
                 </button>
-                <button type="button" role="menuitem" className="amp-case-card-delete"
+                <GuardedButton type="button" role="menuitem" className="amp-case-card-delete"
                   disabled={!canDelete} aria-disabled={!canDelete}
+                  blockedReason={t("仅创建者、项目所有者或项目管理员可删除此案例", "Only the creator, project owner or project administrator can delete this case.")}
                   onClick={() => {
                     setMenuOpen(false);
                     onDelete?.(item);
                   }}>
                   <InlineIcon name="trash" />
-                  {t("删除", "Delete")}
-                </button>
+                  {t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                </GuardedButton>
               </div>
             )}
           </div>}

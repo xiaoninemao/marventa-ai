@@ -1,5 +1,7 @@
 "use client";
 
+import { GuardedButton, GuardedInput } from "@/components/redesign/GuardedControls";
+
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -20,6 +22,7 @@ import InlineIcon from "@/components/redesign/InlineIcon";
 import OrganizationAvatar from "@/components/layout/organization_avatar";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import { userAvatarColor as memberAvatarColor, userAvatarInitial } from "@/utils/user_avatar";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 type EditableRole = "admin" | "member";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8765";
@@ -35,7 +38,7 @@ export default function OrganizationDetailPage() {
   const router = useRouter();
   const { user, loading: authLoading, renameOrganization, updateOrganizationAvatar, reloadOrganizations } = useAuth();
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const renameDialogRef = useRef<HTMLDialogElement>(null);
   const inviteDialogRef = useRef<HTMLDialogElement>(null);
   const removeDialogRef = useRef<HTMLDialogElement>(null);
@@ -93,8 +96,9 @@ export default function OrganizationDetailPage() {
 
   const saveName = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (actionBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const trimmed = name.trim();
-    if (!trimmed) { showError(t("组织名称不能为空", "Organization name is required")); return; }
+    if (!trimmed) { showError(t("请填写名称。", "Enter a name.")); return; }
     if (trimmed.length > 80) { showError(t("组织名称不能超过 80 个字符", "Organization name must be at most 80 characters")); return; }
     setActionBusy(true);
     setFormError(null);
@@ -112,8 +116,9 @@ export default function OrganizationDetailPage() {
 
   const inviteMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (actionBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const email = inviteEmail.trim();
-    if (!email) { showError(t("请输入邮箱", "Email is required")); return; }
+    if (!email) { showError(t("请输入邮箱", "Enter an email address.")); return; }
     setActionBusy(true);
     setFormError(null);
     try {
@@ -137,6 +142,7 @@ export default function OrganizationDetailPage() {
   };
 
   const changeRole = async (member: OrganizationMember, role: EditableRole) => {
+    if (actionBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     if (member.role === role) return;
     setActionBusy(true);
     setError(null);
@@ -156,6 +162,7 @@ export default function OrganizationDetailPage() {
   };
 
   const removeMember = async (member: OrganizationMember) => {
+    if (actionBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     setActionBusy(true);
     setError(null);
     try {
@@ -179,9 +186,11 @@ export default function OrganizationDetailPage() {
   const selectAvatar = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
+    if (actionBusy) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (organization?.role !== "owner") { showWarning(t("仅组织所有者可以修改组织头像。", "Only the organization owner can change the organization image.")); return; }
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) {
-      showError(t("请选择 PNG、JPEG、GIF 或 WebP 图片", "Choose a PNG, JPEG, GIF, or WebP image."));
+      showError(t("请选择 PNG、JPEG、GIF 或 WebP 图片", "Select a PNG, JPEG, GIF, or WebP image."));
       return;
     }
     if (file.size > 2 * 1024 * 1024) {
@@ -208,7 +217,7 @@ export default function OrganizationDetailPage() {
   };
 
   if (authLoading || (loading && !organization)) {
-    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
 
   if (!organization) {
@@ -216,7 +225,7 @@ export default function OrganizationDetailPage() {
       <div className="amp-redesign amp-workspace-page max-w-5xl">
         <Link href="/organizations" className="amp-workspace-back-link">
           <InlineIcon name="arrowLeft" className="h-4 w-4" />
-          {t("返回组织管理", "Back to organizations")}
+          {t(CHINESE_ACTIONS.back, ENGLISH_ACTIONS.back)}
         </Link>
       </div>
     );
@@ -236,16 +245,16 @@ export default function OrganizationDetailPage() {
     <div className="amp-redesign amp-workspace-page max-w-5xl">
       <Link href="/organizations" className="amp-workspace-back-link mb-5">
         <InlineIcon name="arrowLeft" className="h-4 w-4" />
-        {t("返回组织管理", "Back to organizations")}
+        {t(CHINESE_ACTIONS.back, ENGLISH_ACTIONS.back)}
       </Link>
 
       <div className="amp-workspace-header">
         <div className="flex min-w-0 items-center gap-4">
-          <button
+          <GuardedButton
             type="button"
-            className={`group relative shrink-0 rounded-xl ${canEditOrganization ? "cursor-pointer" : "cursor-default"}`}
-            disabled={!canEditOrganization || actionBusy}
-            aria-label={canEditOrganization ? t("上传组织头像", "Upload organization image") : undefined}
+            className="group relative shrink-0 cursor-pointer rounded-xl"
+            disabled={!canEditOrganization || actionBusy} blockedReason={actionBusy ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("仅组织所有者可以修改组织头像。", "Only the organization owner can change the organization image.")}
+            aria-label={t("上传组织头像", "Upload organization image")}
             onClick={() => avatarInputRef.current?.click()}
           >
             <OrganizationAvatar organization={organization} className="h-14 w-14 text-lg" />
@@ -254,7 +263,7 @@ export default function OrganizationDetailPage() {
                 <InlineIcon name="upload" className="h-5 w-5" />
               </span>
             )}
-          </button>
+          </GuardedButton>
           <input
             ref={avatarInputRef}
             type="file"
@@ -291,7 +300,7 @@ export default function OrganizationDetailPage() {
                 setFormError(null);
                 inviteDialogRef.current?.showModal();
               }}>
-              {t("邀请成员", "Invite member")}
+              {t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}
             </button>
           )}
         </div>
@@ -335,7 +344,7 @@ export default function OrganizationDetailPage() {
                       options={roleOptions}
                       onChange={(role) => void changeRole(member, role)}
                       ariaLabel={t("设置 {name} 的权限", "Set permissions for {name}", { name: displayName })}
-                      disabled={actionBusy}
+                      disabled={actionBusy} disabledReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                       variant="inline"
                       className="w-auto"
                     />
@@ -349,7 +358,7 @@ export default function OrganizationDetailPage() {
                   {canEditMember && (
                     <div ref={memberMenuUserId === member.user_id ? memberMenuRef : undefined}
                       className="relative inline-flex">
-                      <button type="button" disabled={actionBusy}
+                      <GuardedButton type="button" disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                         className="amp-member-action-more"
                         aria-haspopup="menu"
                         aria-expanded={memberMenuUserId === member.user_id}
@@ -357,7 +366,7 @@ export default function OrganizationDetailPage() {
                         onClick={() => setMemberMenuUserId((current) =>
                           current === member.user_id ? null : member.user_id)}>
                         <InlineIcon name="more" className="h-5 w-5" strokeWidth={3} />
-                      </button>
+                      </GuardedButton>
                       {memberMenuUserId === member.user_id && (
                         <div role="menu" className="amp-member-action-menu"
                           onKeyDown={(event) => {
@@ -366,16 +375,16 @@ export default function OrganizationDetailPage() {
                               setMemberMenuUserId(null);
                             }
                           }}>
-                          <button type="button" role="menuitem"
-                            className="amp-member-action-danger" disabled={actionBusy}
+                          <GuardedButton type="button" role="menuitem"
+                            className="amp-member-action-danger" disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                             onClick={() => {
                               setMemberMenuUserId(null);
                               setMemberToRemove(member);
                               removeDialogRef.current?.showModal();
                             }}>
                             <InlineIcon name="trash" />
-                            {t("移出成员", "Remove member")}
-                          </button>
+                            {t(CHINESE_ACTIONS.remove, ENGLISH_ACTIONS.remove)}
+                          </GuardedButton>
                         </div>
                       )}
                     </div>
@@ -389,28 +398,38 @@ export default function OrganizationDetailPage() {
 
       <dialog ref={renameDialogRef} aria-labelledby="rename-organization-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (actionBusy) event.preventDefault(); }}>
+        onCancel={(event) => {
+          if (actionBusy) {
+            event.preventDefault();
+            showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          }
+        }}>
         <h2 id="rename-organization-title" className="text-lg font-semibold">{t("编辑组织名称", "Edit organization name")}</h2>
         <form onSubmit={saveName} className="mt-5">
           <label className="block text-sm font-medium text-slate-700">
             {t("组织名称", "Organization name")}
-            <input autoFocus value={name} maxLength={80} disabled={actionBusy}
+            <GuardedInput autoFocus value={name} maxLength={80} disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               onChange={(event) => setName(event.target.value)}
               className="amp-workspace-control mt-2 w-full font-normal" />
           </label>
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy}
-              onClick={() => renameDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={actionBusy}>
-              {actionBusy ? t("保存中...", "Saving...") : t("保存", "Save")}
-            </button>
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+              onClick={() => renameDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
+              {actionBusy ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
 
       <dialog ref={inviteDialogRef} aria-labelledby="invite-member-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (actionBusy) event.preventDefault(); }}>
+        onCancel={(event) => {
+          if (actionBusy) {
+            event.preventDefault();
+            showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          }
+        }}>
         <h2 id="invite-member-title" className="text-lg font-semibold">{t("邀请成员", "Invite member")}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-500">
           {t("输入已注册用户的邮箱，成员将立即加入组织。", "Enter a registered user's email. They will join immediately.")}
@@ -418,7 +437,7 @@ export default function OrganizationDetailPage() {
         <form onSubmit={inviteMember} className="mt-5 space-y-4">
           <label className="block text-sm font-medium text-slate-700">
             {t("邮箱", "Email")}
-            <input autoFocus type="email" value={inviteEmail} disabled={actionBusy}
+            <GuardedInput autoFocus type="email" value={inviteEmail} disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder={t("请输入邮箱", "Enter email")}
               className="amp-workspace-control mt-2 w-full font-normal" />
@@ -430,23 +449,28 @@ export default function OrganizationDetailPage() {
               options={inviteRoleOptions}
               onChange={setInviteRole}
               ariaLabel={t("邀请成员权限", "Invited member permission")}
-              disabled={actionBusy}
+              disabled={actionBusy} disabledReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               className="mt-2 w-full"
             />
           </fieldset>
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy}
-              onClick={() => inviteDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={actionBusy}>
-              {actionBusy ? t("邀请中...", "Inviting...") : t("邀请", "Invite")}
-            </button>
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+              onClick={() => inviteDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
+              {actionBusy ? t(CHINESE_PROGRESS.adding, ENGLISH_PROGRESS.adding) : t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
 
       <dialog ref={removeDialogRef} aria-labelledby="remove-organization-member-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (actionBusy) event.preventDefault(); }}
+        onCancel={(event) => {
+          if (actionBusy) {
+            event.preventDefault();
+            showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          }
+        }}
         onClose={() => { if (!actionBusy) setMemberToRemove(null); }}>
         <h2 id="remove-organization-member-title" className="text-lg font-semibold">{t("移出组织成员", "Remove organization member")}</h2>
         <p className="mt-3 text-sm leading-6 text-slate-500">
@@ -457,13 +481,13 @@ export default function OrganizationDetailPage() {
           )}
         </p>
         <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy}
-            onClick={() => removeDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-          <button type="button" className="amp-button bg-red-600 text-white hover:bg-red-700" disabled={actionBusy || !memberToRemove}
+          <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={actionBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+            onClick={() => removeDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+          <GuardedButton type="button" className="amp-button bg-red-600 text-white hover:bg-red-700" disabled={actionBusy || !memberToRemove} blockedReason={actionBusy ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请先选择要移除的成员。", "Select a member.")}
             onClick={() => memberToRemove && void removeMember(memberToRemove)}>
             <InlineIcon name="trash" className="h-4 w-4" />
-            {actionBusy ? t("移出中...", "Removing...") : t("确认移出", "Remove")}
-          </button>
+            {actionBusy ? t(CHINESE_PROGRESS.removing, ENGLISH_PROGRESS.removing) : t(CHINESE_ACTIONS.remove, ENGLISH_ACTIONS.remove)}
+          </GuardedButton>
         </div>
       </dialog>
 

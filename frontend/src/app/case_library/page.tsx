@@ -7,6 +7,8 @@ import CaseCard from "@/components/case_library/case_card";
 import { selectUploadFiles } from "@/utils/upload_selection";
 import CaseProjectSidebar from "@/components/case_library/CaseProjectSidebar";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
+import Pagination from "@/components/redesign/Pagination";
+import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
@@ -28,6 +30,8 @@ import type { CaseItem } from "@/types/case_library";
 import type { ContentProject } from "@/types/publishing";
 import { useI18n } from "@/contexts/i18n_context";
 import { useToast } from "@/contexts/toast_context";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_ACTIONS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
+import { GuardedButton, GuardedInput, GuardedTextarea, useBlockedInteraction } from "@/components/redesign/GuardedControls";
 import { useAuth } from "@/contexts/auth_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import type { Locale, Translate } from "@/i18n/locale";
@@ -48,6 +52,33 @@ function extractCases(data: unknown): CaseItem[] {
     return (data as { cases: CaseItem[] }).cases;
   }
   return [];
+}
+
+async function loadAllCases(favoritesRoom: boolean, projectId: string, isActive: () => boolean) {
+  const items: CaseItem[] = [];
+  const seenIds = new Set<string>();
+  const favoriteIds = new Set<string>();
+  const batchSize = 100;
+  for (let offset = 0; isActive(); offset += batchSize) {
+    const response = favoritesRoom
+      ? await fetch_my_favorites(batchSize, offset)
+      : await fetch_my_cases(batchSize, offset, "", projectId);
+    if (!isActive()) break;
+    const batch = extractCases(response.data);
+    if (!favoritesRoom && !Array.isArray(response.data)) {
+      for (const id of response.data.favorite_ids || []) favoriteIds.add(id);
+    }
+    let added = 0;
+    for (const item of batch) {
+      if (favoritesRoom || item.is_favorited || item.isFavorited) favoriteIds.add(item.id);
+      if (seenIds.has(item.id)) continue;
+      seenIds.add(item.id);
+      items.push(item);
+      added += 1;
+    }
+    if (batch.length < batchSize || added === 0) break;
+  }
+  return { items: items.map(hydrateCase), favoriteIds: [...favoriteIds] };
 }
 
 function mediaUrl(value?: string): string {
@@ -120,7 +151,7 @@ function CaseLibraryContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const { user } = useAuth();
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
@@ -148,6 +179,8 @@ function CaseLibraryContent() {
   const projectId = searchParams.get("project") || "";
   const favoritesRoom = searchParams.get("view") === "favorites";
   const selectedCaseId = searchParams.get("case") || "";
+  const importingReason = t("正在处理中，请稍候。", "Please wait for the current operation to finish.");
+  const uploadInteraction = useBlockedInteraction(isImporting, importingReason);
   const selectedCreateFiles = useMemo(
     () => createMode === "video" ? (createVideo ? [createVideo] : []) : createMode === "image_text" ? createImages : [],
     [createImages, createMode, createVideo],
@@ -184,15 +217,10 @@ function CaseLibraryContent() {
           router.replace("/case_library");
           return;
         }
-        const response = favoritesRoom
-          ? await fetch_my_favorites(100, 0)
-          : await fetch_my_cases(100, 0, "", projectId);
+        const response = await loadAllCases(favoritesRoom, projectId, () => alive);
         if (!alive) return;
-        const items = extractCases(response.data).map(hydrateCase);
-        setCases(items);
-        setFavoriteIds(favoritesRoom ? items.map((item) => item.id)
-          : Array.isArray(response.data) ? items.filter((item) => item.is_favorited).map((item) => item.id)
-            : response.data.favorite_ids || []);
+        setCases(response.items);
+        setFavoriteIds(response.favoriteIds);
       } catch {
         if (alive) reportLoadError();
       } finally {
@@ -207,30 +235,32 @@ function CaseLibraryContent() {
     if (!user || !cases.some((item) => (
       item.ai_status === "analyzing" || item.recognition_status === "pending"
     ))) return;
+    let alive = true;
+    let refreshing = false;
     const timer = window.setInterval(() => {
-      const request = favoritesRoom
-        ? fetch_my_favorites(100, 0)
-        : fetch_my_cases(100, 0, "", projectId);
-      void request
+      if (refreshing) return;
+      refreshing = true;
+      void loadAllCases(favoritesRoom, projectId, () => alive)
         .then((response) => {
-          const items = extractCases(response.data).map(hydrateCase);
+          if (!alive) return;
+          const items = response.items;
           setCases(items);
           setSelectedCase((current) => (
             current ? items.find((item) => item.id === current.id) || current : current
           ));
-          setFavoriteIds(favoritesRoom ? items.map((item) => item.id)
-            : Array.isArray(response.data) ? items.filter((item) => item.is_favorited).map((item) => item.id)
-              : response.data.favorite_ids || []);
+          setFavoriteIds(response.favoriteIds);
         })
         .catch((error) => {
+          if (!alive) return;
           window.clearInterval(timer);
           showError(localizeErrorMessage(
             error instanceof Error ? error.message : t("案例状态刷新失败", "Could not refresh case status"),
             locale,
           ));
-        });
+        })
+        .finally(() => { refreshing = false; });
     }, 3000);
-    return () => window.clearInterval(timer);
+    return () => { alive = false; window.clearInterval(timer); };
   }, [cases, favoritesRoom, locale, projectId, showError, t, user]);
 
   useEffect(() => {
@@ -283,6 +313,8 @@ function CaseLibraryContent() {
       return sort === "oldest" ? difference : -difference;
     });
   }, [analysisStatus, favoritesRoom, cases, contentType, favoriteIds, locale, search, sort]);
+  const paginationResetKey = JSON.stringify([search, contentType, analysisStatus, sort, favoritesRoom, projectId]);
+  const pagination = usePagination(visibleCases, paginationResetKey, 12);
 
   const toggleFavorite = async (caseId: string, currentlyFavorite: boolean) => {
     try {
@@ -315,7 +347,7 @@ function CaseLibraryContent() {
   };
 
   const handleImport = async () => {
-    if (isImporting) return;
+    if (isImporting) { showWarning(importingReason); return; }
     if (!createProjectId) {
       showError(t("请选择所属项目", "Select a project first."));
       return;
@@ -362,6 +394,7 @@ function CaseLibraryContent() {
 
   const createUploadedCase = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isImporting) { showWarning(importingReason); return; }
     if (createMode === "link") {
       await handleImport();
       return;
@@ -416,7 +449,7 @@ function CaseLibraryContent() {
           </div>
           {!favoritesRoom && (
             <button type="button" className="amp-button amp-button-primary" onClick={openCreateDialog}>
-              {t("上传案例", "Upload case")}
+              {t(CHINESE_ACTIONS.upload, ENGLISH_ACTIONS.upload)}
             </button>
           )}
         </div>
@@ -465,7 +498,7 @@ function CaseLibraryContent() {
         </div>
 
         {loadingCases ? (
-          <div className="amp-projects-state" role="status">{t("正在加载案例...", "Loading cases...")}</div>
+          <div className="amp-projects-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>
         ) : visibleCases.length === 0 ? (
           <div className="amp-projects-state">
             <span className="amp-projects-empty-icon"><InlineIcon name="case" /></span>
@@ -475,8 +508,9 @@ function CaseLibraryContent() {
               : projectId ? t("导入链接或上传一个案例。", "Import a link or upload a case.") : t("当前组织暂无可浏览案例。", "No cases are available in this organization.")}</p>
           </div>
         ) : (
+          <>
           <div className="amp-case-grid">
-            {visibleCases.map((item) => (
+            {pagination.pageItems.map((item) => (
               <CaseCard key={item.id} item={item}
                 is_favorited={favoriteIds.includes(item.id) || item.is_favorited || item.isFavorited}
                 canDelete={canManageCase(user, item)}
@@ -484,14 +518,21 @@ function CaseLibraryContent() {
                 onOpen={openCaseDetail} />
             ))}
           </div>
+          <Pagination page={pagination.page} pageSize={pagination.pageSize}
+            pageSizeOptions={DEFAULT_PAGE_SIZE_OPTIONS}
+            totalItems={pagination.totalItems} totalPages={pagination.totalPages}
+            onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+          </>
         )}
       </main>
 
       <dialog ref={createDialogRef} aria-labelledby="create-case-title"
         className="amp-workspace-dialog amp-insight-create-dialog m-auto w-[calc(100%_-_32px)] max-w-2xl bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (isImporting) event.preventDefault(); }}>
+        onCancel={(event) => {
+          if (isImporting) { event.preventDefault(); showWarning(importingReason); }
+        }}>
         <h2 id="create-case-title" className="text-xl font-semibold">{t("上传案例", "Add case")}</h2>
-        <p className="mt-1 text-sm text-slate-500">{t("选择所属项目和案例创建方式。", "Choose a project and a creation method.")}</p>
+        <p className="mt-1 text-sm text-slate-500">{t("选择所属项目和案例创建方式。", "Select a project and creation method.")}</p>
         <form className="mt-6" onSubmit={createUploadedCase}>
           <label className="mb-2 block text-sm font-medium">{t("所属项目", "Project")}</label>
           <EnterpriseSelect
@@ -499,14 +540,15 @@ function CaseLibraryContent() {
             options={projects.map((project) => ({ value: project.id, label: project.title }))}
             onChange={setCreateProjectId}
             ariaLabel={t("选择所属项目", "Select project")}
-            placeholder={projects.length ? t("请选择项目", "Choose a project") : t("暂无可用项目", "No projects available")}
+            placeholder={projects.length ? t("请选择项目", `${ENGLISH_ACTIONS.select} a project`) : t("暂无可用项目", "No projects available")}
             disabled={isImporting || projects.length === 0}
+            disabledReason={isImporting ? importingReason : t("请先创建项目。", "Create a project first.")}
             className="w-full"
           />
 
           <div className="amp-insight-create-modes" role="tablist">
             <button type="button" role="tab" aria-selected={createMode === "link"} onClick={() => { setCreateMode("link"); setCreateFilesExpanded(false); }}>
-              <InlineIcon name="share" />{t("链接导入", "Import link")}
+              <InlineIcon name="share" />{t(CHINESE_ACTIONS.import, ENGLISH_ACTIONS.import)}
             </button>
             <button type="button" role="tab" aria-selected={createMode === "image_text"} onClick={() => { setCreateMode("image_text"); setCreateFilesExpanded(false); }}>
               <InlineIcon name="image" />{t("图文上传", "Image post")}
@@ -519,28 +561,36 @@ function CaseLibraryContent() {
           <div className="amp-insight-create-panel">
             {createMode === "link" ? (
               <label><span>{t("链接或分享文本", "Link or share text")}</span>
-                <textarea className="amp-workspace-control mt-2 w-full resize-none" rows={4}
+                <GuardedTextarea className="amp-workspace-control mt-2 w-full resize-none" rows={4}
                   value={importInput} disabled={isImporting}
+                  blockedReason={importingReason}
                   onChange={(event) => setImportInput(event.target.value)}
                   placeholder={t("粘贴小红书 / 抖音链接或完整分享文本", "Paste a Xiaohongshu / Douyin link or full share text")} /></label>
             ) : (
               <div className="amp-case-upload-fields">
                 <div className="amp-case-upload-copy">
                   <label><span>{t("案例标题", "Case title")}</span>
-                    <input className="amp-workspace-control mt-2 w-full" value={createTitle}
+                    <GuardedInput className="amp-workspace-control mt-2 w-full" value={createTitle}
+                      blockedReason={importingReason}
                       disabled={isImporting} onChange={(event) => setCreateTitle(event.target.value)} /></label>
                   <label><span>{t("案例描述", "Description")}</span>
-                    <textarea className="amp-workspace-control mt-2 w-full resize-none" rows={1}
+                    <GuardedTextarea className="amp-workspace-control mt-2 w-full resize-none" rows={1}
+                      blockedReason={importingReason}
                       value={createDescription} disabled={isImporting}
                       onChange={(event) => setCreateDescription(event.target.value)} /></label>
                 </div>
-                <label className="amp-insight-upload amp-case-upload-dropzone">
+                <label className="amp-insight-upload amp-case-upload-dropzone" role="button" tabIndex={isImporting ? 0 : undefined}
+                  aria-disabled={uploadInteraction["aria-disabled"]}
+                  data-blocked-action={uploadInteraction["data-blocked-action"]}
+                  onClickCapture={uploadInteraction.onClickCapture}
+                  onKeyDownCapture={uploadInteraction.onKeyDownCapture}>
                   <InlineIcon name="upload" />
-                  <strong>{createMode === "video" ? t("选择视频", "Select video") : t("选择图片", "Select images")}</strong>
+                  <strong>{createMode === "video" ? t("选择视频", `${ENGLISH_ACTIONS.select} video`) : t("选择图片", `${ENGLISH_ACTIONS.select} images`)}</strong>
                   <span>{createMode === "video"
                     ? t("支持 MP4、MOV、WebM 和 M4V，最多 1 个文件", "MP4, MOV, WebM, and M4V; up to 1 file")
                     : t("支持 JPG、PNG、GIF 和 WebP", "JPG, PNG, GIF, and WebP")}</span>
                   <input type="file" disabled={isImporting}
+                    style={{ pointerEvents: isImporting ? "none" : undefined }}
                     accept={createMode === "video" ? ".mp4,.mov,.webm,.m4v" : "image/*"}
                     multiple={createMode === "image_text"}
                     onChange={(event) => {
@@ -595,7 +645,7 @@ function CaseLibraryContent() {
                             ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
                             : `${(file.size / 1024).toFixed(1)} KB`}</small>
                         </span>
-                        <button type="button" disabled={isImporting}
+                        <GuardedButton type="button" disabled={isImporting} blockedReason={importingReason}
                           aria-label={t("移除文件：{name}", "Remove file: {name}", { name: file.name })}
                           onClick={() => {
                             if (createMode === "video") setCreateVideo(null);
@@ -603,7 +653,7 @@ function CaseLibraryContent() {
                             if (selectedCreateFiles.length === 1) setCreateFilesExpanded(false);
                           }}>
                           <InlineIcon name="close" />
-                        </button>
+                        </GuardedButton>
                       </li>
                     ))}
                   </ul>
@@ -611,11 +661,12 @@ function CaseLibraryContent() {
               </div>
             )}
             <div className="amp-insight-create-action-buttons">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={isImporting}
-                onClick={() => createDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-              <button type="submit" className="amp-button amp-button-primary" disabled={isImporting || !createProjectId}>
-                {isImporting ? t("处理中...", "Processing...") : t("创建案例", "Create case")}
-              </button>
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={isImporting} blockedReason={importingReason}
+                onClick={() => createDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={isImporting || !createProjectId}
+                blockedReason={isImporting ? importingReason : t("请选择所属项目", "Select a project first.")}>
+                {isImporting ? t(CHINESE_PROGRESS.uploading, ENGLISH_PROGRESS.uploading) : t(CHINESE_ACTIONS.upload, ENGLISH_ACTIONS.upload)}
+              </GuardedButton>
             </div>
           </div>
         </form>
@@ -640,9 +691,9 @@ function CaseLibraryContent() {
           "Delete “{name}”? This action cannot be undone.",
           { name: pendingDeleteCase?.title || "" },
         )}
-        cancelLabel={t("取消", "Cancel")}
-        confirmLabel={t("确认删除", "Delete")}
-        busyLabel={t("删除中...", "Deleting...")}
+        cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+        confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+        busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}
         busy={deletingCase}
         onCancel={() => setPendingDeleteCase(null)}
         onConfirm={() => void deleteCaseFromLibrary()}
@@ -661,7 +712,7 @@ function CaseDetailModal({
   onUpdate: (item: CaseItem) => void;
 }) {
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const { user } = useAuth();
   const [tab, setTab] = useState<"media" | "analysis">("media");
   const [isStartingAnalysis, setIsStartingAnalysis] = useState(false);
@@ -703,7 +754,10 @@ function CaseDetailModal({
       showError(t("你没有权限分析此案例。", "You do not have permission to analyze this case."));
       return;
     }
-    if (isAnalyzing || isStartingAnalysis) return;
+    if (isAnalyzing || isStartingAnalysis) {
+      showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+      return;
+    }
     setIsStartingAnalysis(true);
     try {
       await analyze_case(item.id, locale);
@@ -724,6 +778,7 @@ function CaseDetailModal({
   };
 
   const saveContent = async () => {
+    if (isSavingContent) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     if (!canEditContent) {
       showError(t("你没有权限编辑此案例。", "You do not have permission to edit this case."));
       return;
@@ -800,10 +855,10 @@ function CaseDetailModal({
     || outputBlocks.length > 0
     || videoBlocks.length > 0;
   const analyzeLabel = isAnalyzing
-    ? t("分析中...", "Analyzing...")
+    ? t(CHINESE_PROGRESS.analyzing, ENGLISH_PROGRESS.analyzing)
     : analysis
-      ? t("重新分析", "Analyze again")
-      : t("AI 分析", "AI analysis");
+      ? t(CHINESE_ACTIONS.analyze, ENGLISH_ACTIONS.analyze)
+      : t(CHINESE_ACTIONS.analyze, ENGLISH_ACTIONS.analyze);
 
   const copyAnalysisBlock = async (block: AnalysisBlock) => {
     const content = block.text || block.items?.join("\n") || "";
@@ -891,21 +946,25 @@ function CaseDetailModal({
                 <div className="amp-case-content-editor">
                   <label>
                     <span>{t("标题", "Title")}</span>
-                    <input value={draftTitle} disabled={isSavingContent}
+                    <GuardedInput value={draftTitle} disabled={isSavingContent}
+                      blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                       onChange={(event) => setDraftTitle(event.target.value)} />
                   </label>
                   <label>
                     <span>{t("内容", "Content")}</span>
-                    <textarea value={draftContent} disabled={isSavingContent}
+                    <GuardedTextarea value={draftContent} disabled={isSavingContent}
+                      blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                       onChange={(event) => setDraftContent(event.target.value)} />
                   </label>
                   <div className="amp-case-content-editor-actions">
-                    <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
-                      disabled={isSavingContent} onClick={cancelContentEdit}>{t("取消", "Cancel")}</button>
-                    <button type="button" className="amp-button amp-button-primary"
+                    <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                      blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                      disabled={isSavingContent} onClick={cancelContentEdit}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+                    <GuardedButton type="button" className="amp-button amp-button-primary"
+                      blockedReason={isSavingContent ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入案例标题", "Enter a case title.")}
                       disabled={isSavingContent || !draftTitle.trim()} onClick={saveContent}>
-                      {isSavingContent ? t("保存中...", "Saving...") : t("保存", "Save")}
-                    </button>
+                      {isSavingContent ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+                    </GuardedButton>
                   </div>
                 </div>
               ) : (
@@ -914,7 +973,7 @@ function CaseDetailModal({
                     <div className="amp-case-content-actions">
                       <button type="button" onClick={() => setIsEditingContent(true)}>
                         <InlineIcon name="edit" />
-                        {t("编辑", "Edit")}
+                        {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
                       </button>
                     </div>
                   )}
@@ -942,13 +1001,14 @@ function CaseDetailModal({
                     </div>
                   )}
                   {canEditContent && (
-                    <button type="button" className={`amp-button ${hasAnalysisContent ? "amp-button-secondary" : "amp-button-primary"} amp-case-analyze-button`}
+                    <GuardedButton type="button" className={`amp-button ${hasAnalysisContent ? "amp-button-secondary" : "amp-button-primary"} amp-case-analyze-button`}
+                      blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                       onClick={handleAnalyze} disabled={isAnalyzing || isStartingAnalysis}>
-                      {isAnalyzing || isStartingAnalysis
-                        ? <span className="amp-case-analysis-spinner" aria-hidden="true" />
-                        : <InlineIcon name="sparkle" />}
+                      {(isAnalyzing || isStartingAnalysis) && (
+                        <span className="amp-case-analysis-spinner" aria-hidden="true" />
+                      )}
                       {analyzeLabel}
-                    </button>
+                    </GuardedButton>
                   )}
                 </div>
                 {isAnalyzing ? (
@@ -972,7 +1032,7 @@ function CaseDetailModal({
                     <InlineIcon name="sparkle" />
                     <strong>{t("尚未进行 AI 分析", "No AI analysis yet")}</strong>
                     <p>{canEditContent
-                      ? t("点击上方“AI 分析”，提炼内容亮点、可复用结构与改写建议。", "Select AI analysis above to extract highlights, reusable structures, and rewrite suggestions.")
+                      ? t("点击上方“AI 分析”，提炼内容亮点、可复用结构与改写建议。", "Select Analyze above for highlights, reusable structures, and editing suggestions.")
                       : t("有管理权限的成员完成分析后，你可以在这里查看结果。", "Results will appear here after an authorized member runs the analysis.")}</p>
                   </div>
                 )}
@@ -1035,7 +1095,7 @@ function AnalysisCard({
       <div className="amp-case-analysis-card-header">
         <h4>{block.title}</h4>
         <button type="button" onClick={() => onCopy(block)}
-          aria-label={t("复制{title}", "Copy {title}", { title: block.title })} title={t("复制", "Copy")}>
+          aria-label={t("复制{title}", "Copy {title}", { title: block.title })} title={t(CHINESE_ACTIONS.copy, ENGLISH_ACTIONS.copy)}>
           <InlineIcon name="copy" />
         </button>
       </div>

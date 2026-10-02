@@ -10,6 +10,7 @@ import LanguageSwitcher from "@/components/shared/language_switcher";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import RedesignButton from "@/components/redesign/RedesignButton";
 import RedesignInput from "@/components/redesign/RedesignInput";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_ACTIONS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
 
 interface Props {
   mode: "login" | "register";
@@ -23,7 +24,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
   const { login, register } = useAuth();
   const { t, locale } = useI18n();
-  const { showError } = useToast();
+  const { showError, showWarning } = useToast();
   const [loading, setLoading] = useState(false);
 
   const [loginEmail, setLoginEmail] = useState("");
@@ -67,6 +68,7 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
 
   const doLogin = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (loading) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     if (!loginEmail.trim() || !loginPassword) {
       showError(t("请填写邮箱和密码", "Enter your email and password."));
       return;
@@ -84,6 +86,7 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
 
   const doRegister = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (loading) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const email = registerEmail.trim();
     if (!email || !registerPassword) {
       showError(t("请填写邮箱和密码", "Enter your email and password."));
@@ -134,7 +137,7 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
               <LanguageSwitcher variant="minimal" />
               <span>{isLogin ? t("没有账号？", "New here?") : t("已有账号？", "Have an account?")}</span>
               <button type="button" onClick={handleSwitch}>
-                {isLogin ? t("立即注册", "Sign up") : t("立即登录", "Sign in")}
+                {isLogin ? t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp) : t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
               </button>
               <button type="button" onClick={handleClose} className="amp-modal-close" aria-label={t("关闭", "Close")}>
                 <InlineIcon name="close" className="h-5 w-5" />
@@ -174,8 +177,8 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
                   />
                 </label>
 
-                <RedesignButton type="submit" disabled={loading} className="amp-login-submit">
-                  {loading ? t("登录中...", "Signing in...") : t("登录", "Sign in")}
+                <RedesignButton type="submit" disabled={loading} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} className="amp-login-submit">
+                  {loading ? t(CHINESE_PROGRESS.signingIn, ENGLISH_PROGRESS.signingIn) : t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
                 </RedesignButton>
               </form>
             ) : (
@@ -206,8 +209,8 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
                   />
                 </label>
 
-                <RedesignButton type="submit" disabled={loading} className="amp-login-submit">
-                  {loading ? t("注册中...", "Signing up...") : t("注册", "Sign up")}
+                <RedesignButton type="submit" disabled={loading} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} className="amp-login-submit">
+                  {loading ? t(CHINESE_PROGRESS.signingUp, ENGLISH_PROGRESS.signingUp) : t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp)}
                 </RedesignButton>
               </form>
             )}

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useI18n } from "@/contexts/i18n_context";
 import SlidingPanel from "@/components/auth/sliding_panel";
 import LanguageSwitcher from "@/components/shared/language_switcher";
+import { ENGLISH_ACTIONS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import { handlePublicAnchorClick as navigateSection, restorePublicAnchor } from "@/utils/public_anchor_navigation";
 import "@/styles/landing.css";
 
@@ -87,10 +88,10 @@ export default function PublicHomepage() {
             <div className="amp-public-nav-actions">
               <LanguageSwitcher variant="minimal" />
               <button type="button" className="amp-public-login-link" onClick={(event) => openAuth("login", event)}>
-                {t("登录", "Sign in")}
+                {t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
               </button>
               <button ref={registrationTrigger} type="button" className="amp-public-nav-cta" onClick={(event) => openAuth("register", event)}>
-                {t("注册", "Sign up")}
+                {t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp)}
               </button>
             </div>
           </div>
@@ -111,7 +112,7 @@ export default function PublicHomepage() {
                 </a>
                 <a href="#capabilities" className="amp-public-text-link"
                   onClick={(event) => navigateSection("#capabilities", event)}>
-                  {t("了解产品", "Explore the product")}
+                  {t(CHINESE_ACTIONS.explore, ENGLISH_ACTIONS.explore)}
                 </a>
               </div>
             </div>
@@ -150,7 +151,7 @@ export default function PublicHomepage() {
                 <button type="button" className="amp-public-start-link"
                   aria-label={t("注册后开始你的第一个项目", "Sign up to start your first project")}
                   onClick={(event) => openAuth("register", event)}>
-                  <span>{t("开始你的第一个项目", "Start your first project")}</span>
+                  <span>{t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp)}</span>
                   <svg className="amp-public-start-arrow" aria-hidden="true" focusable="false" viewBox="0 0 40 40" fill="none">
                     <path d="M8 32 32 8M9 8h23v23" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>

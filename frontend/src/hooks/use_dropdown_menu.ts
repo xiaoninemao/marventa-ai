@@ -12,7 +12,8 @@ export function useDropdownMenu(itemCount: number, align: "start" | "end" = "end
 
   const menuItems = useCallback(() => Array.from(
     menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="option"]') ?? [],
-  ).filter((item) => !item.matches(':disabled, [aria-disabled="true"]')), []);
+  ).filter((item) => !item.matches(":disabled")
+    && (!item.matches('[aria-disabled="true"]') || item.dataset.blockedAction === "true")), []);
 
   useLayoutEffect(() => {
     if (!open) return;

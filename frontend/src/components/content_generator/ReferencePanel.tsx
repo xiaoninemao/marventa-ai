@@ -3,10 +3,12 @@
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import CaseCard from "@/components/case_library/case_card";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
+import { GuardedButton } from "@/components/redesign/GuardedControls";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import { useI18n } from "@/contexts/i18n_context";
 import { localizeErrorMessage } from "@/i18n/errors";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import { fetch_history, fetch_my_cases, fetch_my_favorites } from "@/services/api_client";
 import type { CaseItem } from "@/types/case_library";
 import type { HistoryRecord } from "@/types/market_insight";
@@ -229,13 +231,13 @@ export default function ReferencePanel({
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3">
           {loading ? (
             <div className="amp-dialog-state" role="status">
-              <span className="text-sm text-zinc-500">{t("正在加载…", "Loading…")}</span>
+              <span className="text-sm text-zinc-500">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</span>
             </div>
           ) : loadError ? (
             <div className="amp-dialog-state" role="alert">
               <p className="text-sm text-zinc-500">{localizeErrorMessage(loadError, locale)}</p>
               <button type="button" className="amp-button amp-button-secondary mt-3"
-                onClick={() => setLoadAttempt((current) => current + 1)}>{t("重试", "Retry")}</button>
+                onClick={() => setLoadAttempt((current) => current + 1)}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
             </div>
           ) : initial_tab === "insight" ? (
             visibleInsights.length ? (
@@ -246,10 +248,15 @@ export default function ReferencePanel({
                   const summary = item.ai_analysis?.product_summary
                     || item.ai_analysis?.product_description || t("暂无洞察摘要", "No insight summary");
                   return (
-                    <button key={item.id} type="button"
+                    <GuardedButton key={item.id} type="button"
                       className={`amp-reference-insight-card ${selected ? "amp-reference-insight-card-selected" : ""}`}
                       onClick={() => { if (selectable) toggleInsight(item.id); }}
                       disabled={!selectable}
+                      blockedReason={item.status === "analyzing"
+                        ? t("洞察正在分析，完成后才能引用", "Analysis must finish before selecting this insight.")
+                        : item.status === "failed"
+                          ? t("洞察分析失败，请先重新分析再引用", "Retry analysis before selecting this insight.")
+                          : t("此洞察暂无可引用的分析结果", "This insight has no analysis results.")}
                       aria-pressed={selected}
                       aria-label={t("选择洞察：{title}", "Select insight: {title}", { title: item.title || item.filename })}>
                       <strong title={item.title || item.filename}>{item.title || item.filename}</strong>
@@ -264,7 +271,7 @@ export default function ReferencePanel({
                       <span className={`amp-reference-card-check ${selected ? "amp-reference-card-check-selected" : ""}`} aria-hidden="true">
                         <InlineIcon name="check" />
                       </span>
-                    </button>
+                    </GuardedButton>
                   );
                 })}
               </div>
@@ -292,10 +299,10 @@ export default function ReferencePanel({
         <footer className="flex shrink-0 gap-2 px-4 py-3">
           <button type="button" onClick={onClose}
             className="min-h-[44px] flex-1 rounded-xl border border-zinc-200 text-sm text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900">
-            {t("取消", "Cancel")}
+            {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
           </button>
           <button type="button" onClick={confirm} className="amp-button amp-button-primary flex-1">
-            {t("确认选择", "Confirm selection")}
+            {t(CHINESE_ACTIONS.confirm, ENGLISH_ACTIONS.confirm)}
           </button>
         </footer>
       </div>

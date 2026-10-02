@@ -2,21 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/contexts/i18n_context";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import { useToast } from "@/contexts/toast_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import { fetch_publication_copy, update_publication_copy } from "@/services/api_client";
 import type { PublicationContent } from "@/types/publishing";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { GuardedButton, GuardedInput, GuardedTextarea } from "@/components/redesign/GuardedControls";
 import { autosaveIsBusy, DebouncedAutosave, type AutosaveState } from "@/utils/debounced_autosave";
 
 type CopyDraft = { title: string; content: string; tags: string[] };
 
 export default function PublicationCopyEditor({
-  planId, editable, disabled, sources, importedCopy, onPick, onPreview, onRemove, onChanged, onBusyChange,
+  planId, editable, disabled, blockedReason, sources, importedCopy, onPick, onPreview, onRemove, onChanged, onBusyChange,
 }: {
   planId: string;
   editable: boolean;
   disabled: boolean;
+  blockedReason: string;
   sources: PublicationContent[];
   importedCopy: { title: string; content: string } | null;
   onPick: () => void;
@@ -41,6 +44,10 @@ export default function PublicationCopyEditor({
   const busy = autosaveIsBusy(saveState, editable);
   const unsaved = saveState === "pending" || saveState === "saving" || saveState === "error";
   const locked = disabled || !editable || loading || Boolean(error);
+  const lockReason = disabled ? blockedReason : !editable ? blockedReason
+    : loading ? t("文案正在加载，请稍候。", "Copy is loading. Please wait.")
+      : error ? t("文案加载失败，请先重试。", "Copy failed to load. Retry first.")
+        : t("文案正在自动保存，请稍候。", "Copy is autosaving. Please wait.");
 
   useEffect(() => {
     writable.current = editable;
@@ -116,7 +123,7 @@ export default function PublicationCopyEditor({
     autosave.current?.queue(draft.current);
   }, [importedCopy]);
   const change = (key: "title" | "content", value: string) => {
-    if (locked) return;
+    if (locked) { showError(lockReason); return; }
     if (key === "title") setTitle(value);
     else setText(value);
     draft.current = { ...draft.current, [key]: value };
@@ -127,16 +134,16 @@ export default function PublicationCopyEditor({
       <header className="amp-publication-section-header">
         <h2 id="publication-copy-heading">{t("文案", "Copy")}</h2>
         {saveState !== "idle" && saveState !== "error" && <small role="status">
-          {unsaved ? (!editable ? t("修改尚未保存", "Changes not saved") : t("自动保存中…", "Autosaving…")) : t("已自动保存", "Autosaved")}
+          {unsaved ? (!editable ? t("修改尚未保存", "Changes not saved") : t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving)) : t("已自动保存", "Autosaved")}
         </small>}
         {editable && <div className="amp-publication-content-actions">
-          <button type="button" className="amp-button amp-button-secondary" disabled={locked || busy} onClick={onPick}>
-            <InlineIcon name="collection" />{t("从素材集选择", "Choose materials")}</button>
+          <GuardedButton blockedReason={lockReason} type="button" className="amp-button amp-button-secondary" disabled={locked || busy} onClick={onPick}>
+            <InlineIcon name="collection" />{t(CHINESE_ACTIONS.select, ENGLISH_ACTIONS.select)}</GuardedButton>
         </div>}
       </header>
-      {loading ? <div className="amp-publication-content-empty" role="status">{t("加载中…", "Loading…")}</div>
+      {loading ? <div className="amp-publication-content-empty" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>
         : error ? <div className="amp-publication-content-empty" role="alert"><p>{error}</p>
-          <button type="button" className="amp-button amp-button-secondary" onClick={() => setAttempt((value) => value + 1)}>{t("重试", "Retry")}</button></div>
+          <button type="button" className="amp-button amp-button-secondary" onClick={() => setAttempt((value) => value + 1)}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button></div>
           : <div className="amp-publication-copy-fields">
             {!editable && unsaved && <p role="alert">
               {t("计划已锁定，未保存的文案仍保留在此页面。请复制备份后再离开。",
@@ -144,11 +151,11 @@ export default function PublicationCopyEditor({
             </p>}
             {saveError && <div role="alert" className="amp-publication-copy-save-error">
               <span>{t("自动保存失败，修改尚未保存：{message}", "Autosave failed; changes are not saved: {message}", { message: saveError })}</span>
-              <button type="button" className="amp-button amp-button-secondary" disabled={locked || busy}
-                onClick={() => { void autosave.current?.flush(); }}>{t("重试", "Retry")}</button>
+              <GuardedButton blockedReason={lockReason} type="button" className="amp-button amp-button-secondary" disabled={locked || busy}
+                onClick={() => { if (locked || busy) { showError(lockReason); return; } void autosave.current?.flush(); }}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</GuardedButton>
             </div>}
             <label><span>{t("标题", "Title")}</span>
-              <input className="amp-workspace-control" maxLength={255} value={title} readOnly={!editable} disabled={disabled || loading || Boolean(error)}
+              <GuardedInput blockedReason={lockReason} className="amp-workspace-control" maxLength={255} value={title} readOnly={!editable} disabled={locked}
                 placeholder={t("输入发布标题", "Enter a publication title")}
                 onChange={(event) => change("title", event.target.value)}
                 onBlur={() => { void autosave.current?.flush(); }}
@@ -156,7 +163,7 @@ export default function PublicationCopyEditor({
                 onCompositionEnd={(event) => { change("title", event.currentTarget.value); autosave.current?.resume(); }} /></label>
             <label className="amp-publication-copy-body">
               <span>{t("正文", "Body")}</span>
-              <textarea className="amp-workspace-control" value={text} readOnly={!editable} disabled={disabled || loading || Boolean(error)}
+              <GuardedTextarea blockedReason={lockReason} className="amp-workspace-control" value={text} readOnly={!editable} disabled={locked}
                 aria-label={t("文案正文", "Copy content")}
                 placeholder={t("输入发布正文，支持换行和 emoji", "Enter copy with line breaks and emoji")}
                 onChange={(event) => change("content", event.target.value)}
@@ -170,9 +177,9 @@ export default function PublicationCopyEditor({
                 <button type="button" className="amp-publication-copy-source-name" title={item.name}
                   onClick={() => onPreview(item)}>{item.name}</button>
                 {editable && <>
-                  <button type="button" disabled={locked || busy} className="amp-member-action-more"
+                  <GuardedButton blockedReason={lockReason} type="button" disabled={locked || busy} className="amp-member-action-more"
                     aria-label={t("移除：{name}", "Remove: {name}", { name: item.name })} onClick={() => onRemove(item)}>
-                    <InlineIcon name="close" /></button>
+                    <InlineIcon name="close" /></GuardedButton>
                 </>}
               </div>)}
             </div>}

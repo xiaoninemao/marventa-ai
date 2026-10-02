@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { createPortal } from "react-dom";
 import { useI18n } from "@/contexts/i18n_context";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { ENGLISH_FEEDBACK, CHINESE_FEEDBACK } from "@/i18n/interaction_copy";
 
 interface ToastItem {
   id: number;
@@ -24,6 +25,7 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const [mounted, setMounted] = useState(false);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(1);
   const timers = useRef(new Map<number, number>());
@@ -65,7 +67,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     closeTimers.current.clear();
   }, []);
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    const updateTarget = () => {
+      const dialogs = document.querySelectorAll<HTMLDialogElement>("dialog[open]");
+      setPortalTarget(dialogs.item(dialogs.length - 1) ?? document.body);
+    };
+    updateTarget();
+    const observer = new MutationObserver(updateTarget);
+    observer.observe(document.body, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ["open"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   const viewport = (
     <div className="pointer-events-none fixed bottom-5 right-5 z-[10000] flex w-[calc(100%_-_40px)] max-w-[380px] flex-col gap-2"
@@ -79,11 +93,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           className={`amp-toast pointer-events-auto rounded-md border border-slate-200 bg-white shadow-[0_4px_12px_rgba(15,23,42,0.08)] ${toast.closing ? "amp-toast-exit" : ""}`}>
           <div className="flex items-start gap-2.5 px-3.5 py-3">
             <span className={`flex h-6 w-5 shrink-0 items-center justify-center ${success ? "text-emerald-700" : warning ? "text-amber-700" : info ? "text-blue-700" : "text-red-700"}`} aria-hidden="true">
-              <InlineIcon name={success ? "check" : warning ? "file" : info ? "wand" : "close"} className="h-3.5 w-3.5" strokeWidth={2.2} />
+              <InlineIcon name={success ? "check" : warning ? "alert" : info ? "wand" : "close"} className="h-3.5 w-3.5" strokeWidth={2.2} />
             </span>
             <span className="min-w-0 flex-1">
               <strong className="block text-[13px] font-semibold leading-5 text-slate-900">
-                {success ? t("操作成功", "Success") : warning ? t("提示", "Notice") : info ? t("正在处理", "In progress") : t("操作失败", "Action failed")}
+                {success ? t(CHINESE_FEEDBACK.success, ENGLISH_FEEDBACK.success) : warning ? t(CHINESE_FEEDBACK.notice, ENGLISH_FEEDBACK.notice) : info ? t(CHINESE_FEEDBACK.working, ENGLISH_FEEDBACK.working) : t(CHINESE_FEEDBACK.error, ENGLISH_FEEDBACK.error)}
               </strong>
               <span className="block break-words text-xs leading-[18px] text-slate-600">{toast.message}</span>
             </span>
@@ -107,7 +121,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showError, showSuccess, showWarning, showInfo }}>
       {children}
-      {mounted && createPortal(viewport, document.querySelector<HTMLDialogElement>("dialog[open]") ?? document.body)}
+      {mounted && portalTarget && createPortal(viewport, portalTarget)}
     </ToastContext.Provider>
   );
 }

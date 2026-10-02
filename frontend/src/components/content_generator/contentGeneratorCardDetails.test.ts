@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { get_card_content_format, get_card_preview_content } from "./contentGeneratorCardDetails.ts";
+import { get_card_content_format, get_card_display_title, get_card_preview_content } from "./contentGeneratorCardDetails.ts";
 import type { ContentCard } from "../../types/content_generator.ts";
+import { translate, type Translate } from "../../i18n/locale.ts";
 
 function card(fields: Partial<ContentCard>): ContentCard {
   return { id: "test-card", card_type: "script", title: "", preview: "", content: "", tips: [], ...fields };
@@ -57,4 +58,35 @@ test("legacy Chinese evidence and ambiguous-content fallback remain supported", 
   assert.equal(get_card_content_format(card({ content: "短视频分镜和口播台词" })), "short_video");
   assert.equal(get_card_content_format(card({ content: "图文正文和封面图" })), "image_text");
   assert.equal(get_card_content_format(card({ content: "A general campaign outline" })), "image_text");
+});
+
+test("canonical card titles follow the interface language in both directions", () => {
+  const en: Translate = (zh, english, values) => translate("en", zh, english, values);
+  const zh: Translate = (chinese, english, values) => translate("zh-CN", chinese, english, values);
+  for (const [card_type, chinese, english] of [
+    ["script", "图文发布计划", "Image-text publishing plan"],
+    ["script", "视频分镜脚本", "Video storyboard"],
+    ["title", "标题文案", "Headline options"],
+    ["copy", "发布文案", "Post copy"],
+    ["hashtags", "话题标签", "Hashtags"],
+    ["visual", "视觉方案", "Visual plan"],
+  ] as const) {
+    assert.equal(get_card_display_title(card({ card_type, title: chinese }), en), english);
+    assert.equal(get_card_display_title(card({ card_type, title: english }), zh), chinese);
+    assert.equal(get_card_display_title(card({ card_type, title: ` ${english.toUpperCase()} ` }), zh), chinese);
+  }
+});
+
+test("display localization preserves custom titles, wrong-type labels and all stored content", () => {
+  const en: Translate = (zh, english, values) => translate("en", zh, english, values);
+  for (const original of [
+    card({ title: "小金猫推广计划", content: "正文保持中文", tips: ["保留提示"] }),
+    card({ card_type: "visual", title: "Headline options" }),
+    card({ card_type: "copy", title: "  My own post title  " }),
+    card({ title: "" }),
+  ]) {
+    const before = structuredClone(original);
+    assert.equal(get_card_display_title(original, en), original.title);
+    assert.deepEqual(original, before);
+  }
 });

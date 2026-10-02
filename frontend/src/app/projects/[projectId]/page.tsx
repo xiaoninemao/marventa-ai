@@ -1,5 +1,7 @@
 "use client";
 
+import { GuardedButton, GuardedInput, useBlockedInteraction } from "@/components/redesign/GuardedControls";
+
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -48,6 +50,7 @@ import MaterialRichTextEditor from "@/components/projects/MaterialRichTextEditor
 import MaterialDocumentPreview from "@/components/projects/MaterialDocumentPreview";
 import MaterialDocumentThumbnail from "@/components/projects/MaterialDocumentThumbnail";
 import { userAvatarColor as memberAvatarColor, userAvatarInitial } from "@/utils/user_avatar";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 type AssetType = "all" | "insight" | "case" | "content" | "portfolio";
 type ChannelPlatformFilter = "all" | "xiaohongshu" | "douyin";
@@ -116,7 +119,7 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const [project, setProject] = useState<ContentProject | null>(null);
   const [quickProjects, setQuickProjects] = useState<ContentProject[]>([]);
   const [projectInsights, setProjectInsights] = useState<HistoryRecord[]>([]);
@@ -177,6 +180,8 @@ export default function ProjectDetailPage() {
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [inviting, setInviting] = useState(false);
   const [materialSaving, setMaterialSaving] = useState(false);
+  const materialUploadInteraction = useBlockedInteraction(materialSaving,
+    t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
   const [materialToDelete, setMaterialToDelete] = useState<ProjectMaterial | null>(null);
   const [accountSaving, setAccountSaving] = useState(false);
   const [choosingPlatform, setChoosingPlatform] = useState(true);
@@ -462,6 +467,7 @@ export default function ProjectDetailPage() {
   };
 
   const openMaterialDialog = () => {
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     setMaterialFilesExpanded(false);
     setMaterialUploadMode("image");
     setMaterialImages([]);
@@ -490,6 +496,7 @@ export default function ProjectDetailPage() {
   };
 
   const enterMaterialSet = async (materialSet: ProjectMaterial) => {
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     setMaterialSaving(true);
     try {
       await loadMaterialSet(materialSet.id);
@@ -505,6 +512,7 @@ export default function ProjectDetailPage() {
   };
 
   const leaveMaterialSet = async () => {
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     setMaterialSaving(true);
     try {
       await loadMaterialSet("");
@@ -521,8 +529,9 @@ export default function ProjectDetailPage() {
 
   const createMaterialSet = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const name = materialSetName.trim();
-    if (!name) return;
+    if (!name) { showError(t("请填写名称。", "Enter a name.")); return; }
     setMaterialSaving(true);
     try {
       const response = await create_project_material_set(
@@ -547,7 +556,7 @@ export default function ProjectDetailPage() {
 
   const uploadMaterial = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (materialSaving) return;
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     if (materialUploadMode === "copy" && copyMode === "rich") {
       const title = materialCopyTitle(copyText);
       if (!title) {
@@ -577,7 +586,7 @@ export default function ProjectDetailPage() {
     }
     const files = selectedMaterialFiles;
     if (files.length === 0) {
-      showError(t("请选择素材文件", "Choose a material file"));
+      showError(t("请选择素材文件", "Select a material file"));
       return;
     }
     setMaterialSaving(true);
@@ -624,8 +633,14 @@ export default function ProjectDetailPage() {
 
   const renameMaterialSet = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const name = materialSetRenameName.trim();
-    if (!materialSetToRename || !name) return;
+    if (!materialSetToRename) { showWarning(t("请先选择要重命名的素材集。", "Select a material set.")); return; }
+    if (!canManageMembers && materialSetToRename.created_by_user_id !== user?.id) {
+      showWarning(t("仅素材集创建者或项目所有者、管理员可以重命名此素材集。", "Only the material set creator or project owners and administrators can rename this material set."));
+      return;
+    }
+    if (!name) { showError(t("请填写名称。", "Enter a name.")); return; }
     setMaterialSaving(true);
     try {
       const response = await update_project_material_set(
@@ -655,8 +670,14 @@ export default function ProjectDetailPage() {
 
   const renameMaterial = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const name = materialRenameName.trim();
-    if (!materialToRename || !name) return;
+    if (!materialToRename) { showWarning(t("请先选择要重命名的素材。", "Select a material.")); return; }
+    if (!canManageMembers && materialToRename.created_by_user_id !== user?.id) {
+      showWarning(t("仅素材创建者或项目所有者、管理员可以重命名此素材。", "Only the material creator or project owners and administrators can rename this material."));
+      return;
+    }
+    if (!name) { showError(t("请填写名称。", "Enter a name.")); return; }
     setMaterialSaving(true);
     try {
       const response = await update_project_material(
@@ -682,7 +703,12 @@ export default function ProjectDetailPage() {
   };
 
   const removeMaterial = async () => {
-    if (!materialToDelete) return;
+    if (materialSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!materialToDelete) { showWarning(t("请先选择要删除的素材。", "Select a material.")); return; }
+    if (!canManageMembers && materialToDelete.created_by_user_id !== user?.id) {
+      showWarning(t("仅素材创建者或项目所有者、管理员可以删除此素材。", "Only the material creator or project owners and administrators can delete this material."));
+      return;
+    }
     setMaterialSaving(true);
     try {
       await delete_project_material(projectId, materialToDelete.id);
@@ -702,7 +728,8 @@ export default function ProjectDetailPage() {
   };
 
   const authorizeChannelAccount = async () => {
-    if (!project) return;
+    if (accountSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!project) { showWarning(t("项目尚未加载，请稍候。", "The project has not loaded yet. Please wait.")); return; }
     setAccountSaving(true);
     try {
       const response = await start_project_channel_authorization(project.id, bindingPlatform);
@@ -736,10 +763,12 @@ export default function ProjectDetailPage() {
   };
 
   const unbindChannelAccount = async (account: ProjectChannelAccount) => {
-    if (
-      !project
-      || (!canManageMembers && account.created_by_user_id !== user?.id)
-    ) return;
+    if (accountSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!project) { showWarning(t("项目尚未加载，请稍候。", "The project has not loaded yet. Please wait.")); return; }
+    if (!canManageMembers && account.created_by_user_id !== user?.id) {
+      showWarning(t("仅账号授权者或项目所有者、管理员可以取消授权。", "Only the account authorizer or project owners and administrators can revoke authorization."));
+      return;
+    }
     setAccountSaving(true);
     try {
       await delete_project_channel_account(project.id, account.id);
@@ -757,9 +786,10 @@ export default function ProjectDetailPage() {
 
   const inviteMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (inviting) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     const email = inviteEmail.trim();
     if (!email) {
-      showError(t("请输入邮箱", "Email is required"));
+      showError(t("请输入邮箱", "Enter an email address."));
       return;
     }
     setInviting(true);
@@ -778,6 +808,7 @@ export default function ProjectDetailPage() {
   };
 
   const changeMemberRole = async (member: ProjectMember, role: "member" | "admin") => {
+    if (inviting) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     if (member.role === role) return;
     setInviting(true);
     try {
@@ -792,6 +823,7 @@ export default function ProjectDetailPage() {
   };
 
   const removeMember = async (member: ProjectMember) => {
+    if (inviting) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     setInviting(true);
     try {
       await remove_project_member(projectId, member.user_id);
@@ -807,7 +839,7 @@ export default function ProjectDetailPage() {
   };
 
   if (authLoading || loading || !project) {
-    return <div className="amp-page-state" role="status">{t("正在加载项目...", "Loading project...")}</div>;
+    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
 
   const categories: Array<{ type: Exclude<AssetType, "all">; label: string }> = [
@@ -829,12 +861,12 @@ export default function ProjectDetailPage() {
         <header className="amp-project-detail-header">
           {selectedMaterialSet ? (
             <div className="amp-project-detail-title amp-project-material-detail-title">
-              <button type="button" className="amp-project-detail-back"
+              <GuardedButton type="button" className="amp-project-detail-back"
                 aria-label={t("返回素材集", "Back to material sets")}
-                disabled={materialSaving}
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => void leaveMaterialSet()}>
                 <InlineIcon name="arrowLeft" />
-              </button>
+              </GuardedButton>
               <div>
                 <h1>{selectedMaterialSet.name}</h1>
               </div>
@@ -856,32 +888,32 @@ export default function ProjectDetailPage() {
           )}
           {selectedMaterialSet ? (
             <div className="flex flex-wrap items-center gap-3">
-            <button type="button" className="amp-button amp-button-secondary"
-              disabled={materialSaving} aria-haspopup="dialog"
+            <GuardedButton type="button" className="amp-button amp-button-secondary"
+              disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} aria-haspopup="dialog"
               onClick={() => {
                 setMaterialMenuId(null);
                 materialManagementDialogRef.current?.showModal();
               }}>
-              {t("管理素材", "Manage materials")}
-            </button>
-            <button type="button" className="amp-button amp-button-primary"
-              disabled={materialSaving} onClick={openMaterialDialog}>
-              {t("上传素材", "Upload material")}
-            </button>
+              {t("管理素材", "Manage")}
+            </GuardedButton>
+            <GuardedButton type="button" className="amp-button amp-button-primary"
+              disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onClick={openMaterialDialog}>
+              {t(CHINESE_ACTIONS.upload, ENGLISH_ACTIONS.upload)}
+            </GuardedButton>
             </div>
           ) : tab === "materials" ? (
-            <button type="button" className="amp-button amp-button-primary"
-              disabled={materialSaving}
+            <GuardedButton type="button" className="amp-button amp-button-primary"
+              disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               onClick={() => {
                 setMaterialSetName("");
                 materialSetDialogRef.current?.showModal();
               }}>
-              {t("创建素材集", "Create material set")}
-            </button>
+              {t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+            </GuardedButton>
           ) : tab === "assets" ? <div ref={createMenuRef} className="amp-project-create-menu">
             <button type="button" className="amp-button amp-button-primary" aria-haspopup="menu" aria-expanded={createMenuOpen}
               onClick={() => setCreateMenuOpen((open) => !open)}>
-              {t("添加资产", "Add asset")}
+              {t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}
               <InlineIcon name="chevronRight" className="amp-project-create-chevron" />
             </button>
             {createMenuOpen && (
@@ -899,12 +931,12 @@ export default function ProjectDetailPage() {
                 setInviteRole("member");
                 inviteDialogRef.current?.showModal();
               }}>
-              {t("邀请成员", "Invite member")}
+              {t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}
             </button>
           ) : tab === "channels" ? (
             <button type="button" className="amp-button amp-button-primary"
               onClick={openAccountDialog}>
-              {t("添加渠道", "Add channel")}
+              {t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}
             </button>
           ) : null}
         </header>
@@ -1021,8 +1053,8 @@ export default function ProjectDetailPage() {
                       {materialMenuId === material.id && (
                         <div role="menu" className="amp-member-action-menu">
                           {material.node_type === "collection" && (
-                            <button type="button" role="menuitem"
-                              disabled={materialSaving}
+                            <GuardedButton type="button" role="menuitem"
+                              disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                               onClick={() => {
                                 setMaterialMenuId(null);
                                 setMaterialSetToRename(material);
@@ -1030,19 +1062,19 @@ export default function ProjectDetailPage() {
                                 materialSetRenameDialogRef.current?.showModal();
                               }}>
                               <InlineIcon name="edit" />
-                              {t("重命名", "Rename")}
-                            </button>
+                              {t(CHINESE_ACTIONS.rename, ENGLISH_ACTIONS.rename)}
+                            </GuardedButton>
                           )}
-                          <button type="button" role="menuitem"
+                          <GuardedButton type="button" role="menuitem"
                             className="amp-member-action-danger"
-                            disabled={materialSaving}
+                            disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                             onClick={() => {
                               setMaterialMenuId(null);
                               setMaterialToDelete(material);
                             }}>
                             <InlineIcon name="trash" />
-                            {t("删除", "Delete")}
-                          </button>
+                            {t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                          </GuardedButton>
                         </div>
                       )}
                     </div>
@@ -1218,7 +1250,7 @@ export default function ProjectDetailPage() {
                 <div className="amp-project-assets-empty">
                   <InlineIcon name="share" />
                   <strong>{t("尚未添加渠道", "No channels added")}</strong>
-                  <p>{t("点击右上角“添加渠道”绑定发布账号。", "Use Add channel to bind a publishing account.")}</p>
+                  <p>{t("点击右上角“添加渠道”绑定发布账号。", "Select Add to connect a publishing account.")}</p>
                 </div>
               ) : visibleChannelAccounts.length === 0 ? (
                 <div className="amp-project-channel-filter-empty amp-empty-state">
@@ -1281,19 +1313,19 @@ export default function ProjectDetailPage() {
                               <a role="menuitem" href={account.profile_url} target="_blank" rel="noreferrer"
                                 onClick={() => setChannelMenuAccountId(null)}>
                                 <InlineIcon name="eye" />
-                                {t("查看主页", "Open profile")}
+                                {t(CHINESE_ACTIONS.open, ENGLISH_ACTIONS.open)}
                               </a>
                             )}
                             {canRevokeAccount && (
-                              <button type="button" role="menuitem" className="amp-channel-revoke"
-                                disabled={accountSaving}
+                              <GuardedButton type="button" role="menuitem" className="amp-channel-revoke"
+                                disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                                 onClick={() => {
                                   setChannelMenuAccountId(null);
                                   void unbindChannelAccount(account);
                                 }}>
                                 <InlineIcon name="close" />
-                                {t("取消授权", "Revoke access")}
-                              </button>
+                                {t(CHINESE_ACTIONS.disconnect, ENGLISH_ACTIONS.disconnect)}
+                              </GuardedButton>
                             )}
                           </div>
                         )}
@@ -1344,7 +1376,7 @@ export default function ProjectDetailPage() {
                         options={roleOptions}
                         onChange={(role) => void changeMemberRole(member, role)}
                         ariaLabel={t("设置 {name} 的项目权限", "Set project permissions for {name}", { name: displayName })}
-                        disabled={inviting}
+                        disabled={inviting} disabledReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                         variant="inline"
                         className="w-auto"
                       />
@@ -1358,7 +1390,7 @@ export default function ProjectDetailPage() {
                     {canEditMember && (
                       <div ref={memberMenuUserId === member.user_id ? memberMenuRef : undefined}
                         className="relative inline-flex">
-                        <button type="button" disabled={inviting}
+                        <GuardedButton type="button" disabled={inviting} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                           className="amp-member-action-more"
                           aria-haspopup="menu"
                           aria-expanded={memberMenuUserId === member.user_id}
@@ -1366,7 +1398,7 @@ export default function ProjectDetailPage() {
                           onClick={() => setMemberMenuUserId((current) =>
                             current === member.user_id ? null : member.user_id)}>
                           <InlineIcon name="more" className="h-5 w-5" strokeWidth={3} />
-                        </button>
+                        </GuardedButton>
                         {memberMenuUserId === member.user_id && (
                           <div role="menu" className="amp-member-action-menu"
                             onKeyDown={(event) => {
@@ -1375,16 +1407,16 @@ export default function ProjectDetailPage() {
                                 setMemberMenuUserId(null);
                               }
                             }}>
-                            <button type="button" role="menuitem"
-                              className="amp-member-action-danger" disabled={inviting}
+                            <GuardedButton type="button" role="menuitem"
+                              className="amp-member-action-danger" disabled={inviting} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                               onClick={() => {
                                 setMemberMenuUserId(null);
                                 setMemberToRemove(member);
                                 removeDialogRef.current?.showModal();
                               }}>
                               <InlineIcon name="trash" />
-                              {t("移出成员", "Remove member")}
-                            </button>
+                              {t(CHINESE_ACTIONS.remove, ENGLISH_ACTIONS.remove)}
+                            </GuardedButton>
                           </div>
                         )}
                       </div>
@@ -1404,16 +1436,17 @@ export default function ProjectDetailPage() {
           onCancel={(event) => {
             if (materialSaving || materialMenuId) {
               event.preventDefault();
-              if (!materialSaving) setMaterialMenuId(null);
+              if (materialSaving) showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+              else setMaterialMenuId(null);
             }
           }}>
           <header>
             <h2 id="material-management-title">{t("管理素材", "Manage materials")}</h2>
-            <button type="button" className="amp-material-preview-icon" disabled={materialSaving}
+            <GuardedButton type="button" className="amp-material-preview-icon" disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
               aria-label={t("关闭素材管理", "Close material management")}
               onClick={() => materialManagementDialogRef.current?.close()}>
               <InlineIcon name="close" />
-            </button>
+            </GuardedButton>
           </header>
           <div ref={materialManagementBodyRef} className="amp-material-management"
             onScroll={() => setMaterialMenuId(null)}>
@@ -1429,8 +1462,8 @@ export default function ProjectDetailPage() {
                       <span className="amp-material-management-name" title={material.name}>{material.name}</span>
                       <div className={`amp-material-management-actions amp-project-material-menu${materialMenuOpensUp ? " opens-up" : ""}`}
                         ref={materialMenuId === material.id ? materialMenuRef : undefined}>
-                        <button type="button" className="amp-member-action-more"
-                          disabled={materialSaving || !canManage}
+                        <GuardedButton type="button" className="amp-member-action-more"
+                          disabled={materialSaving || !canManage} blockedReason={materialSaving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("仅素材创建者或项目所有者、管理员可以管理此素材。", "Only the material creator or project owners and administrators can manage this material.")}
                           aria-label={t("{name} 素材操作", "Material actions for {name}", { name: material.name })}
                           aria-haspopup="menu" aria-expanded={materialMenuId === material.id}
                           onClick={(event) => {
@@ -1440,24 +1473,24 @@ export default function ProjectDetailPage() {
                             setMaterialMenuId((current) => current === material.id ? null : material.id);
                           }}>
                           <InlineIcon name="more" className="h-5 w-5" strokeWidth={3} />
-                        </button>
+                        </GuardedButton>
                         {materialMenuId === material.id && (
                           <div role="menu" className="amp-member-action-menu">
-                            <button type="button" role="menuitem" disabled={materialSaving || !canManage}
+                            <GuardedButton type="button" role="menuitem" disabled={materialSaving || !canManage} blockedReason={materialSaving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("仅素材创建者或项目所有者、管理员可以管理此素材。", "Only the material creator or project owners and administrators can manage this material.")}
                               onClick={() => {
                                 setMaterialMenuId(null);
                                 setMaterialToRename(material);
                                 setMaterialRenameName(material.name);
                                 materialRenameDialogRef.current?.showModal();
-                              }}><InlineIcon name="edit" />{t("重命名", "Rename")}</button>
-                            <button type="button" role="menuitem" className="amp-member-action-danger"
-                              disabled={materialSaving || !canManage}
+                              }}><InlineIcon name="edit" />{t(CHINESE_ACTIONS.rename, ENGLISH_ACTIONS.rename)}</GuardedButton>
+                            <GuardedButton type="button" role="menuitem" className="amp-member-action-danger"
+                              disabled={materialSaving || !canManage} blockedReason={materialSaving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("仅素材创建者或项目所有者、管理员可以管理此素材。", "Only the material creator or project owners and administrators can manage this material.")}
                               onClick={() => {
                                 setMaterialMenuId(null);
                                 setMaterialToDelete(material);
                               }}>
-                              <InlineIcon name="trash" />{t("删除", "Delete")}
-                            </button>
+                              <InlineIcon name="trash" />{t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                            </GuardedButton>
                           </div>
                         )}
                       </div>
@@ -1471,7 +1504,12 @@ export default function ProjectDetailPage() {
 
         <dialog ref={materialPreviewDialogRef} aria-labelledby="material-preview-title"
           className="amp-material-preview-dialog m-auto w-[calc(100%_-_32px)] max-w-5xl bg-white text-slate-950 backdrop:bg-slate-950/70"
-          onCancel={(event) => { if (materialCopySaving) event.preventDefault(); }}
+          onCancel={(event) => {
+            if (materialCopySaving) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}
           onClose={() => setMaterialToPreview(null)}>
           {materialToPreview && (materialToPreview.media_type === "document" ? (
             <MaterialDocumentPreview key={materialToPreview.id} material={materialToPreview}
@@ -1508,100 +1546,120 @@ export default function ProjectDetailPage() {
 
         <dialog ref={materialSetDialogRef} aria-labelledby="create-material-set-title"
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-          onCancel={(event) => { if (materialSaving) event.preventDefault(); }}>
+          onCancel={(event) => {
+            if (materialSaving) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}>
           <form onSubmit={(event) => void createMaterialSet(event)}>
             <h2 id="create-material-set-title" className="text-lg font-semibold">
               {t("创建素材集", "Create material set")}
             </h2>
             <label className="mt-5 block text-sm font-medium text-slate-700">
               {t("素材集名称", "Material set name")}
-              <input autoFocus value={materialSetName} maxLength={120}
-                disabled={materialSaving}
+              <GuardedInput autoFocus value={materialSetName} maxLength={120}
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onChange={(event) => setMaterialSetName(event.target.value)}
                 className="amp-workspace-control mt-2 w-full font-normal"
                 placeholder={t("请输入素材集名称", "Enter material set name")} />
             </label>
             <div className="mt-6 flex justify-end gap-3">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
-                disabled={materialSaving}
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => materialSetDialogRef.current?.close()}>
-                {t("取消", "Cancel")}
-              </button>
-              <button type="submit" className="amp-button amp-button-primary"
-                disabled={materialSaving || !materialSetName.trim()}>
-                {materialSaving ? t("创建中...", "Creating...") : t("创建", "Create")}
-              </button>
+                {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+              </GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary"
+                disabled={materialSaving || !materialSetName.trim()} blockedReason={materialSaving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请填写名称。", "Enter a name.")}>
+                {materialSaving ? t(CHINESE_PROGRESS.creating, ENGLISH_PROGRESS.creating) : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+              </GuardedButton>
             </div>
           </form>
         </dialog>
 
         <dialog ref={materialSetRenameDialogRef} aria-labelledby="rename-material-set-title"
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-          onCancel={(event) => { if (materialSaving) event.preventDefault(); }}>
+          onCancel={(event) => {
+            if (materialSaving) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}>
           <form onSubmit={(event) => void renameMaterialSet(event)}>
             <h2 id="rename-material-set-title" className="text-lg font-semibold">
               {t("重命名素材集", "Rename material set")}
             </h2>
             <label className="mt-5 block text-sm font-medium text-slate-700">
               {t("素材集名称", "Material set name")}
-              <input autoFocus value={materialSetRenameName} maxLength={120}
-                disabled={materialSaving}
+              <GuardedInput autoFocus value={materialSetRenameName} maxLength={120}
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onChange={(event) => setMaterialSetRenameName(event.target.value)}
                 className="amp-workspace-control mt-2 w-full font-normal"
                 placeholder={t("请输入素材集名称", "Enter material set name")} />
             </label>
             <div className="mt-6 flex justify-end gap-3">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
-                disabled={materialSaving}
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => {
                   materialSetRenameDialogRef.current?.close();
                   setMaterialSetToRename(null);
                 }}>
-                {t("取消", "Cancel")}
-              </button>
-              <button type="submit" className="amp-button amp-button-primary"
-                disabled={materialSaving || !materialSetRenameName.trim()}>
-                {materialSaving ? t("保存中...", "Saving...") : t("保存", "Save")}
-              </button>
+                {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+              </GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary"
+                disabled={materialSaving || !materialSetRenameName.trim()} blockedReason={materialSaving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请填写名称。", "Enter a name.")}>
+                {materialSaving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+              </GuardedButton>
             </div>
           </form>
         </dialog>
 
         <dialog ref={materialRenameDialogRef} aria-labelledby="rename-material-title"
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-          onCancel={(event) => { if (materialSaving) event.preventDefault(); }}>
+          onCancel={(event) => {
+            if (materialSaving) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}>
           <form onSubmit={(event) => void renameMaterial(event)}>
             <h2 id="rename-material-title" className="text-lg font-semibold">
               {t("重命名素材", "Rename material")}
             </h2>
             <label className="mt-5 block text-sm font-medium text-slate-700">
               {t("素材名称", "Material name")}
-              <input autoFocus value={materialRenameName} maxLength={255}
-                disabled={materialSaving}
+              <GuardedInput autoFocus value={materialRenameName} maxLength={255}
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onChange={(event) => setMaterialRenameName(event.target.value)}
                 className="amp-workspace-control mt-2 w-full font-normal"
                 placeholder={t("请输入素材名称", "Enter material name")} />
             </label>
             <div className="mt-6 flex justify-end gap-3">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
-                disabled={materialSaving}
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => {
                   materialRenameDialogRef.current?.close();
                   setMaterialToRename(null);
                 }}>
-                {t("取消", "Cancel")}
-              </button>
-              <button type="submit" className="amp-button amp-button-primary"
-                disabled={materialSaving || !materialRenameName.trim()}>
-                {materialSaving ? t("保存中...", "Saving...") : t("保存", "Save")}
-              </button>
+                {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+              </GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary"
+                disabled={materialSaving || !materialRenameName.trim()} blockedReason={materialSaving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请填写名称。", "Enter a name.")}>
+                {materialSaving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+              </GuardedButton>
             </div>
           </form>
         </dialog>
 
         <dialog ref={materialDialogRef} aria-labelledby="upload-material-title"
           className="amp-workspace-dialog amp-insight-create-dialog m-auto w-[calc(100%_-_32px)] max-w-2xl bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-          onCancel={(event) => { if (materialSaving) event.preventDefault(); }}>
+          onCancel={(event) => {
+            if (materialSaving) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}>
           <form onSubmit={(event) => void uploadMaterial(event)}>
             <h2 id="upload-material-title" className="text-xl font-semibold">
               {t("上传素材", "Upload material")}
@@ -1611,42 +1669,42 @@ export default function ProjectDetailPage() {
             </p>
 
             <div className="amp-insight-create-modes amp-material-upload-modes mt-6" role="tablist">
-              <button type="button" role="tab"
+              <GuardedButton type="button" role="tab"
                 aria-selected={materialUploadMode === "image"}
-                disabled={materialSaving}
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => {
                   setMaterialUploadMode("image");
                   setMaterialFilesExpanded(false);
                 }}>
                 <InlineIcon name="image" />{t("图片上传", "Images")}
-              </button>
-              <button type="button" role="tab"
+              </GuardedButton>
+              <GuardedButton type="button" role="tab"
                 aria-selected={materialUploadMode === "video"}
-                disabled={materialSaving}
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => {
                   setMaterialUploadMode("video");
                   setMaterialFilesExpanded(false);
                 }}>
                 <InlineIcon name="video" />{t("视频上传", "Video")}
-              </button>
-              <button type="button" role="tab" disabled={materialSaving}
+              </GuardedButton>
+              <GuardedButton type="button" role="tab" disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 aria-selected={materialUploadMode === "copy"}
                 onClick={() => { setMaterialUploadMode("copy"); setMaterialFilesExpanded(false); }}>
-                <InlineIcon name="file" />{t("上传文案", "Upload copy")}
-              </button>
+                <InlineIcon name="file" />{t("上传文案", "Copy")}
+              </GuardedButton>
             </div>
 
             {materialUploadMode === "copy" && (
               <div className="amp-material-copy-method" role="group" aria-label={t("文案来源", "Copy source")}>
                 <label>
-                  <input type="radio" name="copy-method" checked={copyMode === "document"}
-                    disabled={materialSaving} onChange={() => { setCopyMode("document"); setMaterialFilesExpanded(false); }} />
-                  {t("上传文档", "Upload document")}
+                  <GuardedInput type="radio" name="copy-method" checked={copyMode === "document"}
+                    disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onChange={() => { setCopyMode("document"); setMaterialFilesExpanded(false); }} />
+                  {t(CHINESE_ACTIONS.upload, ENGLISH_ACTIONS.upload)}
                 </label>
                 <label>
-                  <input type="radio" name="copy-method" checked={copyMode === "rich"}
-                    disabled={materialSaving} onChange={() => { setCopyMode("rich"); setMaterialFilesExpanded(false); }} />
-                  {t("输入富文本", "Write rich text")}
+                  <GuardedInput type="radio" name="copy-method" checked={copyMode === "rich"}
+                    disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onChange={() => { setCopyMode("rich"); setMaterialFilesExpanded(false); }} />
+                  {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
                 </label>
               </div>
             )}
@@ -1655,10 +1713,23 @@ export default function ProjectDetailPage() {
               {materialUploadMode === "copy" && copyMode === "rich" ? (
                 <div className="amp-material-copy-fields">
                   <MaterialRichTextEditor key={editorVersion} content={copyHtml} disabled={materialSaving}
+                    blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                     onChange={(html, text) => { setCopyHtml(html); setCopyText(text); }} />
                 </div>
               ) : (
-              <label className="amp-insight-upload amp-case-upload-dropzone">
+              <label className="amp-insight-upload amp-case-upload-dropzone"
+                role="button" tabIndex={0} aria-disabled={materialSaving || undefined}
+                data-blocked-action={materialSaving || undefined}
+                onPointerDownCapture={materialUploadInteraction.guard}
+                onMouseDownCapture={materialUploadInteraction.guard}
+                onTouchStartCapture={materialUploadInteraction.guard}
+                onClickCapture={materialUploadInteraction.guard}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  if (materialUploadInteraction.guard(event)) return;
+                  event.preventDefault();
+                  event.currentTarget.querySelector<HTMLInputElement>('input[type="file"]')?.click();
+                }}>
                 <InlineIcon name="upload" />
                 <strong>{materialUploadMode === "video"
                   ? t("选择视频", "Select video")
@@ -1668,12 +1739,17 @@ export default function ProjectDetailPage() {
                   : materialUploadMode === "copy"
                     ? t("支持 TXT、Markdown、PDF 和 DOCX，最多 1 个文件", "TXT, Markdown, PDF, and DOCX; up to 1 file")
                     : t("支持 JPG、PNG、GIF 和 WebP，最多 10 张", "JPG, PNG, GIF, and WebP; up to 10 images")}</span>
-                <input type="file" disabled={materialSaving}
+                <input type="file" hidden disabled={materialSaving}
                   accept={materialUploadMode === "video"
                     ? ".mp4,.mov,.webm,.m4v"
                     : materialUploadMode === "copy" ? ".txt,.md,.markdown,.pdf,.docx" : "image/*"}
                   multiple={materialUploadMode === "image"}
                   onChange={(event) => {
+                    if (materialSaving) {
+                      showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+                      event.target.value = "";
+                      return;
+                    }
                     const isVideo = materialUploadMode === "video";
                     const result = selectUploadFiles(
                       selectedMaterialFiles,
@@ -1728,7 +1804,7 @@ export default function ProjectDetailPage() {
                       ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
                       : `${(file.size / 1024).toFixed(1)} KB`}</small>
                     </span>
-                    <button type="button" disabled={materialSaving}
+                    <GuardedButton type="button" disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                       aria-label={t("移除文件：{name}", "Remove file: {name}", { name: file.name })}
                       onClick={() => {
                         if (selectedMaterialFiles.length === 1) setMaterialFilesExpanded(false);
@@ -1742,7 +1818,7 @@ export default function ProjectDetailPage() {
                         }
                       }}>
                       <InlineIcon name="close" />
-                    </button>
+                    </GuardedButton>
                   </li>
                 ))}
               </ul>}
@@ -1750,8 +1826,8 @@ export default function ProjectDetailPage() {
             )}
 
             <div className="amp-insight-create-action-buttons">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
-                disabled={materialSaving}
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                disabled={materialSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => {
                   materialDialogRef.current?.close();
                   setMaterialImages([]);
@@ -1760,18 +1836,18 @@ export default function ProjectDetailPage() {
                   setCopyHtml("");
                   setCopyText("");
                 }}>
-                {t("取消", "Cancel")}
-              </button>
-              <button type="submit" className="amp-button amp-button-primary"
+                {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+              </GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary"
                 disabled={materialSaving || (
                   materialUploadMode === "copy" && copyMode === "rich"
                     ? !copyText.trim()
                     : selectedMaterialFiles.length === 0
-                )}>
+                )} blockedReason={materialSaving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : materialUploadMode === "copy" && copyMode === "rich" ? t("请输入文案正文。", "Enter copy content.") : materialUploadMode === "video" ? t("请选择视频文件。", "Select a video file.") : materialUploadMode === "copy" ? t("请选择文档文件。", "Select a document file.") : t("请选择图片文件。", "Select image files.")}>
                 {materialUploadMode === "copy" && copyMode === "rich"
-                  ? materialSaving ? t("添加中...", "Adding...") : t("添加", "Add")
-                  : materialSaving ? t("上传中...", "Uploading...") : t("上传", "Upload")}
-              </button>
+                  ? materialSaving ? t(CHINESE_PROGRESS.adding, ENGLISH_PROGRESS.adding) : t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)
+                  : materialSaving ? t(CHINESE_PROGRESS.uploading, ENGLISH_PROGRESS.uploading) : t(CHINESE_ACTIONS.upload, ENGLISH_ACTIONS.upload)}
+              </GuardedButton>
             </div>
             </div>
           </form>
@@ -1779,7 +1855,12 @@ export default function ProjectDetailPage() {
 
         <dialog ref={inviteDialogRef} aria-labelledby="invite-project-member-title"
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-          onCancel={(event) => { if (inviting) event.preventDefault(); }}>
+          onCancel={(event) => {
+            if (inviting) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}>
           <h2 id="invite-project-member-title" className="text-lg font-semibold">{t("邀请成员", "Invite member")}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">
             {t(
@@ -1790,7 +1871,7 @@ export default function ProjectDetailPage() {
           <form onSubmit={inviteMember} className="mt-5 space-y-4">
             <label className="block text-sm font-medium text-slate-700">
               {t("邮箱", "Email")}
-              <input autoFocus type="email" value={inviteEmail} disabled={inviting}
+              <GuardedInput autoFocus type="email" value={inviteEmail} disabled={inviting} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onChange={(event) => setInviteEmail(event.target.value)}
                 placeholder={t("请输入邮箱", "Enter email")}
                 className="amp-workspace-control mt-2 w-full font-normal" />
@@ -1802,16 +1883,16 @@ export default function ProjectDetailPage() {
                 options={roleOptions}
                 onChange={setInviteRole}
                 ariaLabel={t("邀请成员权限", "Invited member permission")}
-                disabled={inviting}
+                disabled={inviting} disabledReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 className="mt-2 w-full"
               />
             </fieldset>
             <div className="flex justify-end gap-3 pt-2">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={inviting}
-                onClick={() => inviteDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-              <button type="submit" className="amp-button amp-button-primary" disabled={inviting || !inviteEmail.trim()}>
-                {inviting ? t("邀请中...", "Inviting...") : t("邀请", "Invite")}
-              </button>
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={inviting} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                onClick={() => inviteDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={inviting || !inviteEmail.trim()} blockedReason={inviting ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入成员邮箱。", "Enter the member's email address.")}>
+                {inviting ? t(CHINESE_PROGRESS.adding, ENGLISH_PROGRESS.adding) : t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}
+              </GuardedButton>
             </div>
           </form>
         </dialog>
@@ -1828,7 +1909,7 @@ export default function ProjectDetailPage() {
           }}>
           <h2 id="bind-channel-account-title" className="text-lg font-semibold">
             {choosingPlatform
-              ? t("选择渠道", "Choose a channel")
+              ? t("选择渠道", "Select a channel")
               : t("授权{channel}账号", "Authorize {channel} account", {
                 channel: t(
                   MARKETING_CHANNELS.find((channel) => channel.key === bindingPlatform)!.zh,
@@ -1856,7 +1937,7 @@ export default function ProjectDetailPage() {
               </div>
               <div className="amp-project-channel-account-actions">
                 <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
-                  onClick={() => accountDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
+                  onClick={() => accountDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</button>
               </div>
             </>
           ) : (
@@ -1907,7 +1988,7 @@ export default function ProjectDetailPage() {
                   )}
                   <a href={deviceAuthorization.authorizationUrl} target="_blank" rel="noreferrer"
                     className="amp-project-channel-device-link">
-                    {t("在小红书中打开", "Open in Xiaohongshu")}
+                    {t(CHINESE_ACTIONS.open, ENGLISH_ACTIONS.open)}
                   </a>
                 </div>
                 <div className="amp-project-channel-account-actions">
@@ -1915,7 +1996,7 @@ export default function ProjectDetailPage() {
                     onClick={() => {
                       setDeviceAuthorization(null);
                       setDeviceQrCode("");
-                    }}>{t("返回", "Back")}</button>
+                    }}>{t(CHINESE_ACTIONS.back, ENGLISH_ACTIONS.back)}</button>
                 </div>
               </>
             ) : (
@@ -1931,14 +2012,14 @@ export default function ProjectDetailPage() {
               </ul>
             </div>
             <div className="amp-project-channel-account-actions">
-              <button type="button" className="amp-button amp-button-secondary" disabled={accountSaving}
-                onClick={() => setChoosingPlatform(true)}>{t("返回", "Back")}</button>
-              <button type="button" className="amp-button amp-button-primary"
-                disabled={accountSaving} onClick={() => void authorizeChannelAccount()}>
+              <GuardedButton type="button" className="amp-button amp-button-secondary" disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                onClick={() => setChoosingPlatform(true)}>{t(CHINESE_ACTIONS.back, ENGLISH_ACTIONS.back)}</GuardedButton>
+              <GuardedButton type="button" className="amp-button amp-button-primary"
+                disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onClick={() => void authorizeChannelAccount()}>
                 {accountSaving
-                  ? t("正在打开授权页...", "Opening authorization...")
-                  : t("前往平台授权", "Continue to platform")}
-              </button>
+                  ? t(CHINESE_PROGRESS.connecting, ENGLISH_PROGRESS.connecting)
+                  : t(CHINESE_ACTIONS.connect, ENGLISH_ACTIONS.connect)}
+              </GuardedButton>
             </div>
             </>
             )}
@@ -1948,7 +2029,12 @@ export default function ProjectDetailPage() {
 
         <dialog ref={removeDialogRef} aria-labelledby="remove-project-member-title"
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-          onCancel={(event) => { if (inviting) event.preventDefault(); }}
+          onCancel={(event) => {
+            if (inviting) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}
           onClose={() => { if (!inviting) setMemberToRemove(null); }}>
           <h2 id="remove-project-member-title" className="text-lg font-semibold">{t("移出项目成员", "Remove project member")}</h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">
@@ -1959,13 +2045,13 @@ export default function ProjectDetailPage() {
             )}
           </p>
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={inviting}
-              onClick={() => removeDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-            <button type="button" className="amp-button bg-red-600 text-white hover:bg-red-700" disabled={inviting || !memberToRemove}
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={inviting} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+              onClick={() => removeDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="button" className="amp-button bg-red-600 text-white hover:bg-red-700" disabled={inviting || !memberToRemove} blockedReason={inviting ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请先选择要移除的成员。", "Select a member.")}
               onClick={() => memberToRemove && void removeMember(memberToRemove)}>
               <InlineIcon name="trash" className="h-4 w-4" />
-              {inviting ? t("移出中...", "Removing...") : t("确认移出", "Remove")}
-            </button>
+              {inviting ? t(CHINESE_PROGRESS.removing, ENGLISH_PROGRESS.removing) : t(CHINESE_ACTIONS.remove, ENGLISH_ACTIONS.remove)}
+            </GuardedButton>
           </div>
         </dialog>
 
@@ -1985,9 +2071,9 @@ export default function ProjectDetailPage() {
               "This cannot be undone. Delete “{name}”?",
               { name: materialToDelete?.name || "" },
             )}
-          cancelLabel={t("取消", "Cancel")}
-          confirmLabel={t("删除", "Delete")}
-          busyLabel={t("删除中...", "Deleting...")}
+          cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+          confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+          busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}
           busy={materialSaving}
           onCancel={() => setMaterialToDelete(null)}
           onConfirm={() => void removeMaterial()}

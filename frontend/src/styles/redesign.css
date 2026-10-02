@@ -99,6 +99,11 @@
   will-change: auto;
 }
 
+.amp-redesign [data-blocked-action="true"] {
+  cursor: pointer;
+  opacity: 1;
+}
+
 .amp-redesign .amp-button:disabled:hover,
 .amp-redesign .amp-button:disabled:active {
   transform: none;
@@ -805,6 +810,7 @@
 .amp-redesign .amp-app-main {
   display: flex;
   flex-direction: column;
+  isolation: isolate;
   min-width: 0;
   overflow: hidden;
 }
@@ -1198,6 +1204,95 @@
   justify-content: center;
   padding: 24px;
   text-align: center;
+}
+
+.amp-redesign .amp-pagination {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(90px, 1fr) auto minmax(140px, 1fr);
+  margin-top: 20px;
+  min-height: 38px;
+}
+
+.amp-redesign .amp-projects-main:has(> .amp-pagination),
+.amp-redesign .amp-state-page:has(> .amp-pagination) {
+  padding-bottom: 0;
+}
+
+.amp-redesign .amp-projects-main > .amp-pagination,
+.amp-redesign .amp-state-page > .amp-pagination {
+  background: #f5f7fa;
+  bottom: 0;
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding-block: 20px;
+  position: sticky;
+  z-index: 50;
+}
+
+.amp-redesign .amp-pagination > p {
+  color: #667085;
+  font-size: 13px;
+}
+
+.amp-redesign .amp-pagination-pages {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.amp-redesign .amp-pagination-number,
+.amp-redesign .amp-pagination-arrow {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #475467;
+  display: inline-flex;
+  font-size: 13px;
+  height: 32px;
+  justify-content: center;
+  min-width: 32px;
+}
+
+.amp-redesign .amp-pagination-number:hover,
+.amp-redesign .amp-pagination-arrow:hover {
+  background: #f2f4f7;
+  color: #175cd3;
+  transform: none;
+}
+
+.amp-redesign .amp-pagination-number[aria-current="page"] {
+  background: #eff4ff;
+  border-color: #b2ccff;
+  color: #175cd3;
+  font-weight: 650;
+}
+
+.amp-redesign .amp-pagination-arrow svg {
+  height: 16px;
+  width: 16px;
+}
+
+.amp-redesign .amp-pagination-size {
+  justify-self: end;
+  width: 140px;
+}
+
+@media (max-width: 640px) {
+  .amp-redesign .amp-pagination {
+    grid-template-columns: 1fr auto;
+  }
+
+  .amp-redesign .amp-pagination-pages {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .amp-redesign .amp-pagination-size {
+    width: 132px;
+  }
 }
 
 .amp-redesign .amp-workspace-page {

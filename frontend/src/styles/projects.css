@@ -492,6 +492,17 @@
   z-index: 5;
 }
 
+.amp-redesign .amp-content-canvas-card:has([role="menu"]),
+.amp-redesign .amp-insight-card:has([role="menu"]),
+.amp-redesign .amp-project-card:has([role="menu"]),
+.amp-redesign .amp-portfolio-card:has([role="menu"]),
+.amp-redesign .amp-project-material-card:has([role="menu"]),
+.amp-redesign .amp-workspace-card:has([role="menu"]),
+.amp-redesign .amp-case-grid > article:has([role="menu"]) {
+  position: relative;
+  z-index: 40;
+}
+
 .amp-redesign .amp-insight-card-more {
   align-items: center;
   background: transparent;
@@ -840,7 +851,7 @@
   align-items: stretch;
   display: grid;
   flex: 1;
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: 480px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   position: relative;
@@ -1139,6 +1150,14 @@
   min-height: 0;
   overflow-y: auto;
   padding-top: 12px;
+}
+
+.amp-redesign .amp-content-assistant-messages,
+.amp-redesign .amp-content-side-panel,
+.amp-redesign .amp-content-context-page {
+  margin-right: -16px;
+  padding-right: 16px;
+  scrollbar-gutter: stable;
 }
 
 .amp-redesign .amp-content-context-empty,
@@ -6805,6 +6824,12 @@
   margin-top: 24px;
 }
 
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .amp-redesign .amp-content-studio-grid {
+    grid-template-columns: 400px minmax(0, 1fr);
+  }
+}
 
 @media (max-width: 768px) {
   .amp-redesign .amp-project-quick-sidebar {

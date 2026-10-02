@@ -10,6 +10,27 @@ type DetailProfile = {
 
 type ContentFormat = "short_video" | "image_text";
 
+const FIXED_DISPLAY_TITLES: Record<Exclude<ContentCard["card_type"], "script">, readonly [string, string]> = {
+  title: ["标题文案", "Headline options"],
+  copy: ["发布文案", "Post copy"],
+  hashtags: ["话题标签", "Hashtags"],
+  visual: ["视觉方案", "Visual plan"],
+};
+
+export function get_card_display_title(
+  card: Pick<ContentCard, "card_type" | "title">,
+  t: Translate,
+): string {
+  const normalized = card.title.trim().toLowerCase();
+  const titles = card.card_type === "script"
+    ? normalized === "视频分镜脚本" || normalized === "video storyboard"
+      ? ["视频分镜脚本", "Video storyboard"] as const
+      : ["图文发布计划", "Image-text publishing plan"] as const
+    : FIXED_DISPLAY_TITLES[card.card_type];
+  if (!titles || !titles.some((title) => title.toLowerCase() === normalized)) return card.title;
+  return t(titles[0], titles[1]);
+}
+
 export function get_card_content_format(card: ContentCard): ContentFormat {
   const title = card.title.trim().toLowerCase();
   if (title === "视频分镜脚本" || title === "video storyboard") return "short_video";

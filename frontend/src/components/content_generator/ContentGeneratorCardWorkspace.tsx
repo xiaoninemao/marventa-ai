@@ -2,12 +2,15 @@
 
 import type { ReactNode } from "react";
 import { useI18n } from "@/contexts/i18n_context";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
+import { GuardedButton } from "@/components/redesign/GuardedControls";
 import type { ContentCard, SessionRecord } from "@/types/content_generator";
 
 type ContentGeneratorCardWorkspaceProps = {
   session: SessionRecord | null;
   locale: string;
   disabled: boolean;
+  blockedReason: string;
   generating_document: boolean;
   active_card_index: number;
   flipped_ids: Set<string>;
@@ -21,6 +24,7 @@ export default function ContentGeneratorCardWorkspace({
   session,
   locale,
   disabled,
+  blockedReason,
   generating_document,
   active_card_index,
   flipped_ids,
@@ -49,15 +53,16 @@ export default function ContentGeneratorCardWorkspace({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <GuardedButton
               onClick={on_generate_document}
               disabled={disabled || generating_document}
+              blockedReason={generating_document ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : blockedReason}
               className="amp-button amp-button-primary shrink-0"
             >
               {generating_document
-                ? t("生成作品中...", "Generating work...")
-                : t("生成作品", "Generate work")}
-            </button>
+                ? t(CHINESE_PROGRESS.generating, ENGLISH_PROGRESS.generating)
+                : t("生成作品", `${ENGLISH_ACTIONS.generate} work`)}
+            </GuardedButton>
           </div>
         </div>
 

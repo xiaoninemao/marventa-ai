@@ -10,6 +10,7 @@ import {
 } from "@/services/notification_api";
 import type { NotificationItem } from "@/types/notifications";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_ACTIONS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
 
 function notificationContent(
   item: NotificationItem,
@@ -168,17 +169,17 @@ export default function NotificationCenter() {
             <strong>{t("通知", "Notifications")}</strong>
             {unreadCount > 0 && (
               <button type="button" onClick={() => void readAll()}>
-                {t("全部已读", "Mark all read")}
+                {t(CHINESE_ACTIONS.markAllRead, ENGLISH_ACTIONS.markAllRead)}
               </button>
             )}
           </div>
           <div className="amp-notification-list">
             {loading ? (
-              <p className="amp-notification-state" role="status">{t("正在加载通知...", "Loading notifications...")}</p>
+              <p className="amp-notification-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</p>
             ) : error ? (
               <div className="amp-notification-state" role="alert">
                 <p>{t("通知加载失败", "Could not load notifications")}</p>
-                <button type="button" onClick={() => void loadNotifications(true)}>{t("重试", "Retry")}</button>
+                <button type="button" onClick={() => void loadNotifications(true)}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
               </div>
             ) : items.length === 0 ? (
               <div className="amp-notification-empty">

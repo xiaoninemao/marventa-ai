@@ -5,12 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import { useToast } from "@/contexts/toast_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { GuardedButton, GuardedInput } from "@/components/redesign/GuardedControls";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
+import Pagination from "@/components/redesign/Pagination";
 import PublishingProjectSidebar from "@/components/publishing/PublishingProjectSidebar";
 import {
   create_publication_plan,
@@ -25,6 +28,7 @@ import type {
 } from "@/types/publishing";
 import { publicationHasScheduledRelease, publicationPublishedNotice, publicationReadOnly } from "@/utils/publication_lifecycle";
 import { startPolling } from "@/utils/polling";
+import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
 
 type StatusFilter = "all" | PublicationPlan["status"];
 const CHANNELS = {
@@ -61,6 +65,16 @@ function PublishingOverview() {
   const [formProjectId, setFormProjectId] = useState(selectedProjectId);
   const [planName, setPlanName] = useState("");
   const hasFormProject = projects.some((project) => project.id === formProjectId);
+  const busyReason = t("发布计划操作正在处理中，请稍候。", "A publication-plan operation is in progress. Please wait.");
+  const missingProjectReason = !projects.length
+    ? t("请先创建项目。", "Create a project first.")
+    : t("请选择有效的所属项目。", "Select an available project.");
+  const projectReason = saving ? busyReason : loading ? t("项目正在加载，请稍候。", "Projects are loading. Please wait.")
+    : !projects.length ? t("请先创建项目，再创建发布计划。", "Create a project before creating a publication plan.")
+      : t("计划所属项目已固定为当前项目。", "The plan's project is fixed to the current project.");
+  const createReason = saving ? busyReason : loading ? projectReason : !hasFormProject
+    ? missingProjectReason
+    : t("请输入发布计划名称。", "Enter a publication plan name.");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
@@ -115,6 +129,7 @@ function PublishingOverview() {
   }, [menuPlanId]);
 
   const openCreateDialog = () => {
+    if (saving) { showError(busyReason); return; }
     const projectId = projects.find((project) => project.id === selectedProjectId)?.id
       || projects[0]?.id || "";
     setFormProjectId(projectId);
@@ -124,9 +139,9 @@ function PublishingOverview() {
 
   const createPlan = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (saving) return;
+    if (saving || loading) { showError(saving ? busyReason : projectReason); return; }
     if (!hasFormProject) {
-      showError(t("请选择所属项目", "Select a project"));
+      showError(missingProjectReason);
       return;
     }
     if (!planName.trim()) {
@@ -157,7 +172,10 @@ function PublishingOverview() {
   const cancelPlan = async (plan: PublicationPlan) => {
     const current = plans.find((item) => item.id === plan.id);
     if (!current || saving || !canRename(current)
-      || !publicationHasScheduledRelease(current.status, current.scheduled_for)) return;
+      || !publicationHasScheduledRelease(current.status, current.scheduled_for)) {
+      showError(!current || saving || !canRename(current) ? manageReason(current)
+        : t("此计划当前没有可取消的定时发布。", "This plan has no scheduled publication to cancel.")); return;
+    }
     setMenuPlanId(null);
     setSaving(true);
     try {
@@ -178,7 +196,7 @@ function PublishingOverview() {
 
   const deletePlan = async () => {
     const current = plans.find((item) => item.id === pendingDelete?.id);
-    if (!pendingDelete || !current || saving || !canRename(current)) return;
+    if (!pendingDelete || !current || saving || !canRename(current)) { showError(manageReason(current)); return; }
     setSaving(true);
     try {
       await delete_publication_plan(pendingDelete.id);
@@ -200,9 +218,14 @@ function PublishingOverview() {
     return Boolean(user) && !publicationReadOnly(plan.status) && (plan.created_by_user_id === user?.id
       || project?.role === "owner" || project?.role === "admin");
   };
+  const manageReason = (plan?: PublicationPlan) => saving ? busyReason : !plan
+    ? t("此发布计划已不可用，请刷新列表。", "This publication plan is unavailable. Refresh the list.")
+    : plan.status === "published" ? t("已发布的计划不能修改或删除。", "Published plans cannot be changed or deleted.")
+      : plan.status === "publishing" ? t("正在发布，不能修改或删除计划。", "Publishing is in progress; the plan cannot be changed or deleted.")
+        : t("仅计划创建者和项目管理员可以管理此计划。", "Only the plan creator and project managers can manage this plan.");
 
   const openRenameDialog = (plan: PublicationPlan) => {
-    if (saving || !canRename(plan)) return;
+    if (saving || !canRename(plan)) { showError(manageReason(plan)); return; }
     setMenuPlanId(null);
     setRenamingPlan(plan);
     setRenameName(plan.name);
@@ -212,7 +235,7 @@ function PublishingOverview() {
   const renamePlan = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const current = plans.find((item) => item.id === renamingPlan?.id);
-    if (!renamingPlan || !current || saving || !canRename(current)) return;
+    if (!renamingPlan || !current || saving || !canRename(current)) { showError(manageReason(current)); return; }
     const name = renameName.trim();
     if (!name) {
       showError(t("发布计划名称不能为空", "Publication plan name is required"));
@@ -245,6 +268,12 @@ function PublishingOverview() {
       return sort === "oldest" ? difference : -difference;
     });
   }, [plans, search, sort, status]);
+  const paginationResetKey = JSON.stringify([search, status, sort, selectedProjectId, locale]);
+  const pagination = usePagination(visiblePlans, paginationResetKey, 12);
+
+  useEffect(() => {
+    setMenuPlanId(null);
+  }, [pagination.page, pagination.pageSize, paginationResetKey]);
 
   const formatTime = (value: string) => {
     if (!value) return t("立即准备", "Prepare now");
@@ -269,7 +298,7 @@ function PublishingOverview() {
   const deleteEditable = Boolean(pendingDelete && plans.some((item) => item.id === pendingDelete.id && canRename(item)));
 
   if (authLoading || !user) {
-    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
 
   return (
@@ -283,11 +312,11 @@ function PublishingOverview() {
               ? t("管理当前项目的渠道发布计划。", "Manage channel publication plans for this project.")
               : t("汇总当前组织所有可访问项目的发布计划。", "Publication plans across accessible projects.")}</p>
           </div>
-          <button type="button" className="amp-button amp-button-primary"
+          <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-primary"
             disabled={saving}
             onClick={() => void openCreateDialog()}>
-            {t("创建计划", "Create plan")}
-          </button>
+            {t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+          </GuardedButton>
         </div>
 
         <div className="amp-insight-toolbar amp-publishing-toolbar">
@@ -335,12 +364,13 @@ function PublishingOverview() {
               ? t("请调整搜索关键词或状态筛选。", "Try another search term or status.")
               : t(
               "选择项目并填写名称，即可创建发布草稿。",
-              "Choose a project and enter a name to create a publication draft.",
+              "Select a project and enter a name to create a publication draft.",
             )}</p>
           </div>
         ) : (
+          <>
           <div className="amp-publication-brief-grid">
-            {visiblePlans.map((plan) => {
+            {pagination.pageItems.map((plan) => {
               const channel = plan.platform ? CHANNELS[plan.platform] : null;
               const publishedNotice = publicationPublishedNotice(plan.status);
               return (
@@ -417,26 +447,26 @@ function PublishingOverview() {
                     </button>
                     {menuPlanId === plan.id && (
                       <div role="menu" className="amp-insight-card-popover">
-                        <button type="button" role="menuitem" disabled={saving || !canRename(plan)}
+                        <GuardedButton blockedReason={manageReason(plan)} type="button" role="menuitem" disabled={saving || !canRename(plan)}
                           onClick={() => openRenameDialog(plan)}>
-                          <InlineIcon name="edit" />{t("重命名", "Rename")}
-                        </button>
+                          <InlineIcon name="edit" />{t(CHINESE_ACTIONS.rename, ENGLISH_ACTIONS.rename)}
+                        </GuardedButton>
                         {publicationHasScheduledRelease(plan.status, plan.scheduled_for) && (
-                          <button type="button" role="menuitem" disabled={saving}
+                          <GuardedButton blockedReason={busyReason} type="button" role="menuitem" disabled={saving}
                             onClick={() => void cancelPlan(plan)}>
                             <InlineIcon name="close" />
-                            {t("取消发布", "Cancel publication")}
-                          </button>
+                            {t("取消发布", `${ENGLISH_ACTIONS.cancel} publication`)}
+                          </GuardedButton>
                         )}
-                        <button type="button" role="menuitem"
+                        <GuardedButton blockedReason={busyReason} type="button" role="menuitem"
                           className="amp-insight-card-delete" disabled={saving}
                           onClick={() => {
                             setMenuPlanId(null);
                             setPendingDelete(plan);
                           }}>
                           <InlineIcon name="trash" />
-                          {t("删除", "Delete")}
-                        </button>
+                          {t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                        </GuardedButton>
                       </div>
                     )}
                   </div>}
@@ -444,12 +474,21 @@ function PublishingOverview() {
               );
             })}
           </div>
+          {pagination.totalItems > 0 && <Pagination
+            page={pagination.page}
+            pageSize={pagination.pageSize}
+            pageSizeOptions={DEFAULT_PAGE_SIZE_OPTIONS}
+            totalItems={pagination.totalItems}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize} />}
+          </>
         )}
       </main>
 
       <dialog ref={dialogRef} aria-labelledby="create-publication-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-lg bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (saving) event.preventDefault(); }}>
+        onCancel={(event) => { if (saving) { event.preventDefault(); showError(busyReason); } }}>
         <form onSubmit={(event) => void createPlan(event)}
           className="amp-publication-form">
           <h2 id="create-publication-title" className="text-lg font-semibold">
@@ -463,59 +502,62 @@ function PublishingOverview() {
                 label: project.title,
               }))}
               onChange={setFormProjectId}
-              ariaLabel={t("选择项目", "Choose project")}
+              ariaLabel={t("选择项目", "Select project")}
               placeholder={loading
                 ? t("正在加载项目...", "Loading projects...")
-                : projects.length ? t("请选择项目", "Choose a project") : t("暂无可用项目", "No projects available")}
+                : projects.length ? t("请选择项目", "Select a project") : t("暂无可用项目", "No projects available")}
               disabled={saving || loading || projects.length === 0
                 || projects.some((project) => project.id === selectedProjectId)}
+              disabledReason={projectReason}
               className="mt-2 w-full" />
           </label>
           {!loading && projects.length === 0 && (
             <p className="text-sm text-slate-500">
               {t("请先创建项目，再安排发布。", "Create a project before preparing a publication.")}
               {" "}<Link href="/projects" className="text-blue-600 hover:underline"
-                onClick={() => dialogRef.current?.close()}>{t("前往项目", "Go to projects")}</Link>
+                onClick={() => dialogRef.current?.close()}>{t(CHINESE_ACTIONS.open, ENGLISH_ACTIONS.open)}</Link>
             </p>
           )}
           <label>
             <span>{t("名称", "Name")}</span>
-            <input value={planName} maxLength={120} required
+            <GuardedInput blockedReason={busyReason} value={planName} maxLength={120} required
               placeholder={t("请输入发布计划名称", "Enter a publication plan name")}
+              onInvalid={(event) => { event.preventDefault(); showError(t("请输入发布计划名称。", "Enter a publication plan name.")); }}
               onChange={(event) => setPlanName(event.target.value)}
               disabled={saving} className="amp-workspace-control mt-2 w-full" />
           </label>
           <div className="amp-project-channel-account-actions">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
+            <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary amp-button-cancel"
               disabled={saving} onClick={() => dialogRef.current?.close()}>
-              {t("取消", "Cancel")}
-            </button>
-            <button type="submit" className="amp-button amp-button-primary"
+              {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+            </GuardedButton>
+            <GuardedButton blockedReason={createReason} type="submit" className="amp-button amp-button-primary"
               disabled={saving || loading || !hasFormProject || !planName.trim()}>
-              {saving ? t("创建中...", "Creating...") : t("创建计划", "Create plan")}
-            </button>
+              {saving ? t(CHINESE_PROGRESS.creating, ENGLISH_PROGRESS.creating) : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
 
       <dialog ref={renameDialogRef} aria-labelledby="rename-publication-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (saving) event.preventDefault(); }}
+        onCancel={(event) => { if (saving) { event.preventDefault(); showError(busyReason); } }}
         onClose={() => { if (!saving) setRenamingPlan(null); }}>
         <h2 id="rename-publication-title" className="text-lg font-semibold">{t("重命名发布计划", "Rename publication plan")}</h2>
         <form className="mt-5" onSubmit={(event) => void renamePlan(event)}>
           <label htmlFor="rename-publication-name" className="mb-2 block text-sm font-medium">
             {t("计划名称", "Plan name")}
           </label>
-          <input id="rename-publication-name" autoFocus required maxLength={120}
+          <GuardedInput blockedReason={manageReason(plans.find((item) => item.id === renamingPlan?.id))} id="rename-publication-name" autoFocus required maxLength={120}
             className="amp-workspace-control w-full" value={renameName} disabled={saving || !renameEditable}
+            onInvalid={(event) => { event.preventDefault(); showError(t("请输入发布计划名称。", "Enter a publication plan name.")); }}
             onChange={(event) => setRenameName(event.target.value)} />
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={saving}
-              onClick={() => renameDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={saving || !renameEditable || !renameName.trim()}>
-              {saving ? t("保存中...", "Saving...") : t("保存", "Save")}
-            </button>
+            <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={saving}
+              onClick={() => renameDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton blockedReason={saving || !renameEditable ? manageReason(plans.find((item) => item.id === renamingPlan?.id)) : t("请输入发布计划名称。", "Enter a publication plan name.")} type="submit" className="amp-button amp-button-primary" disabled={saving || !renameEditable || !renameName.trim()}>
+              {saving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>
@@ -527,9 +569,9 @@ function PublishingOverview() {
           "Delete the publication plan for “{title}”?",
           { title: pendingDelete?.name || "" },
         )}
-        cancelLabel={t("取消", "Cancel")}
-        confirmLabel={t("删除", "Delete")}
-        busyLabel={t("删除中...", "Deleting...")}
+        cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+        confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+        busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}
         busy={saving}
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => void deletePlan()} />

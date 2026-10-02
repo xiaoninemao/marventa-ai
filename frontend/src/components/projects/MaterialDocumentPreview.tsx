@@ -1,5 +1,7 @@
 "use client";
 
+import { GuardedButton } from "@/components/redesign/GuardedControls";
+
 import { useEffect, useState, type FormEvent } from "react";
 import { useI18n } from "@/contexts/i18n_context";
 import { useToast } from "@/contexts/toast_context";
@@ -9,6 +11,7 @@ import type { ProjectMaterial } from "@/types/publishing";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import MaterialRichTextEditor from "./MaterialRichTextEditor";
 import { materialCopyDocument } from "@/utils/material_copy_document";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_ACTIONS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
 
 export default function MaterialDocumentPreview({
   material,
@@ -24,7 +27,7 @@ export default function MaterialDocumentPreview({
   onSavingChange: (saving: boolean) => void;
 }) {
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -48,7 +51,13 @@ export default function MaterialDocumentPreview({
   }, [material.id, material.project_id, locale, attempt]);
 
   const startEditing = () => {
-    if (content === null || !canEdit) return;
+    if (!canEdit) { showWarning(t("你没有编辑此文案的权限。", "You do not have permission to edit this copy.")); return; }
+    if (error || content === null) {
+      showWarning(error
+        ? t("文案加载失败，请重试后再编辑。", "Copy failed to load. Retry before editing.")
+        : t("正在加载文案，请稍候再编辑。", "Copy is loading. Please wait before editing."));
+      return;
+    }
     setHtml(content);
     setText("");
     setEditing(true);
@@ -56,7 +65,8 @@ export default function MaterialDocumentPreview({
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (saving || !canEdit) return;
+    if (saving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!canEdit) { showWarning(t("你没有编辑此文案的权限。", "You do not have permission to edit this copy.")); return; }
     if (!text.trim()) {
       showError(t("请输入文案正文。", "Enter copy content."));
       return;
@@ -91,23 +101,23 @@ export default function MaterialDocumentPreview({
         <div className="amp-material-preview-actions">
           {editing ? (
             <>
-              <button type="button" className="amp-material-preview-action" disabled={saving}
-                onClick={() => setEditing(false)}>{t("取消", "Cancel")}</button>
-              <button type="submit" form="material-copy-edit-form" className="amp-material-preview-action is-primary"
-                disabled={saving || !text.trim()}>
-                {saving ? t("保存中...", "Saving...") : t("保存", "Save")}
-              </button>
+              <GuardedButton type="button" className="amp-material-preview-action" disabled={saving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                onClick={() => setEditing(false)}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+              <GuardedButton type="submit" form="material-copy-edit-form" className="amp-material-preview-action is-primary"
+                disabled={saving || !text.trim()} blockedReason={saving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入文案正文。", "Enter copy content.")}>
+                {saving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+              </GuardedButton>
             </>
           ) : canEdit && (
-            <button type="button" className="amp-material-preview-action"
-              disabled={content === null || Boolean(error)} onClick={startEditing}>
-              {t("编辑", "Edit")}
-            </button>
+            <GuardedButton type="button" className="amp-material-preview-action"
+              disabled={content === null || Boolean(error)} blockedReason={error ? t("文案加载失败，请重试后再编辑。", "Copy failed to load. Retry before editing.") : t("正在加载文案，请稍候再编辑。", "Copy is loading. Please wait before editing.")} onClick={startEditing}>
+              {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
+            </GuardedButton>
           )}
-          <button type="button" className="amp-material-preview-icon" disabled={saving}
+          <GuardedButton type="button" className="amp-material-preview-icon" disabled={saving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             aria-label={t("关闭预览", "Close preview")} onClick={onClose}>
             <InlineIcon name="close" />
-          </button>
+          </GuardedButton>
         </div>
       </header>
       <div className="amp-material-preview-stage">
@@ -115,16 +125,17 @@ export default function MaterialDocumentPreview({
           {editing ? (
             <form id="material-copy-edit-form" className="amp-material-copy-edit" onSubmit={save}>
               <MaterialRichTextEditor content={html} disabled={saving}
+                blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onChange={(value, plainText) => { setHtml(value); setText(plainText); }} />
             </form>
           ) : error ? (
             <div role="alert" className="amp-material-document-message">
               <p>{error}</p>
               <button type="button" className="amp-button amp-button-secondary"
-                onClick={() => setAttempt((value) => value + 1)}>{t("重试", "Retry")}</button>
+                onClick={() => setAttempt((value) => value + 1)}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
             </div>
           ) : content === null ? (
-            <p role="status" className="amp-material-document-message">{t("正在加载文案...", "Loading copy...")}</p>
+            <p role="status" className="amp-material-document-message">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</p>
           ) : (
             <iframe title={material.name} sandbox=""
               srcDoc={materialCopyDocument(content)} />

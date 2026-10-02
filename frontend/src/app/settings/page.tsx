@@ -1,5 +1,7 @@
 "use client";
 
+import { GuardedButton } from "@/components/redesign/GuardedControls";
+
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth_context";
@@ -10,11 +12,12 @@ import { isLocale } from "@/i18n/locale";
 import { localizeErrorMessage } from "@/i18n/errors";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import { userAvatarColor, userAvatarInitial } from "@/utils/user_avatar";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 export default function SettingsPage() {
   const { user, loading, updateUser } = useAuth();
   const { locale, setLocale, t, persistenceError } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const router = useRouter();
 
   const [nickname, set_nickname] = useState("");
@@ -66,6 +69,7 @@ export default function SettingsPage() {
 
   const save_profile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving_profile) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     set_saving_profile(true);
     try {
       await updateUser({ nickname: nickname.trim(), avatar_url: avatar_url.trim() });
@@ -82,7 +86,7 @@ export default function SettingsPage() {
     event.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      showError(t("请选择图片文件", "Choose an image file."));
+      showError(t("请选择图片文件", "Select an image file."));
       return;
     }
     if (file.size > 2 * 1024 * 1024) {
@@ -114,7 +118,7 @@ export default function SettingsPage() {
             { value: "zh-CN", label: "简体中文" },
           ]}
           onChange={(value) => { if (isLocale(value)) setLocale(value); }}
-          ariaLabel={t("选择语言", "Choose a language")}
+          ariaLabel={t("选择语言", "Select a language")}
           className="mt-3 w-full"
         />
       </section>
@@ -149,9 +153,9 @@ export default function SettingsPage() {
                 className="amp-workspace-control w-full"
               />
             </div>
-            <button type="submit" disabled={saving_profile} className="amp-button amp-button-primary shrink-0">
-              {saving_profile ? t("保存中...", "Saving...") : t("保存", "Save")}
-            </button>
+            <GuardedButton type="submit" disabled={saving_profile} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} className="amp-button amp-button-primary shrink-0">
+              {saving_profile ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+            </GuardedButton>
           </div>
         </form>
       </div>

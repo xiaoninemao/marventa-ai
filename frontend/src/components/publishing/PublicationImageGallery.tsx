@@ -5,20 +5,26 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import { useI18n } from "@/contexts/i18n_context";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { GuardedButton } from "@/components/redesign/GuardedControls";
+import { useToast } from "@/contexts/toast_context";
 import type { PublicationContent } from "@/types/publishing";
 import { insertPublicationImage, movePublicationImage } from "@/utils/publication_media";
 
 export default function PublicationImageGallery({
-  items, editable, disabled, onReorder, onRemove, onPreview,
+  items, editable, disabled, blockedReason, onReorder, onRemove, onPreview,
 }: {
   items: PublicationContent[];
   editable: boolean;
   disabled: boolean;
+  blockedReason: string;
   onReorder: (ids: string[]) => Promise<void>;
   onRemove: (item: PublicationContent) => void;
   onPreview: (item: PublicationContent) => void;
 }) {
   const { t } = useI18n();
+  const { showError } = useToast();
+  const firstReason = t("已经是第一张图片，无法再前移。", "This is the first image; it cannot move earlier.");
+  const lastReason = t("已经是最后一张图片，无法再后移。", "This is the last image; it cannot move later.");
   const [activeId, setActiveId] = useState<string | null>(null);
   const drag = useRef<{
     id: string; x: number; y: number; moved: boolean; slot: number | null;
@@ -31,6 +37,7 @@ export default function PublicationImageGallery({
   if (!active) return null;
 
   const move = (direction: -1 | 1) => {
+    if (!editable || disabled) { showError(blockedReason); return; }
     const ids = items.map((item) => item.id);
     const next = movePublicationImage(ids, active.id, direction);
     if (next !== ids) void onReorder(next);
@@ -45,31 +52,31 @@ export default function PublicationImageGallery({
           <Image src={active.file_url} alt={active.name} width={1200} height={1600} unoptimized />
         </button>
         {items.length > 1 && <>
-          <button type="button" className="amp-publication-image-nav is-previous"
+          <GuardedButton blockedReason={t("已经是第一张图片，没有上一张。", "This is the first image; there is no previous image.")} type="button" className="amp-publication-image-nav is-previous"
             aria-label={t("上一张", "Previous image")} disabled={index === 0}
             onClick={() => setActiveId(items[index - 1].id)}>
             <InlineIcon name="arrowLeft" />
-          </button>
-          <button type="button" className="amp-publication-image-nav is-next"
+          </GuardedButton>
+          <GuardedButton blockedReason={t("已经是最后一张图片，没有下一张。", "This is the last image; there is no next image.")} type="button" className="amp-publication-image-nav is-next"
             aria-label={t("下一张", "Next image")} disabled={index === items.length - 1}
             onClick={() => setActiveId(items[index + 1].id)}>
             <InlineIcon name="arrowLeft" />
-          </button>
+          </GuardedButton>
         </>}
         <span className="amp-publication-image-counter">{index + 1} / {items.length}</span>
       </div>
       <div className="amp-publication-image-caption">
         <strong title={active.name}>{active.name}</strong>
         {editable && <div className="amp-publication-image-order">
-          <button type="button" disabled={disabled || index === 0}
+          <GuardedButton blockedReason={disabled ? blockedReason : firstReason} type="button" disabled={disabled || index === 0}
             aria-label={t("前移：{name}", "Move earlier: {name}", { name: active.name })}
-            onClick={() => move(-1)}><InlineIcon name="arrowLeft" /></button>
-          <button type="button" disabled={disabled || index === items.length - 1}
+            onClick={() => move(-1)}><InlineIcon name="arrowLeft" /></GuardedButton>
+          <GuardedButton blockedReason={disabled ? blockedReason : lastReason} type="button" disabled={disabled || index === items.length - 1}
             aria-label={t("后移：{name}", "Move later: {name}", { name: active.name })}
-            onClick={() => move(1)}><InlineIcon name="arrowLeft" className="is-forward" /></button>
-          <button type="button" disabled={disabled}
+            onClick={() => move(1)}><InlineIcon name="arrowLeft" className="is-forward" /></GuardedButton>
+          <GuardedButton blockedReason={blockedReason} type="button" disabled={disabled}
             aria-label={t("移除：{name}", "Remove: {name}", { name: active.name })}
-            onClick={() => onRemove(active)}><InlineIcon name="trash" /></button>
+            onClick={() => onRemove(active)}><InlineIcon name="trash" /></GuardedButton>
         </div>}
       </div>
       <div className="amp-publication-image-thumbnails" aria-label={t("图片顺序", "Image order")}>
@@ -89,7 +96,7 @@ export default function PublicationImageGallery({
             }}
             onPointerDown={(event) => {
               suppressClick.current = false;
-              if (!editable || disabled || event.button !== 0 || !event.isPrimary) return;
+              if (event.button !== 0 || !event.isPrimary) return;
               drag.current = {
                 id: item.id, x: event.clientX, y: event.clientY, moved: false, slot: null,
               };
@@ -97,7 +104,15 @@ export default function PublicationImageGallery({
             }}
             onPointerMove={(event) => {
               const current = drag.current;
-              if (!current || !editable || disabled || !event.isPrimary) return;
+              if (!current || !event.isPrimary) return;
+              if (!editable || disabled) {
+                if (Math.hypot(event.clientX - current.x, event.clientY - current.y) > 5) {
+                  showError(blockedReason);
+                  suppressClick.current = true;
+                  drag.current = null;
+                }
+                return;
+              }
               if (!current.moved && Math.hypot(event.clientX - current.x, event.clientY - current.y) < 6) return;
               current.moved = true;
               suppressClick.current = true;
@@ -150,7 +165,8 @@ export default function PublicationImageGallery({
               if (event.currentTarget.hasPointerCapture(event.pointerId)) {
                 event.currentTarget.releasePointerCapture(event.pointerId);
               }
-              if (!editable || disabled || !current?.moved || current.slot === null) return;
+              if (!current?.moved || current.slot === null) return;
+              if (!editable || disabled) { showError(blockedReason); return; }
               const ids = items.map((current) => current.id);
               const next = insertPublicationImage(ids, current.id, current.slot);
               if (next !== ids) void onReorder(next);

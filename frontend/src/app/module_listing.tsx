@@ -17,6 +17,7 @@ import InlineIcon, { type InlineIconName } from "@/components/redesign/InlineIco
 import RedesignBadge from "@/components/redesign/RedesignBadge";
 import RedesignCard from "@/components/redesign/RedesignCard";
 import RedesignIconBox from "@/components/redesign/RedesignIconBox";
+import { ENGLISH_ACTIONS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import RedesignMetricCard from "@/components/redesign/RedesignMetricCard";
 
 const metricCards = [
@@ -144,9 +145,6 @@ export default function ModuleListing() {
               <div>
                 <h1 className="amp-module-title">{t("欢迎回来，{name}", "Welcome back, {name}", { name: displayName })}</h1>
               </div>
-              <Link href="/projects" className="amp-button amp-button-primary">
-                {t("新建项目", "New project")}
-              </Link>
             </div>
 
             <section className="amp-dashboard-grid">
@@ -194,7 +192,7 @@ export default function ModuleListing() {
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-base font-semibold text-slate-950">{t("最近项目", "Recent projects")}</h2>
                   <Link href="/projects" className="text-sm font-bold text-blue-600">
-                    {t("查看全部", "View all")}
+                    {t(CHINESE_ACTIONS.viewAll, ENGLISH_ACTIONS.viewAll)}
                   </Link>
                 </div>
                 <div className={`grid flex-1 gap-2 ${recentProjects.length > 0 ? "content-start" : ""}`}>

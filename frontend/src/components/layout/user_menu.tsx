@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
 import { userAvatarColor, userAvatarInitial } from "@/utils/user_avatar";
+import { ENGLISH_ACTIONS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
@@ -68,7 +69,7 @@ export default function UserMenu() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
             </svg>
-            {t("退出登录", "Sign out")}
+            {t(CHINESE_ACTIONS.signOut, ENGLISH_ACTIONS.signOut)}
           </button>
         </div>
       )}
