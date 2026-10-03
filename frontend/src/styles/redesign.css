@@ -1198,10 +1198,13 @@
 
 .amp-redesign .amp-dialog-state {
   align-items: center;
+  color: #667085;
   display: flex;
   flex: 1 0 auto;
   flex-direction: column;
+  font-size: 13px;
   justify-content: center;
+  line-height: 1.6;
   padding: 24px;
   text-align: center;
 }
@@ -1630,11 +1633,15 @@
 
 .amp-redesign .amp-button-cancel,
 .amp-redesign .amp-button-cancel:hover,
-.amp-redesign .amp-button-cancel:active {
+.amp-redesign .amp-button-cancel:active,
+.amp-redesign .amp-button-back,
+.amp-redesign .amp-button-back:hover,
+.amp-redesign .amp-button-back:active {
   border: 0;
 }
 
-.amp-redesign .amp-button-cancel:focus-visible {
+.amp-redesign .amp-button-cancel:focus-visible,
+.amp-redesign .amp-button-back:focus-visible {
   outline: 2px solid #175cd3;
   outline-offset: 2px;
 }
@@ -2179,6 +2186,23 @@
   border-color: #1d4ed8;
   box-shadow: none;
   transform: none;
+}
+
+.amp-redesign .amp-login-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.amp-redesign .amp-login-actions > .amp-button {
+  min-height: 50px;
+}
+
+.amp-redesign .amp-login-actions > .amp-login-submit {
+  flex: 1;
+  margin-top: 0;
+  width: auto;
 }
 
 @media (max-width: 768px) {

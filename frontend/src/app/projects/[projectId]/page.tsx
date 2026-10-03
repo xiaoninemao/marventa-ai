@@ -184,6 +184,7 @@ export default function ProjectDetailPage() {
     t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
   const [materialToDelete, setMaterialToDelete] = useState<ProjectMaterial | null>(null);
   const [accountSaving, setAccountSaving] = useState(false);
+  const [accountToDisconnect, setAccountToDisconnect] = useState<ProjectChannelAccount | null>(null);
   const [choosingPlatform, setChoosingPlatform] = useState(true);
   const [bindingPlatform, setBindingPlatform] = useState<"xiaohongshu" | "douyin">("xiaohongshu");
   const [deviceAuthorization, setDeviceAuthorization] = useState<DeviceAuthorization | null>(null);
@@ -213,6 +214,7 @@ export default function ProjectDetailPage() {
   }, [authLoading, router, user]);
 
   useEffect(() => {
+    setAccountToDisconnect(null);
     setChannelPlatformFilter("all");
     setChannelSortOrder("desc");
     setChannelSearch("");
@@ -765,6 +767,10 @@ export default function ProjectDetailPage() {
   const unbindChannelAccount = async (account: ProjectChannelAccount) => {
     if (accountSaving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     if (!project) { showWarning(t("项目尚未加载，请稍候。", "The project has not loaded yet. Please wait.")); return; }
+    if (account.project_id !== projectId || project.id !== projectId) {
+      showWarning(t("项目已切换，请重新选择账号。", "The project has changed. Select the account again."));
+      return;
+    }
     if (!canManageMembers && account.created_by_user_id !== user?.id) {
       showWarning(t("仅账号授权者或项目所有者、管理员可以取消授权。", "Only the account authorizer or project owners and administrators can revoke authorization."));
       return;
@@ -773,6 +779,7 @@ export default function ProjectDetailPage() {
     try {
       await delete_project_channel_account(project.id, account.id);
       setChannelAccounts((current) => current.filter((item) => item.id !== account.id));
+      setAccountToDisconnect(null);
       showSuccess(t("账号授权已取消", "Account authorization revoked"));
     } catch (error) {
       showError(localizeErrorMessage(
@@ -1118,10 +1125,8 @@ export default function ProjectDetailPage() {
                         {material.node_type === "collection" && (
                           <div className="amp-material-collection-meta">
                             <span>{t("{count} 个素材", "{count} materials", { count: material.material_count })}</span>
-                            <span>{t("图片 {images} · 视频 {videos}", "{images} images · {videos} videos", {
-                              images: material.image_count, videos: material.video_count,
-                            })}{material.document_count > 0 && t(" · 文案 {count}", " · {count} documents", {
-                              count: material.document_count,
+                            <span>{t("图片 {images} · 视频 {videos} · 文案 {copy}", "{images} images · {videos} videos · {copy} copy items", {
+                              images: material.image_count, videos: material.video_count, copy: material.document_count,
                             })}</span>
                           </div>
                         )}
@@ -1321,7 +1326,7 @@ export default function ProjectDetailPage() {
                                 disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                                 onClick={() => {
                                   setChannelMenuAccountId(null);
-                                  void unbindChannelAccount(account);
+                                  setAccountToDisconnect(account);
                                 }}>
                                 <InlineIcon name="close" />
                                 {t(CHINESE_ACTIONS.disconnect, ENGLISH_ACTIONS.disconnect)}
@@ -1899,6 +1904,12 @@ export default function ProjectDetailPage() {
 
         <dialog ref={accountDialogRef} aria-labelledby="bind-channel-account-title"
           className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-lg bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
+          onCancel={(event) => {
+            if (accountSaving) {
+              event.preventDefault();
+              showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+            }
+          }}
           onClose={() => {
             if (!accountSaving) {
               setChoosingPlatform(true);
@@ -1936,8 +1947,9 @@ export default function ProjectDetailPage() {
                 ))}
               </div>
               <div className="amp-project-channel-account-actions">
-                <button type="button" className="amp-button amp-button-secondary amp-button-cancel"
-                  onClick={() => accountDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</button>
+                <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                  disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                  onClick={() => accountDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
               </div>
             </>
           ) : (
@@ -1997,6 +2009,9 @@ export default function ProjectDetailPage() {
                       setDeviceAuthorization(null);
                       setDeviceQrCode("");
                     }}>{t(CHINESE_ACTIONS.back, ENGLISH_ACTIONS.back)}</button>
+                  <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                    disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                    onClick={() => accountDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
                 </div>
               </>
             ) : (
@@ -2012,7 +2027,7 @@ export default function ProjectDetailPage() {
               </ul>
             </div>
             <div className="amp-project-channel-account-actions">
-              <GuardedButton type="button" className="amp-button amp-button-secondary" disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-back" disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => setChoosingPlatform(true)}>{t(CHINESE_ACTIONS.back, ENGLISH_ACTIONS.back)}</GuardedButton>
               <GuardedButton type="button" className="amp-button amp-button-primary"
                 disabled={accountSaving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onClick={() => void authorizeChannelAccount()}>
@@ -2055,6 +2070,22 @@ export default function ProjectDetailPage() {
           </div>
         </dialog>
 
+        <DeleteConfirmDialog
+          open={Boolean(accountToDisconnect)}
+          title={t("断开连接", "Disconnect account")}
+          message={t(
+            "确定断开账号“{name}”与此项目的连接吗？如需再次使用，请重新连接。",
+            "Disconnect “{name}” from this project? Reconnect it if you need to use it again.",
+            { name: accountToDisconnect?.account_name || "" },
+          )}
+          cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+          confirmLabel={t(CHINESE_ACTIONS.disconnect, ENGLISH_ACTIONS.disconnect)}
+          busyLabel={t(CHINESE_PROGRESS.disconnecting, ENGLISH_PROGRESS.disconnecting)}
+          busy={accountSaving}
+          blockedReason={t("正在断开连接，请等待操作完成。", "Disconnection is in progress. Please wait for it to finish.")}
+          onCancel={() => setAccountToDisconnect(null)}
+          onConfirm={() => { if (accountToDisconnect) void unbindChannelAccount(accountToDisconnect); }}
+        />
         <DeleteConfirmDialog
           open={Boolean(materialToDelete)}
           title={materialToDelete?.node_type === "collection"

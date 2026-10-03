@@ -1,6 +1,6 @@
 export interface ChatReference {
   id: string;
-  kind: "insight" | "case";
+  kind: "insight" | "case" | "material";
   title: string;
 }
 
@@ -42,6 +42,7 @@ export interface SessionRecord {
   status: "drafting" | "generating" | "completed" | "failed";
   insight_ids: string[];
   case_ids: string[];
+  material_ids?: string[];
   preference_keys?: string[];
   activities?: CreationActivity[];
   created_at: string;

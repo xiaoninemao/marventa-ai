@@ -66,11 +66,12 @@ export async function send_chat_message(
   id: string, message: string,
   insight_ids: string[] = [], case_ids: string[] = [],
   preference_keys: string[] = [], client_message_id = crypto.randomUUID(),
+  material_ids: string[] = [],
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${id}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ message, insight_ids, case_ids, preference_keys, client_message_id }),
+    body: JSON.stringify({ message, insight_ids, case_ids, preference_keys, client_message_id, material_ids }),
   });
   if (!res.ok) {
     const err = await res.json();

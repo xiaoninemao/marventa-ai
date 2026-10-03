@@ -5,9 +5,9 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from app.config import DB_PATH
-from app.database import connect_database
+from app.database import connect_database, is_postgresql
 from app.engines.content_generator.models import (
-    ChatMessage, ContentCard, CreationActivity, SessionResponse, ContentVersion,
+    ChatMessage, ChatReference, ContentCard, CreationActivity, SessionResponse, ContentVersion,
 )
 from app.storage_schema import (
     ensure_organization_scope,
@@ -41,6 +41,21 @@ def init_db() -> None:
         conn.execute("ALTER TABLE creation_sessions ADD COLUMN insight_ids TEXT DEFAULT '[]'")
     if "case_ids" not in cols:
         conn.execute("ALTER TABLE creation_sessions ADD COLUMN case_ids TEXT DEFAULT '[]'")
+    if "material_ids" not in cols:
+        conn.execute("ALTER TABLE creation_sessions ADD COLUMN material_ids TEXT NOT NULL DEFAULT '[]'")
+    if is_postgresql(conn):
+        conn.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'creation_sessions'::regclass
+                      AND conname = 'creation_sessions_material_ids_json'
+                ) THEN
+                    ALTER TABLE creation_sessions ADD CONSTRAINT creation_sessions_material_ids_json
+                    CHECK (jsonb_typeof(material_ids::jsonb) = 'array') NOT VALID;
+                END IF;
+            END $$
+        """)
     if "preference_keys" not in cols:
         conn.execute("ALTER TABLE creation_sessions ADD COLUMN preference_keys TEXT DEFAULT '[]'")
     if "activities" not in cols:
@@ -94,7 +109,7 @@ def init_db() -> None:
         conn, "content_versions", "creation_sessions", "session_id",
     )
     ensure_json_columns(
-        conn, "creation_sessions", ("messages", "cards", "insight_ids", "case_ids", "preference_keys", "activities"),
+        conn, "creation_sessions", ("messages", "cards", "insight_ids", "case_ids", "material_ids", "preference_keys", "activities"),
     )
     ensure_json_columns(conn, "content_versions", ("cards", "changed_card_ids"))
     conn.execute(
@@ -230,7 +245,7 @@ def update_session(session_id: str, **kwargs) -> SessionResponse | None:
                     [v.model_dump() if hasattr(v, "model_dump") else v for v in val],
                     ensure_ascii=False,
                 ))
-            elif key in ("insight_ids", "case_ids", "preference_keys") and isinstance(val, list):
+            elif key in ("insight_ids", "case_ids", "material_ids", "preference_keys") and isinstance(val, list):
                 fields.append(f"{key} = ?")
                 values.append(json.dumps(val, ensure_ascii=False))
             else:
@@ -281,6 +296,7 @@ def accept_user_message(
     insight_ids: list[str],
     case_ids: list[str],
     preference_keys: list[str],
+    material_ids: list[str] | None = None,
 ) -> SessionResponse | None:
     """Atomically append one idempotent user message and merge sent context."""
     init_db()
@@ -289,15 +305,18 @@ def accept_user_message(
     try:
         conn.execute("BEGIN IMMEDIATE")
         organization_id = resolve_user_organization_id(conn, user_id)
-        row = conn.execute("""
-            SELECT session.messages, session.insight_ids, session.case_ids, session.preference_keys
+        query = """
+            SELECT session.messages, session.insight_ids, session.case_ids, session.material_ids, session.preference_keys
             FROM creation_sessions session
             JOIN project_memberships membership
               ON membership.project_id = session.project_id AND membership.user_id = ?
             JOIN content_projects project ON project.id = session.project_id
             WHERE session.id = ? AND session.organization_id = ?
               AND project.organization_id = session.organization_id
-        """, (user_id, session_id, organization_id)).fetchone()
+        """
+        if is_postgresql(conn):
+            query += " FOR UPDATE OF session"
+        row = conn.execute(query, (user_id, session_id, organization_id)).fetchone()
         if row is None:
             conn.rollback()
             return None
@@ -310,20 +329,45 @@ def accept_user_message(
             messages.append(message)
         else:
             conn.rollback()
-            return get_session(session_id)
+            existing_session = get_session(session_id, user_id)
+            if existing_session:
+                existing_session._user_message_accepted = False
+            return existing_session
+        submitted_materials = list(dict.fromkeys(material_ids or []))
+        if len(submitted_materials) > 20:
+            raise ValueError("At most 20 material references are allowed")
+        # Recheck within the write transaction, closing the API validation race.
+        material_titles = {}
+        for material_id in submitted_materials:
+            material = conn.execute("""
+                SELECT material.id, material.name FROM project_materials material
+                JOIN creation_sessions session ON session.project_id = material.project_id
+                WHERE session.id = ? AND material.id = ? AND material.node_type = 'file'
+            """, (session_id, material_id)).fetchone()
+            if material is None:
+                raise LookupError("Referenced material not found")
+            material_titles[material_id] = material["name"]
+        message.references = [
+            reference for reference in message.references if reference.kind != "material"
+        ] + [
+            ChatReference(id=material_id, kind="material", title=title)
+            for material_id, title in material_titles.items()
+        ]
         merged_insights = _merge_unique(json.loads(row["insight_ids"] or "[]"), insight_ids)
         merged_cases = _merge_unique(json.loads(row["case_ids"] or "[]"), case_ids)
+        merged_materials = _merge_unique(json.loads(row["material_ids"] or "[]"), material_ids or [])
         merged_preferences = _merge_preferences(
             json.loads(row["preference_keys"] or "[]"), preference_keys,
         )
         conn.execute("""
             UPDATE creation_sessions
-            SET messages = ?, insight_ids = ?, case_ids = ?, preference_keys = ?, updated_at = ?
+            SET messages = ?, insight_ids = ?, case_ids = ?, material_ids = ?, preference_keys = ?, updated_at = ?
             WHERE id = ?
         """, (
             json.dumps([item.model_dump(mode="json") for item in messages], ensure_ascii=False),
             json.dumps(merged_insights, ensure_ascii=False),
             json.dumps(merged_cases, ensure_ascii=False),
+            json.dumps(merged_materials, ensure_ascii=False),
             json.dumps(merged_preferences, ensure_ascii=False),
             now,
             session_id,
@@ -341,9 +385,10 @@ def append_assistant_message(session_id: str, message: ChatMessage) -> SessionRe
     conn = _get_conn()
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
-            "SELECT messages FROM creation_sessions WHERE id = ?", (session_id,),
-        ).fetchone()
+        query = "SELECT messages FROM creation_sessions WHERE id = ?"
+        if is_postgresql(conn):
+            query += " FOR UPDATE"
+        row = conn.execute(query, (session_id,)).fetchone()
         if row is None:
             conn.rollback()
             return None
@@ -459,6 +504,14 @@ def _row_to_session(row: sqlite3.Row) -> SessionResponse:
     except (json.JSONDecodeError, TypeError):
         pass
 
+    material_ids = []
+    try:
+        parsed = json.loads(row["material_ids"] or "[]")
+        if isinstance(parsed, list):
+            material_ids = [item for item in parsed if isinstance(item, str)]
+    except (json.JSONDecodeError, TypeError, KeyError, IndexError):
+        pass
+
     return SessionResponse(
         id=row["id"],
         user_id=row["user_id"],
@@ -472,6 +525,7 @@ def _row_to_session(row: sqlite3.Row) -> SessionResponse:
         status=row["status"] or "drafting",
         insight_ids=insight_ids,
         case_ids=case_ids,
+        material_ids=material_ids,
         preference_keys=preference_keys,
         activities=activities,
         created_at=row["created_at"],

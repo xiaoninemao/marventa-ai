@@ -13,6 +13,7 @@ interface DeleteConfirmDialogProps {
   confirmLabel: string;
   busyLabel: string;
   busy?: boolean;
+  blockedReason?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -25,12 +26,13 @@ export default function DeleteConfirmDialog({
   confirmLabel,
   busyLabel,
   busy = false,
+  blockedReason: customBlockedReason,
   onCancel,
   onConfirm,
 }: DeleteConfirmDialogProps) {
   const { t } = useI18n();
   const { showWarning } = useToast();
-  const blockedReason = t("正在删除，请等待操作完成。", "Deletion is in progress. Please wait for it to finish.");
+  const blockedReason = customBlockedReason ?? t("正在删除，请等待操作完成。", "Deletion is in progress. Please wait for it to finish.");
   const titleId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
 

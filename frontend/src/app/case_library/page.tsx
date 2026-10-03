@@ -888,9 +888,9 @@ function CaseDetailModal({
               </button>
             </div>
             <div className="amp-case-detail-actions">
-              <button type="button" onClick={onClose} className="amp-case-detail-close" aria-label={t("关闭详情", "Close details")}>
+              {!(isEditingContent && canEditContent) && <button type="button" onClick={onClose} className="amp-case-detail-close" aria-label={t("关闭详情", "Close details")}>
                 <InlineIcon name="close" />
-              </button>
+              </button>}
             </div>
           </div>
           <aside className="amp-case-detail-media">

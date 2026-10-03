@@ -75,7 +75,7 @@ Collect reusable images, videos, and copy into project material sets. Build publ
 - Workspace actions explain unmet requirements, permission restrictions, editing locks, and pending operations through localized toasts instead of gray controls; action guards and server validation remain enforced.
 - Chinese and English action captions use shared concise verbs and consistent progress labels; contextual headings and accessible descriptions retain the details needed to identify the action.
 - Project-bound insights, cases, creations, media, and portfolio work
-- Platform-authorized Xiaohongshu and Douyin account connections at project level
+- Platform-authorized Xiaohongshu and Douyin account connections at project level; disconnecting an account requires confirmation.
 - Creator attribution and project-aware permissions
 - Searchable project navigation across the core workflow
 - Project, Case Library, Content Studio, Portfolio, Publishing, and Organization lists include page navigation, totals, and page-size selection in a bottom-aligned, sticky footer. Searches and filters reset the page, and deleting the last item on a page returns to a valid page. The home dashboard remains a five-project preview.
@@ -121,6 +121,7 @@ See [Scheduled publication](#scheduled-publication) for activation, authorizatio
 
 - Guided conversations grounded in project knowledge
 - Independent insight and case reference flows
+- Choose a material set, then reference its images, videos, or copy. Selections are retained when switching sets within the current project. Selected references are saved with the submitted message and creation context; copy text becomes AI context, while media references provide metadata rather than automatic visual or video analysis.
 - Short-video and image-text planning
 - Five structured content cards for every generation
 - Card-level editing, activity history, versioning, and rollback
@@ -130,7 +131,7 @@ See [Scheduled publication](#scheduled-publication) for activation, authorizatio
 
 ### Portfolio
 
-- Reports are read-only in the detail view, with bilingual preview and PDF export.
+- Reports use a continuous, single-column reading layout with clear chapter headings instead of separate cards. The detail view is read-only, with bilingual preview and PDF export.
 
 - Dedicated work list and report detail views
 - Background generation states
@@ -454,6 +455,8 @@ npx tsc --noEmit
 npm test
 npm run build
 ```
+
+Dialog actions follow one convention: confirmation forms place Cancel immediately to the left of the primary action, without a close icon; previews use an accessible close icon, without Confirm or Cancel. View/edit dialogs switch between these patterns. The channel authorization introduction uses borderless Back + Connect instead of a redundant Cancel. New dialogs must be included in the [dialog action regression inventory](frontend/src/utils/dialog_actions.test.ts).
 
 ## Security
 

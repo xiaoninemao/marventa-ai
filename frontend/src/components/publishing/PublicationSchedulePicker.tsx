@@ -163,6 +163,10 @@ export default function PublicationSchedulePicker({
               <GuardedButton blockedReason={blockedReason} disabled={disabled} type="button" aria-label={t("下个月", "Next month")} onClick={() => changeMonth(1)}>
                 <InlineIcon name="chevronRight" />
               </GuardedButton>
+              <button type="button" className="amp-material-preview-icon"
+                aria-label={t("关闭日历", "Close calendar")} onClick={closeMenu}>
+                <InlineIcon name="close" />
+              </button>
             </div>
             <div className="amp-schedule-calendar-weekdays" aria-hidden="true">
               {t("一,二,三,四,五,六,日", "Mo,Tu,We,Th,Fr,Sa,Su").split(",").map((day) => <span key={day}>{day}</span>)}
@@ -210,6 +214,10 @@ export default function PublicationSchedulePicker({
               ))}
             </div>
             <div className="amp-schedule-picker-footer">
+              <GuardedButton disabled={disabled} blockedReason={blockedReason} type="button"
+                className="amp-button amp-button-secondary amp-button-cancel" onClick={closeMenu}>
+                {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+              </GuardedButton>
               <GuardedButton disabled={disabled || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(draftTime)}
                 blockedReason={disabled ? blockedReason : t("请选择有效的时和分。", "Select a valid hour and minute.")}
                 type="button" className="amp-button amp-button-primary" onClick={() => {

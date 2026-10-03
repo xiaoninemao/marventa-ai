@@ -101,7 +101,7 @@ export default function MaterialDocumentPreview({
         <div className="amp-material-preview-actions">
           {editing ? (
             <>
-              <GuardedButton type="button" className="amp-material-preview-action" disabled={saving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+              <GuardedButton type="button" className="amp-material-preview-action amp-button-cancel" disabled={saving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => setEditing(false)}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
               <GuardedButton type="submit" form="material-copy-edit-form" className="amp-material-preview-action is-primary"
                 disabled={saving || !text.trim()} blockedReason={saving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入文案正文。", "Enter copy content.")}>
@@ -114,10 +114,10 @@ export default function MaterialDocumentPreview({
               {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
             </GuardedButton>
           )}
-          <GuardedButton type="button" className="amp-material-preview-icon" disabled={saving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+          {!editing && <GuardedButton type="button" className="amp-material-preview-icon" disabled={saving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             aria-label={t("关闭预览", "Close preview")} onClick={onClose}>
             <InlineIcon name="close" />
-          </GuardedButton>
+          </GuardedButton>}
         </div>
       </header>
       <div className="amp-material-preview-stage">

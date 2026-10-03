@@ -177,13 +177,14 @@ def upload_publication_content(
         raise
 
 
-def _document_snapshot(material) -> str:
+def read_material_document(material, *, max_bytes: int = MAX_UPLOAD_SIZE_BYTES) -> str:
+    """Read sanitized copy using the same bounded parsing as material previews."""
     if material["content_html"] is not None:
         return sanitize_copy_html(material["content_html"])
     key = material["object_key"]
     if not key or not media_exists(key):
         raise LookupError("Material content not found")
-    data = read_media_bytes(key, max_bytes=MAX_UPLOAD_SIZE_BYTES)
+    data = read_media_bytes(key, max_bytes=max_bytes)
     if material["mime_type"] == "text/html":
         try:
             return sanitize_copy_html(data.decode("utf-8-sig"))
@@ -236,7 +237,7 @@ def import_publication_materials(
             for material in materials:
                 key, html, mime = "", None, material["mime_type"]
                 if material["media_type"] == "document":
-                    html, mime = _document_snapshot(material), "text/html"
+                    html, mime = read_material_document(material), "text/html"
                 else:
                     source_key = material["object_key"]
                     if not source_key or not media_exists(source_key):

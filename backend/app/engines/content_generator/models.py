@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 
 class ChatReference(BaseModel):
     id: str
-    kind: Literal["insight", "case"]
+    kind: Literal["insight", "case", "material"]
     title: str
 
 
@@ -53,6 +53,8 @@ class PresenceHeartbeat(BaseModel):
 
 
 class SessionResponse(BaseModel):
+    _user_message_accepted: bool = PrivateAttr(default=True)
+
     id: str
     user_id: str
     creator_name: str = ""
@@ -65,6 +67,7 @@ class SessionResponse(BaseModel):
     status: str
     insight_ids: list[str] = []
     case_ids: list[str] = []
+    material_ids: list[str] = Field(default_factory=list)
     preference_keys: list[str] = []
     activities: list[CreationActivity] = Field(default_factory=list)
     created_at: str
@@ -77,8 +80,14 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     insight_ids: list[str] = Field(default_factory=list)
     case_ids: list[str] = Field(default_factory=list)
+    material_ids: list[str] = Field(default_factory=list, max_length=20)
     preference_keys: list[str] = Field(default_factory=list, max_length=20)
     client_message_id: UUID | None = None
+
+    @field_validator("material_ids")
+    @classmethod
+    def unique_material_ids(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(value))
 
 
 class RewriteUserMessageRequest(BaseModel):

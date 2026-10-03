@@ -11,6 +11,7 @@ import { localizeErrorMessage } from "@/i18n/errors";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import { GuardedButton } from "@/components/redesign/GuardedControls";
 import PortfolioProjectSidebar from "@/components/portfolio/PortfolioProjectSidebar";
+import PortfolioReportDocument from "@/components/portfolio/PortfolioReportDocument";
 import {
   fetch_content_projects,
   fetch_script,
@@ -191,25 +192,7 @@ export default function PortfolioDetailPage() {
             <p>{t("请返回智能创作重新生成作品。", "Return to Content Studio and generate the work again.")}</p>
           </div>
         ) : (
-          <div className="amp-portfolio-report-grid">
-            <section className="amp-portfolio-report-summary">
-              <div>
-                <span>{t("作品摘要", "Work summary")}</span>
-                <h2>{report.title}</h2>
-                <p>{report.summary}</p>
-              </div>
-            </section>
-            {report.sections.map((section, index) => (
-              <section key={`${section.title}-${index}`} className="amp-insight-detail-card amp-portfolio-report-section">
-                <h2><span>{String(index + 1).padStart(2, "0")}</span>{section.title}</h2>
-                <div>
-                  {section.paragraphs.map((paragraph, paragraphIndex) => (
-                    <p key={`${section.title}-${paragraphIndex}`}>{paragraph}</p>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
+          <PortfolioReportDocument report={report} locale={reportLocale} />
         )}
       </main>
 
@@ -221,20 +204,20 @@ export default function PortfolioDetailPage() {
           else showError(exportReason);
         }}>
         <div className="flex max-h-[88dvh] min-h-0 flex-col">
-          <header className="flex shrink-0 items-center border-b border-slate-200 px-5 py-4">
+          <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">
             <h2 id="portfolio-pdf-preview-title" className="text-base font-semibold">
               {t("导出 PDF 预览", "PDF export preview")}
             </h2>
+            <GuardedButton blockedReason={exportReason} type="button" className="amp-material-preview-icon" disabled={exportingPdf}
+              aria-label={t("关闭预览", "Close preview")} onClick={() => pdfPreviewDialogRef.current?.close()}>
+              <InlineIcon name="close" />
+            </GuardedButton>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-5">
             <div className="mx-auto overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
               dangerouslySetInnerHTML={{ __html: pdfPreviewHtml }} />
           </div>
           <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-5 py-3">
-            <GuardedButton blockedReason={exportReason} type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={exportingPdf}
-              onClick={() => pdfPreviewDialogRef.current?.close()}>
-              {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
-            </GuardedButton>
             <GuardedButton blockedReason={exportReason} type="button" className="amp-button amp-button-primary" disabled={exportingPdf}
               onClick={() => void exportPdf()}>
               {exportingPdf ? t(CHINESE_PROGRESS.exporting, ENGLISH_PROGRESS.exporting) : t(CHINESE_ACTIONS.export, ENGLISH_ACTIONS.export)}

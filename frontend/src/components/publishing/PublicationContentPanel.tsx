@@ -3,16 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { publicationReadOnly } from "@/utils/publication_lifecycle";
 import { createPortal } from "react-dom";
-import Image from "next/image";
 import { useI18n } from "@/contexts/i18n_context";
 import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_ACTIONS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
 import { useToast } from "@/contexts/toast_context";
 import { localizeErrorMessage } from "@/i18n/errors";
 import InlineIcon from "@/components/redesign/InlineIcon";
-import { GuardedButton, GuardedInput } from "@/components/redesign/GuardedControls";
+import { GuardedButton } from "@/components/redesign/GuardedControls";
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
-import MaterialDocumentThumbnail from "@/components/projects/MaterialDocumentThumbnail";
+import MaterialPickerOption, { MaterialPickerSetCover } from "@/components/projects/MaterialPickerOption";
 import PublicationContentMedia from "./PublicationContentMedia";
 import PublicationCopyEditor from "./PublicationCopyEditor";
 import PublicationImageGallery from "./PublicationImageGallery";
@@ -412,8 +411,6 @@ export default function PublicationContentPanel({ plan, editable, disabled, onCh
                 : t("项目素材集", "Project material sets")}
             </h2>
           </div>
-          <GuardedButton blockedReason={busyReason} type="button" className="amp-material-preview-icon" aria-label={t(CHINESE_ACTIONS.close, ENGLISH_ACTIONS.close)} disabled={busy}
-            onClick={() => picker.current?.close()}><InlineIcon name="close" /></GuardedButton>
         </header>
         <div className="amp-publication-picker-body">
           {pickerLoading ? <div className="amp-dialog-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>
@@ -426,26 +423,7 @@ export default function PublicationContentPanel({ plan, editable, disabled, onCh
                 : <div className="amp-publication-picker-grid">{candidates.map((material) => !setId ? (
                   <GuardedButton blockedReason={busyReason} key={material.id} type="button" className="amp-publication-set-option" disabled={busy}
                     onClick={() => setSetId(material.id)}>
-                    <span className="amp-publication-set-cover">
-                      <span className={`amp-material-collage has-${material.covers.length}`}>
-                        {material.covers.length ? material.covers.map((cover) => (
-                          <span key={cover.id} className="amp-material-collage-frame">
-                            {cover.media_type === "image"
-                              ? <Image src={cover.file_url} alt="" width={400} height={300}
-                                  unoptimized className="amp-material-collage-media" />
-                              : <video src={cover.file_url} muted playsInline preload="metadata"
-                                  className="amp-material-collage-media" />}
-                          </span>
-                        )) : (
-                          <span className="amp-material-collage-empty">
-                            <InlineIcon name="collection" />
-                            <span>{material.material_count > 0
-                              ? t("文案素材集", "Copy collection")
-                              : t("暂无素材", "No materials yet")}</span>
-                          </span>
-                        )}
-                      </span>
-                    </span>
+                    <MaterialPickerSetCover covers={material.covers} hasMaterials={material.material_count > 0} />
                     <span className="amp-publication-set-copy">
                       <strong title={material.name}>{material.name}</strong>
                       <small>{pickerMode === "document"
@@ -456,17 +434,14 @@ export default function PublicationContentPanel({ plan, editable, disabled, onCh
                     </span>
                   </GuardedButton>
                 ) : (
-                  <label key={material.id} className={`amp-publication-material-option${selected.has(material.id) ? " is-selected" : ""}`}>
-                    <div className="amp-publication-material-cover">
-                      {material.media_type === "document" ? <MaterialDocumentThumbnail material={material} />
-                        : material.media_type === "video" ? <video src={material.file_url} muted playsInline preload="metadata" />
-                          : <Image src={material.file_url} alt="" width={320} height={200} unoptimized />}
-                    </div>
-                    <span><GuardedInput type={pickerMode === "document" ? "radio" : "checkbox"}
+                  <MaterialPickerOption key={material.id} material={material}
+                      inputType={pickerMode === "document" ? "radio" : "checkbox"}
                       blockedReason={locked ? lockReason : t("此素材已添加到计划，不能重复添加。", "This material is already in the plan and cannot be added again.")}
-                      name={pickerMode === "document" ? "publication-copy-material" : undefined}
-                      checked={selected.has(material.id) || (pickerMode !== "document" && sourceIds.has(material.id))}
+                      inputName={pickerMode === "document" ? "publication-copy-material" : undefined}
+                      selected={selected.has(material.id) || (pickerMode !== "document" && sourceIds.has(material.id))}
+                      highlighted={selected.has(material.id)}
                       disabled={locked || (pickerMode !== "document" && sourceIds.has(material.id))}
+                      description={pickerMode !== "document" && sourceIds.has(material.id) ? t("已添加", "Already added") : mediaLabel(material.media_type)}
                       onChange={() => {
                         if (pickerMode === "document") {
                           setSelected(new Set([material.id]));
@@ -487,14 +462,14 @@ export default function PublicationContentPanel({ plan, editable, disabled, onCh
                           else next.add(material.id);
                           return next;
                         });
-                      }} /><strong title={material.name}>{material.name}</strong></span>
-                    <small>{pickerMode !== "document" && sourceIds.has(material.id) ? t("已添加", "Already added") : mediaLabel(material.media_type)}</small>
-                  </label>
+                      }} />
                 ))}</div>}
         </div>
         <footer><span>{Number.isFinite(selectionLimit)
           ? t("已选择 {count}/{limit} 项", "{count}/{limit} selected", { count: selected.size, limit: selectionLimit })
           : t("已选择 {count} 项", "{count} selected", { count: selected.size })}</span>
+          <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={busy}
+            onClick={() => picker.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
           <GuardedButton blockedReason={locked ? lockReason : t("请先选择素材。", "Select materials first.")} type="button" className="amp-button amp-button-primary" disabled={locked || !selected.size}
             onClick={() => void addSelected()}>{busy ? t("添加中…", pickerMode === "document" ? ENGLISH_PROGRESS.importing : ENGLISH_PROGRESS.adding)
               : pickerMode === "document" ? t(CHINESE_ACTIONS.import, ENGLISH_ACTIONS.import) : t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}</GuardedButton></footer>

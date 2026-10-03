@@ -127,7 +127,6 @@ export default function SettingsPage() {
       <div className="amp-workspace-card p-6 mb-5">
         <form onSubmit={save_profile} className="space-y-4">
           <div className="flex items-center gap-3 mb-1">
-            <span className="w-1 h-4 rounded-full bg-indigo-600" />
             <h2 className="amp-workspace-section-title">{t("个人信息", "Profile")}</h2>
           </div>
           <div className="flex items-end gap-4 py-2">

@@ -15,6 +15,7 @@ from app.engines.content_generator.storage import (
 )
 from app.engines.content_generator.ai_analyzer import chat, generate_async, build_reference_context, modify_card, generate_document
 from app.engines.content_generator.presence import get_presence, release_presence
+from app.engines.content_generator.material_references import latest_material_reference_ids
 from app.engines.portfolio.storage import create_script, delete_script, update_script
 from app.shared.response import success_response
 from app.auth.dependencies import get_current_user
@@ -88,6 +89,16 @@ def _validate_sent_context(
             kind="case",
             title=case.title,
         ))
+    from app.engines.publishing.project_materials import get_project_material
+    from app.engines.publishing.project_memberships import ProjectNotFound
+    from app.engines.content_generator.material_references import ensure_material_content_available
+    for material_id in req.material_ids:
+        try:
+            material = get_project_material(user_id, session.project_id, material_id)
+            ensure_material_content_available(material)
+        except (ProjectNotFound, LookupError, FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="Referenced material not found") from exc
+        references.append(ChatReference(id=material.id, kind="material", title=material.name))
     return references
 
 
@@ -99,10 +110,15 @@ def _preference_prefix(keys: list[str]) -> str:
 def _generate_document_job(session_id: str, user_id: str, work_id: str) -> None:
     job_key = (user_id, session_id)
     try:
-        session = get_session(session_id)
+        session = get_session(session_id, user_id)
         if not session or not session.cards:
             raise ValueError("Creation session has no cards")
-        content = generate_document(session.cards)
+        ref_ctx = build_reference_context(
+            session.insight_ids, session.case_ids, user_id,
+            material_ids=session.material_ids, project_id=session.project_id,
+            material_priority_ids=latest_material_reference_ids(session.messages),
+        ) if session.insight_ids or session.case_ids or session.material_ids else ""
+        content = generate_document(session.cards, reference_context=ref_ctx)
         update_script(work_id, content=content, status="completed")
     except Exception:
         update_script(work_id, status="failed")
@@ -218,6 +234,14 @@ async def send_chat_message(
     req: ChatRequest,
     current_user=Depends(get_current_user),
 ):
+    """Accept up to 20 project material IDs, alongside existing case/insight inputs.
+
+    IDs are deduplicated and checked against the user's current organization and
+    session project. Server-derived captions are preserved with each message;
+    cumulative IDs are reauthorized when used. Copy is plaintext source data;
+    image/video references provide metadata only, never vision/OCR/transcription.
+    Replaying a client_message_id returns the original accepted turn unchanged.
+    """
     session = _get_manageable_session(session_id, current_user)
     message_text = req.message.strip()
     if not message_text:
@@ -246,16 +270,35 @@ async def send_chat_message(
         client_message_id=req.client_message_id,
         references=references,
     )
-    accepted = accept_user_message(
-        session_id, current_user["id"], sent_message,
-        list(dict.fromkeys(req.insight_ids)),
-        list(dict.fromkeys(req.case_ids)),
-        list(dict.fromkeys(req.preference_keys)),
-    )
+    try:
+        accepted = accept_user_message(
+            session_id, current_user["id"], sent_message,
+            list(dict.fromkeys(req.insight_ids)),
+            list(dict.fromkeys(req.case_ids)),
+            list(dict.fromkeys(req.preference_keys)),
+            material_ids=req.material_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Referenced material not found") from exc
     if not accepted:
         raise HTTPException(status_code=404, detail="Session not found")
+    if not accepted._user_message_accepted:
+        index = next(
+            index for index, message in enumerate(accepted.messages)
+            if str(message.client_message_id or "") == client_message_id
+        )
+        reply = next(
+            (message for message in accepted.messages[index + 1:] if message.role == "assistant"),
+            ChatMessage(role="assistant", content=""),
+        )
+        return success_response("Message already accepted", {
+            "reply": reply.model_dump(mode="json"),
+            "session": accepted.model_dump(mode="json"),
+        })
     ref_ctx = build_reference_context(
         accepted.insight_ids, accepted.case_ids, current_user["id"],
+        material_ids=accepted.material_ids, project_id=accepted.project_id,
+        material_priority_ids=req.material_ids,
     )
     msg_dicts = [
         {"role": message.role, "content": message.content}
@@ -305,6 +348,10 @@ async def _replace_latest_reply(
     ]
     ref_ctx = build_reference_context(
         session.insight_ids, session.case_ids, user_id,
+        material_ids=session.material_ids, project_id=session.project_id,
+        material_priority_ids=[
+            reference.id for reference in latest_user.references if reference.kind == "material"
+        ],
     )
     try:
         reply_content = await asyncio.to_thread(chat, msg_dicts, reference_context=ref_ctx)
@@ -354,7 +401,7 @@ async def trigger_generation(session_id: str, current_user=Depends(get_current_u
         raise HTTPException(status_code=400, detail="No messages in session")
 
     update_session(session_id, status="generating")
-    generate_async(session_id)
+    generate_async(session_id, user_id=current_user["id"])
     return success_response("Generation started", {"status": "generating"})
 
 
@@ -372,8 +419,15 @@ async def modify_session_card(
         raise HTTPException(status_code=404, detail="Card not found")
 
     msg_dicts = [m.model_dump() for m in session.messages]
+    ref_ctx = build_reference_context(
+        session.insight_ids, session.case_ids, current_user["id"],
+        material_ids=session.material_ids, project_id=session.project_id,
+        material_priority_ids=latest_material_reference_ids(session.messages),
+    ) if session.insight_ids or session.case_ids or session.material_ids else ""
     try:
-        modified = await asyncio.to_thread(modify_card, card, req.instruction, msg_dicts)
+        modified = await asyncio.to_thread(
+            modify_card, card, req.instruction, msg_dicts, reference_context=ref_ctx,
+        )
     except Exception as exc:
         raise _ai_http_exception(exc) from exc
 

@@ -139,9 +139,12 @@ def build_reference_context(
     insight_ids: list[str],
     case_ids: list[str],
     user_id: str | None = None,
+    material_ids: list[str] | None = None,
+    project_id: str = "",
+    material_priority_ids: list[str] | None = None,
 ) -> str:
-    """Fetch referenced insights and cases, format as context block for the AI."""
-    if not insight_ids and not case_ids:
+    """Fetch authorized references; project copy is source data, media metadata only."""
+    if not insight_ids and not case_ids and not material_ids:
         return ""
 
     parts: list[str] = []
@@ -189,6 +192,11 @@ def build_reference_context(
                 )
         parts.append("")
 
+    if material_ids:
+        from app.engines.content_generator.material_references import build_material_context
+        parts.append(build_material_context(
+            material_ids, project_id, user_id, priority_ids=material_priority_ids,
+        ))
     return "\n".join(parts).strip()
 
 
@@ -379,7 +387,9 @@ Return only a JSON object:
 }""", language_mode="edit")
 
 
-def modify_card(card: ContentCard, instruction: str, messages: list[dict]) -> ContentCard:
+def modify_card(
+    card: ContentCard, instruction: str, messages: list[dict], reference_context: str = "",
+) -> ContentCard:
     """Modify a single content card based on user instruction."""
     convo_text = "\n".join(
         f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
@@ -398,7 +408,9 @@ def modify_card(card: ContentCard, instruction: str, messages: list[dict]) -> Co
     response = client.chat.completions.create(
         model=MODIFY_CARD_AI_MODEL or CASE_AI_MODEL,
         messages=[
-            {"role": "system", "content": MODIFY_SYSTEM_PROMPT},
+            {"role": "system", "content": MODIFY_SYSTEM_PROMPT + (
+                "\n\nReference context:\n" + reference_context if reference_context else ""
+            )},
             {"role": "user", "content": prompt},
         ],
         max_tokens=2048,
@@ -518,7 +530,7 @@ def _serialize_generated_work(report: GeneratedWorkReport) -> str:
     return json.dumps(report.model_dump(), ensure_ascii=False)
 
 
-def generate_document(cards: list[ContentCard]) -> str:
+def generate_document(cards: list[ContentCard], reference_context: str = "") -> str:
     """Generate a comprehensive marketing document from content cards."""
     cards_text = "\n\n".join(
         f"Card: {c.title}\n{c.content}"
@@ -533,7 +545,9 @@ def generate_document(cards: list[ContentCard]) -> str:
 
     client = _get_client()
     messages = [
-        {"role": "system", "content": DOCUMENT_SYSTEM_PROMPT},
+        {"role": "system", "content": DOCUMENT_SYSTEM_PROMPT + (
+            "\n\nReference context:\n" + reference_context if reference_context else ""
+        )},
         {"role": "user", "content": prompt},
     ]
     last_error: Exception | None = None
@@ -567,10 +581,11 @@ def generate_document(cards: list[ContentCard]) -> str:
     raise ValueError("AI returned an invalid work report") from last_error
 
 
-def generate_async(session_id: str) -> None:
+def generate_async(session_id: str, user_id: str | None = None) -> None:
     """Run card generation in a background thread."""
 
     def _run():
+        from app.engines.content_generator.material_references import latest_material_reference_ids
         from app.engines.content_generator.storage import (
             create_activity,
             get_session,
@@ -578,12 +593,18 @@ def generate_async(session_id: str) -> None:
             update_session,
         )
         try:
-            session = get_session(session_id)
+            session = get_session(session_id, user_id)
             if not session:
                 return
+            if user_id is None:
+                session = get_session(session_id, session.user_id)
+                if not session:
+                    return
             update_session(session_id, status="generating")
             ctx = build_reference_context(
-                session.insight_ids, session.case_ids, session.user_id,
+                session.insight_ids, session.case_ids, user_id or session.user_id,
+                material_ids=session.material_ids, project_id=session.project_id,
+                material_priority_ids=latest_material_reference_ids(session.messages),
             )
             msg_dicts = [
                 {"role": message.role, "content": message.content}

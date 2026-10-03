@@ -19,6 +19,8 @@ import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_ACTIONS, CHINESE_PROGRESS } 
 import { GuardedButton, GuardedInput, GuardedTextarea } from "@/components/redesign/GuardedControls";
 import type { Translate } from "@/i18n/locale";
 import ReferencePanel, { type RefLabel } from "@/components/content_generator/ReferencePanel";
+import MaterialReferencePicker from "@/components/content_generator/MaterialReferencePicker";
+import { MAX_MATERIAL_REFERENCES } from "@/utils/material_references";
 import ContentGeneratorEmptyState from "@/components/content_generator/ContentGeneratorEmptyState";
 import CreationPresence from "@/components/content_generator/CreationPresence";
 import CreationContextPanel, { type CreationContextPage } from "@/components/content_generator/CreationContextPanel";
@@ -457,6 +459,9 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   const [case_ids, set_case_ids] = useState<string[]>([]);
   const [insight_labels, set_insight_labels] = useState<RefLabel[]>([]);
   const [case_labels, set_case_labels] = useState<RefLabel[]>([]);
+  const [material_ids, set_material_ids] = useState<string[]>([]);
+  const [material_labels, set_material_labels] = useState<RefLabel[]>([]);
+  const [show_material_picker, set_show_material_picker] = useState(false);
   const [show_ref_panel, set_show_ref_panel] = useState(false);
   const [reference_panel_tab, set_reference_panel_tab] = useState<"insight" | "case">("insight");
   const [active_card_index, set_active_card_index] = useState(0);
@@ -525,7 +530,16 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     set_workspace_open(false);
     set_session(null);
     set_messages([]);
+    set_material_ids([]);
+    set_material_labels([]);
+    set_show_material_picker(false);
   }, [canvasId, selected_project_id]);
+
+  useEffect(() => {
+    set_material_ids([]);
+    set_material_labels([]);
+    set_show_material_picker(false);
+  }, [project_id, user?.id, user?.current_organization?.id]);
 
   useEffect(() => {
     if (user && !canvasId) {
@@ -720,6 +734,9 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     set_case_ids([]);
     set_insight_labels([]);
     set_case_labels([]);
+    set_material_ids([]);
+    set_material_labels([]);
+    set_show_material_picker(false);
     set_selected_chips([]);
     set_active_card_index(0);
     set_flipped_ids(new Set());
@@ -781,6 +798,9 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
         set_case_ids([]);
         set_insight_labels([]);
         set_case_labels([]);
+        set_material_ids([]);
+        set_material_labels([]);
+        set_show_material_picker(false);
         set_selected_chips([]);
         set_active_card_index(0);
         set_flipped_ids(new Set());
@@ -977,10 +997,12 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     if (!text) { showWarning(t("请输入消息内容", "Enter a message first.")); return; }
     const draft_insight_ids = [...insight_ids];
     const draft_case_ids = [...case_ids];
+    const draft_material_ids = [...material_ids];
     const draft_preferences = [...selected_chips];
     const draft_references = [
       ...insight_labels.map((item) => ({ id: item.id, kind: "insight" as const, title: item.label })),
       ...case_labels.map((item) => ({ id: item.id, kind: "case" as const, title: item.label })),
+      ...material_labels.map((item) => ({ id: item.id, kind: "material" as const, title: item.label })),
     ];
     const client_message_id = crypto.randomUUID();
     const apply_accepted_session = (accepted: SessionRecord) => {
@@ -988,11 +1010,13 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
       set_session(accepted);
       set_sessions((previous) => previous.map((item) => item.id === accepted.id ? accepted : item));
       window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, accepted.id);
-      set_insight_ids([]);
-      set_case_ids([]);
-      set_insight_labels([]);
-      set_case_labels([]);
-      set_selected_chips([]);
+      set_insight_ids((current) => JSON.stringify(current) === JSON.stringify(draft_insight_ids) ? [] : current);
+      set_case_ids((current) => JSON.stringify(current) === JSON.stringify(draft_case_ids) ? [] : current);
+      set_material_ids((current) => JSON.stringify(current) === JSON.stringify(draft_material_ids) ? [] : current);
+      set_insight_labels((current) => JSON.stringify(current) === JSON.stringify(insight_labels) ? [] : current);
+      set_case_labels((current) => JSON.stringify(current) === JSON.stringify(case_labels) ? [] : current);
+      set_material_labels((current) => JSON.stringify(current) === JSON.stringify(material_labels) ? [] : current);
+      set_selected_chips((current) => JSON.stringify(current) === JSON.stringify(draft_preferences) ? [] : current);
     };
     const recover_accepted_session = async (session_id: string) => {
       const latest = await fetch_session(session_id);
@@ -1009,7 +1033,9 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           showWarning(t("请选择所属项目", "Select a project first."));
           return;
         }
+        set_sending(true);
         const res = await create_session(project_id, t("未命名创作", "Untitled creation"));
+        if (!res.success || !res.data) throw new Error(res.message || "Could not create creation");
         if (res.success && res.data) {
           const s = res.data;
           created_session_id = s.id;
@@ -1023,10 +1049,11 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
 
           const chat_res = await send_chat_message(
             s.id, text, draft_insight_ids, draft_case_ids, draft_preferences, client_message_id,
+            draft_material_ids,
           );
           if (chat_res.success && chat_res.data) {
             apply_accepted_session(chat_res.data.session);
-          }
+          } else throw new Error(chat_res.message || "Could not send message");
         }
       } catch (error) {
         const accepted = created_session_id
@@ -1055,10 +1082,11 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     try {
       const res = await send_chat_message(
         session.id, text, draft_insight_ids, draft_case_ids, draft_preferences, client_message_id,
+        draft_material_ids,
       );
       if (res.success && res.data) {
         apply_accepted_session(res.data.session);
-      }
+      } else throw new Error(res.message || "Could not send message");
     } catch (error) {
       const accepted = await recover_accepted_session(session.id).catch(() => false);
       if (!accepted) {
@@ -1071,7 +1099,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     }
   }, [
     input, sending, session, can_manage_session, messages, insight_ids, case_ids, selected_chips,
-    insight_labels, case_labels, project_id, t, showWarning, operationReason,
+    insight_labels, case_labels, material_ids, material_labels, project_id, t, showWarning, operationReason,
   ]);
 
   const handle_keydown = useCallback((e: React.KeyboardEvent) => {
@@ -1611,7 +1639,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                               {m.references?.map((reference) => (
                                 <span key={`${reference.kind}:${reference.id}`}
                                   data-reference-kind={reference.kind}>
-                                  <InlineIcon name={reference.kind === "insight" ? "insight" : "case"} />
+                                  <InlineIcon name={reference.kind === "material" ? "collection" : reference.kind === "insight" ? "insight" : "case"} />
                                   {reference.title}
                                 </span>
                               ))}
@@ -1712,6 +1740,21 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                     </span>
                   )}
                 </GuardedButton>
+                <GuardedButton type="button"
+                  onClick={() => set_show_material_picker(true)}
+                  disabled={sending || is_generating || Boolean(session && !can_manage_session) || !project_id}
+                  blockedReason={!project_id ? t("请选择所属项目", "Select a project first.") : operationReason}
+                  className="amp-content-preference-toggle relative shrink-0"
+                  aria-label={t("引用素材", "Reference materials")}
+                  title={t("引用素材", "Reference materials")}
+                >
+                  <InlineIcon name="collection" className="h-4 w-4" />
+                  {material_ids.length > 0 && (
+                    <span className="absolute -right-1 -top-1 rounded-full bg-blue-50 px-1 text-[10px] text-blue-700">
+                      {material_ids.length}
+                    </span>
+                  )}
+                </GuardedButton>
                 <div className="shrink-0">
                   <GuardedButton
                     onClick={() => set_show_chip_popover(!show_chip_popover)}
@@ -1805,7 +1848,8 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           </>
         ) : assistant_tab === "context" ? (
           <CreationContextPanel page={context_page} onPageChange={set_context_page}
-            insightIds={session?.insight_ids || []} caseIds={session?.case_ids || []} />
+            insightIds={session?.insight_ids || []} caseIds={session?.case_ids || []}
+            projectId={session?.project_id || project_id} materialIds={session?.material_ids || []} />
         ) : assistant_tab === "cards" ? (
           <div className="amp-content-side-panel amp-content-card-panel">
             {versions.length === 0 && (
@@ -1918,6 +1962,18 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
       )}
 
       {/* Reference Panel */}
+      <MaterialReferencePicker
+        open={show_material_picker}
+        projectId={project_id}
+        selectedIds={material_ids}
+        selectedLabels={material_labels}
+        onConfirm={(ids, labels) => {
+          const boundedIds = [...new Set(ids)].slice(0, MAX_MATERIAL_REFERENCES);
+          set_material_ids(boundedIds);
+          set_material_labels(labels.filter((label) => boundedIds.includes(label.id)));
+        }}
+        onClose={() => set_show_material_picker(false)}
+      />
       <ReferencePanel
         open={show_ref_panel}
         initial_tab={reference_panel_tab}
@@ -1978,10 +2034,11 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
 
       {/* AI Modify Modal */}
       {show_modify_modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog"
+          aria-modal="true" aria-labelledby="modify-card-title">
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 w-full max-w-md mx-4 p-6">
-            <h3 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">{t("AI 修改卡片", "Edit card with AI")}</h3>
+            <h3 id="modify-card-title" className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">{t("AI 修改卡片", "Edit card with AI")}</h3>
 
             {/* Card selector */}
             <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">{t("选择要修改的卡片", `${ENGLISH_ACTIONS.select} a card to edit`)}</label>
@@ -1990,6 +2047,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                 const meta = CARD_META[card.card_type] || CARD_META.script;
                 return (
                   <button
+                    type="button"
                     key={card.id}
                     onClick={() => set_modify_target_index(i)}
                     className={`border p-2 rounded-xl text-center transition-all cursor-pointer ${
@@ -2022,6 +2080,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
             {/* Actions */}
             <div className="flex gap-2 justify-end">
               <button
+                type="button"
                 onClick={() => {
                   if (modifying) {
                     modify_abort_ref.current?.abort();
@@ -2036,7 +2095,7 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                     : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
                 }`}
               >
-                {modifying ? t("中止", "Stop") : t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+                {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
               </button>
               <GuardedButton
                 onClick={handle_modify_card}

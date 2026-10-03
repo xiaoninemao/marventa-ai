@@ -43,7 +43,6 @@ from app.engines.publishing.document_copy import parse_document_copy
 from app.engines.publishing.material_copy import (
     DOCUMENT_CONTENT_TYPES,
     copy_html_to_text,
-    sanitize_copy_html,
     validate_copy_title,
 )
 from app.engines.publishing.models import (
@@ -126,11 +125,9 @@ from app.media_storage import (
     delete_media,
     delete_media_prefix,
     guess_content_type,
-    media_exists,
     media_key_from_url,
     media_url,
     put_media_bytes,
-    read_media_bytes,
 )
 from app.shared.response import success_response
 
@@ -611,26 +608,13 @@ async def get_project_material_content(
     if material.media_type != "document":
         raise HTTPException(status_code=400, detail="Material does not support text preview")
     try:
-        if material.content_html is not None:
-            content = sanitize_copy_html(material.content_html)
-        else:
-            if not material.object_key or not media_exists(material.object_key):
-                raise HTTPException(status_code=404, detail="Material content not found")
-            data = await run_in_threadpool(
-                read_media_bytes, material.object_key, max_bytes=MAX_UPLOAD_SIZE_BYTES,
-            )
-            if material.mime_type == "text/html":
-                content = sanitize_copy_html(data.decode("utf-8-sig"))
-            else:
-                extension = os.path.splitext(material.object_key)[1].lower()
-                if extension not in DOCUMENT_CONTENT_TYPES:
-                    extension = {
-                        mime: suffix for suffix, mime in DOCUMENT_CONTENT_TYPES.items()
-                    }.get(material.mime_type, "")
-                    if material.mime_type == "text/x-markdown":
-                        extension = ".md"
-                content = await run_in_threadpool(parse_document_copy, data, extension)
-    except FileNotFoundError as exc:
+        from app.engines.publishing.publication_contents import read_material_document
+        content = await run_in_threadpool(read_material_document, {
+            "content_html": material.content_html,
+            "object_key": material.object_key,
+            "mime_type": material.mime_type,
+        }, max_bytes=MAX_UPLOAD_SIZE_BYTES)
+    except (LookupError, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Material content not found") from exc
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=400, detail="Material content is not UTF-8 text") from exc

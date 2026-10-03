@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import CaseCard from "@/components/case_library/case_card";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import { GuardedButton } from "@/components/redesign/GuardedControls";
@@ -14,6 +14,7 @@ import type { CaseItem } from "@/types/case_library";
 import type { HistoryRecord } from "@/types/market_insight";
 import { isCaseAnalyzed } from "@/utils/case_permissions";
 import { isInsightAnalyzed } from "@/utils/insight_permissions";
+import ReferencePickerDialog from "./ReferencePickerDialog";
 
 export interface RefLabel { id: string; label: string }
 
@@ -37,8 +38,6 @@ export default function ReferencePanel({
   onConfirm, onClose,
 }: Props) {
   const { t, locale } = useI18n();
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
   const [insights, setInsights] = useState<HistoryRecord[]>([]);
   const [projectCases, setProjectCases] = useState<CaseItem[]>([]);
   const [favoriteCases, setFavoriteCases] = useState<CaseItem[]>([]);
@@ -101,13 +100,6 @@ export default function ReferencePanel({
     void loadReferences();
   }, [open, loadAttempt]);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-
   const toggleInsight = (id: string) => {
     setPickedInsights((current) => {
       if (current.includes(id)) return current.filter((item) => item !== id);
@@ -161,27 +153,7 @@ export default function ReferencePanel({
     ? t("引用洞察", "Reference insights")
     : t("引用已分析案例", "Reference analyzed cases");
   return (
-    <dialog ref={dialogRef} aria-labelledby={titleId}
-      className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-2xl overflow-hidden bg-white p-0 text-zinc-900 dark:bg-zinc-950 dark:text-white backdrop:bg-slate-950/40"
-      onCancel={(event) => { event.preventDefault(); onClose(); }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          onClose();
-        }
-      }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget) return;
-        const bounds = event.currentTarget.getBoundingClientRect();
-        if (event.clientX < bounds.left || event.clientX > bounds.right
-          || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
-      }}>
-      <div className="relative flex h-[min(720px,85dvh)] min-h-0 flex-col">
-        <header className="flex shrink-0 items-center px-5 py-3">
-          <h2 id={titleId} className="text-base font-semibold">{title}</h2>
-        </header>
-
+    <ReferencePickerDialog open={open} title={title} onClose={onClose}>
         <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-3 sm:flex-nowrap">
           <label className="relative w-full sm:min-w-0 sm:flex-1">
             <InlineIcon name="search" className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
@@ -228,7 +200,7 @@ export default function ReferencePanel({
           )}
         </div>
 
-        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-3">
+        <main className="amp-reference-picker-body">
           {loading ? (
             <div className="amp-dialog-state" role="status">
               <span className="text-sm text-zinc-500">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</span>
@@ -296,16 +268,18 @@ export default function ReferencePanel({
           </div>}
         </main>
 
-        <footer className="flex shrink-0 gap-2 px-4 py-3">
+        <footer className="amp-reference-picker-footer">
+          <span>{t("已选 {count} 个", "{count} selected", {
+            count: initial_tab === "insight" ? pickedInsights.length : pickedCases.length,
+          })}</span>
           <button type="button" onClick={onClose}
-            className="min-h-[44px] flex-1 rounded-xl border border-zinc-200 text-sm text-zinc-500 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900">
+            className="amp-button amp-button-secondary amp-button-cancel">
             {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
           </button>
-          <button type="button" onClick={confirm} className="amp-button amp-button-primary flex-1">
+          <button type="button" onClick={confirm} className="amp-button amp-button-primary">
             {t(CHINESE_ACTIONS.confirm, ENGLISH_ACTIONS.confirm)}
           </button>
         </footer>
-      </div>
-    </dialog>
+    </ReferencePickerDialog>
   );
 }

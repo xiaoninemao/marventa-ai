@@ -290,10 +290,10 @@ export default function PublicationSettingsPage() {
           onCancel={(event) => { if (saving) { event.preventDefault(); showError(busyReason); } }}>
           <header>
             <h2 id="publication-plan-heading">{t("发布设置", "Publication settings")}</h2>
-            <GuardedButton blockedReason={busyReason} type="button" className="amp-material-preview-icon" disabled={saving}
+            {!settingsEditable && <GuardedButton blockedReason={busyReason} type="button" className="amp-material-preview-icon" disabled={saving}
               aria-label={t("关闭发布设置", "Close publication settings")} onClick={() => settingsDialog.current?.close()}>
               <InlineIcon name="close" />
-            </GuardedButton>
+            </GuardedButton>}
           </header>
         <form id="publication-settings-form" className="amp-publication-form amp-publication-settings"
           onSubmit={(event) => void save(event)}>
@@ -357,10 +357,14 @@ export default function PublicationSettingsPage() {
             {t("此账号尚缺少平台发布权限：{scope}", "This account lacks publishing permission: {scope}", { scope: plan.missing_scope })}
           </p>}
           <div className="amp-publication-settings-actions">
+          {settingsEditable && <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary amp-button-cancel"
+            disabled={saving} onClick={() => settingsDialog.current?.close()}>
+            {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+          </GuardedButton>}
           {canEdit && publicationHasScheduledRelease(plan.status, plan.scheduled_for) && <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary"
             disabled={saving || contentBusy || cancelling}
             onClick={() => { settingsDialog.current?.close(); setConfirmCancel(true); }}>
-            {t("取消发布", `${ENGLISH_ACTIONS.cancel} publication`)}
+            {t("取消定时发布", "Cancel scheduled publication")}
           </GuardedButton>}
           {editable && !settingsEditable && <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-primary"
             disabled={saving || contentBusy || cancelling} onClick={() => setEditingPlanId(plan.id)}>
@@ -380,7 +384,7 @@ export default function PublicationSettingsPage() {
           message={t("确认取消“{title}”的定时发布吗？媒体和文案将保留。",
             "Cancel the scheduled publication for “{title}”? Media and copy will be retained.",
             { title: plan.name })}
-          cancelLabel={t(CHINESE_ACTIONS.back, ENGLISH_ACTIONS.back)} confirmLabel={t("取消发布", `${ENGLISH_ACTIONS.cancel} publication`)}
+          cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)} confirmLabel={t("取消发布", `${ENGLISH_ACTIONS.cancel} publication`)}
           busyLabel={t(CHINESE_PROGRESS.cancelling, ENGLISH_PROGRESS.cancelling)} busy={cancelling}
           onCancel={() => { setConfirmCancel(false); settingsDialog.current?.showModal(); }}
           onConfirm={() => void cancelPlan()} />
