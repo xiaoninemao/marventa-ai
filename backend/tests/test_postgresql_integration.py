@@ -182,8 +182,12 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.assertEqual(update_publication_plan(
             user["id"], plan.id, scheduled_for="2026-10-01T10:00:00Z", status="scheduled",
         ).status, "scheduled")
+        with self.assertRaisesRegex(ValueError, "Scheduled plans cannot be edited"):
+            delete_publication_content(user["id"], plan.id, content.id)
+        self.assertEqual([item.id for item in list_publication_contents(user["id"], plan.id)], [content.id])
+        self.assertEqual(update_publication_plan(user["id"], plan.id, status="cancelled").status, "cancelled")
         delete_publication_content(user["id"], plan.id, content.id)
-        self.assertEqual(get_publication_plan(user["id"], plan.id).status, "draft")
+        self.assertEqual(get_publication_plan(user["id"], plan.id).status, "cancelled")
         saved_copy = update_publication_copy(
             user["id"], plan.id, title="Copy title", content="Saved body", tags=[" #Launch ", "Launch"],
         )
@@ -195,12 +199,16 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         self.assertEqual(update_publication_plan(
             user["id"], plan.id, scheduled_for="2026-10-01T10:00:00Z", status="scheduled",
         ).status, "scheduled")
+        with self.assertRaisesRegex(ValueError, "Scheduled plans cannot be edited"):
+            update_publication_copy(user["id"], plan.id, title="", content=" \n ")
+        self.assertEqual(get_publication_copy(user["id"], plan.id), saved_copy)
+        self.assertEqual(update_publication_plan(user["id"], plan.id, status="cancelled").status, "cancelled")
         update_publication_copy(user["id"], plan.id, title="", content=" \n ")
         self.assertEqual(get_publication_copy(user["id"], plan.id).tags, ["Launch"])
         update_publication_copy(user["id"], plan.id, title="", content="", tags=[])
         self.assertEqual(get_publication_copy(user["id"], plan.id).tags, [])
         cleared_plan = get_publication_plan(user["id"], plan.id)
-        self.assertEqual((cleared_plan.status, cleared_plan.scheduled_for), ("draft", ""))
+        self.assertEqual((cleared_plan.status, cleared_plan.scheduled_for), ("cancelled", "2026-10-01T10:00:00Z"))
         self.assertFalse(cleared_plan.has_copy)
         material = create_project_material(
             user["id"],
