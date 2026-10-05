@@ -536,6 +536,18 @@ npm run build
 
 安全漏洞请按照 [SECURITY.md](SECURITY.md) 私下报告。
 
+### 依赖维护
+
+`next` 与 `eslint-config-next` 使用匹配的已修复版本。先应用兼容的依赖更新，再运行测试、类型检查、lint 和生产构建后部署。分别检查完整依赖树与生产依赖：
+
+```bash
+cd frontend
+npm audit
+npm audit --omit=dev
+```
+
+开发工具通告单独报告，不将其隐藏或标为已修复。若 `npm audit fix --force` 建议不兼容的框架或 lint 配置降级，不应直接执行。继续跟踪未修复的上游通告，更新锁文件后重新构建并重启前端。
+
 ## 参与贡献
 
 欢迎提交聚焦的问题和 Pull Request。参与前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [社区行为准则](CODE_OF_CONDUCT.md)。

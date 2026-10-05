@@ -558,6 +558,18 @@ Do not commit environment files, API keys, browser profiles, cookies, customer m
 
 Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
+### Dependency maintenance
+
+Keep `next` and `eslint-config-next` on matching patched releases. Apply compatible dependency updates, then rerun tests, type checking, lint, and the production build before deployment. Check both the full dependency tree and production dependencies:
+
+```bash
+cd frontend
+npm audit
+npm audit --omit=dev
+```
+
+Development-tool advisories are reported separately, not treated as fixed or hidden. Avoid `npm audit fix --force` when it proposes an incompatible framework or lint-config downgrade. Track unresolved upstream advisories and rebuild/restart the frontend after updating the lockfile.
+
 ## Contributing
 
 Focused issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) before contributing.
