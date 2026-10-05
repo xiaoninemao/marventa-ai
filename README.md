@@ -51,6 +51,8 @@ Create a project, invite collaborators, and keep research, media, cases, creatio
 
 Import product material from Markdown, PDF, Word, or a repository. Turn it into structured positioning, audience, competitor, use-case, and marketing-angle analysis.
 
+Optionally enable a bounded research Agent to search public sources, read pages, and attach traceable evidence and limitations to the analysis.
+
 ### Learn from examples
 
 Build a project case library from uploads and supported public links. Analyze hooks, content structure, audience, reusable lessons, strengths, and improvement opportunities.
@@ -93,17 +95,37 @@ Collect reusable images, videos, and copy into project material sets. Build publ
 - Create and rename project-scoped plans, then manage image or single-video media alongside a plain-text publication title and body.
 - Large image previews support insertion-based drag ordering; videos use a full-width player with controls and uncropped playback. Material imports are batched, and platform limits still apply.
 - Media changes save immediately. Title/body edits and imported copy autosave, with visible progress, failure recovery, and protection against older requests overwriting newer edits.
-- Publication settings select the channel, account, date, and time. A complete local date/time is required, with dates strictly after today; scheduled settings are locked until **Edit** is selected.
+- Publication settings select the channel, account, date, and time. A complete local date/time is required, with dates strictly after today. Scheduled content and settings are read-only; cancel the scheduled publication before making changes.
 - Cancel an existing scheduled publication or arrange a cancelled/failed plan again without deleting its content.
 - An opt-in backend scheduler uploads and creates Douyin image/video posts through official APIs, records platform results, and protects against duplicate execution.
 - Publishing and published plans lock content and settings on both server and client. Failures retain content and explain how to retry; uncertain outcomes require checking the platform first.
 
 See [Scheduled publication](#scheduled-publication) for activation, authorization requirements, platform limits, and Xiaohongshu availability.
 
+### Account Content
+
+- Image-text works support a compact gallery with image counts, thumbnails, and previous/next controls. Workspace publication images retain their saved order. The current platform contract returns a cover only, so a full platform gallery is not inferred from it.
+- Workspace media URLs follow the backend address, including local HTTP development. Third-party platform media and share links still require public HTTPS URLs.
+- Saved through-Marventa video records support direct playback with native controls and no autoplay. A platform `share_url` remains a webpage link, not a playable media URL; platform direct playback is not inferred from it.
+- Public Douyin videos with a verified video ID can load the [official iframe player](https://developer.open-douyin.com/docs/resource/zh-CN/dop/develop/openapi/video-management/douyin/iframe-player/get-iframe-by-video) on click. The backend calls `GET /api/douyin/v1/video/get_iframe_by_video` without forwarding account credentials, extracts only an allowlisted player URL, and never injects provider HTML. Playback remains opt-in with autoplay disabled; this is embedded playback, not an MP4/HLS URL. The player API documents no extra permission application, while obtaining account works still requires `video.list` approval and authorization.
+- Platform account reading and embedded playback have automated contract coverage but have not yet been validated against a real authorized account in this development environment.
+- The verified list, video-detail, and basic-statistics contracts do not expose collection counts, complete gallery URLs, or a separate body field. These remain unavailable for platform records rather than guessed or inferred. Other restricted capabilities require separately verified applicable contracts and approval.
+- Content details display the title separately from the body. Workspace publication records use the saved copy title and content; the current platform contract only provides a title, which is preserved without splitting it into an invented body.
+- Content details show views, likes, comments, and shares in centered groups below the media preview. Unavailable metrics display `—`, not zero. Favorites are omitted because the verified platform contract does not supply them.
+
+- Choose a channel, then a connected account through the navigation entry below Publishing. Switching channels clears the account selection and pagination. Every account selection reloads the first page, including reselecting the same account.
+- Platform works use Douyin's documented `video.list` read capability, including returned video and gallery entries. This older official contract is limited to four pages and is not a complete account archive; current application approval and coverage of newer formats must be confirmed with the platform.
+- Keep platform results separate from **Published here**, which shows only through-Marventa records accepted by the platform, not proof of public visibility.
+- Scope every request to the current organization and project membership. Unsupported platforms, expired authorization, missing read permissions, and provider errors remain explicit.
+- To enable authorized Douyin reads, obtain application approval for `video.list`, add it to `DOUYIN_CHANNEL_SCOPES` (alongside existing approved scopes), and reauthorize the account. The existing default scope is unchanged. No unofficial Xiaohongshu scraping is used.
+
 ### Market Insight
 
 - Markdown, PDF, DOCX, and repository parsing
+- An opt-in research Agent performs bounded public search and page reading before synthesis, with traceable sources, quoted evidence, and explicit analytical inferences. See [Optional bounded market research](#optional-bounded-market-research) for configuration, privacy boundaries, and limits.
+- Research reports completed, partial, unavailable, or edited states honestly. Reference and quote checks establish provenance, not factual correctness; missing provider configuration does not become a successful empty research result.
 - Structured product and market analysis
+- AI-generated results are read-only in the interface; authorized users can still edit manually created insights.
 - Analysis follows the selected interface language, with status refresh, interruption recovery, and safe manual retries.
 - Background processing with clear completion and failure states
 - Direct use of completed insights as creative context
@@ -415,6 +437,78 @@ JWT_SECRET=replace-with-a-long-random-string
 | `MODIFY_CARD_AI_*` | Optional separate provider for card editing |
 
 Use an OpenAI-compatible API base URL rather than the full `/chat/completions` path. Models must support the request parameters and structured JSON used by the selected feature. Image analysis additionally requires `image_url` input support.
+
+### Optional bounded market research
+
+Market insight keeps uploads, repositories, project permissions, history and the selected
+output language. By default it produces a document-based summary, **not verified market
+research**. To opt into public-web research, configure:
+
+```env
+INSIGHT_RESEARCH_ENABLED=true
+INSIGHT_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your-search-provider-key
+```
+
+The selected `CASE_AI_*` model must support OpenAI-compatible function tool calls.
+A single adaptive loop uses the selectable search-provider interface (initial adapter:
+Tavily HTTP) and reads returned pages; no multi-agent framework or guessed fallback search
+is used. The tool-enabled model sees only a fixed public category label, never uploaded
+raw text, private product names or extracted document excerpts. Searches can therefore
+be generic; the server constructs queries from that category and allowlisted intent
+terms only (competitors, comparison, alternatives, pricing, features, deployment,
+enterprise, open source), never arbitrary model text, product names or repository URLs.
+Review competitor relevance. Uploaded text is still sent to your configured
+AI provider for the existing document analysis and tool-free final synthesis. Web text
+is untrusted evidence, not instructions.
+
+Hard ceilings are 6 searches, 12 page reads, 12 tool-planning turns and 180 research
+seconds, within the existing 600-second claimed worker deadline. Requested research
+output tokens are capped at 16,000 (plus the existing 4,096-token document summary);
+research model context is capped at 48 KB of JSON with bounded evidence excerpts;
+page text is capped at 4,000 characters and 512 KB per response, with at most 3 redirects.
+The reader permits public HTTP(S) on standard ports only, validates every redirect and
+all DNS answers, pins the actual socket to a validated IP, verifies HTTPS host certificates,
+and rejects credentials, private addresses, compressed responses and unsupported types.
+No browser execution, JavaScript, authentication cookies or local-network fetch is used.
+Lease loss stops subsequent outgoing calls; in-flight calls have bounded timeouts and
+stale workers cannot publish results.
+
+`AIAnalysis.research` is optional for old records and persisted in the existing JSON:
+
+```text
+{status: completed|partial|unavailable|edited,
+ sources: [{id,title,url:string|null,kind:web|document,retrieved_at,excerpt}],
+ claims: [{id,text,kind:fact|inference,source_ids,quote}],
+ competitors: [{name,comparison,source_ids}],
+ limitations: string[], searched_at: string|null}
+```
+
+Only successfully retrieved, validated pages become web sources; search snippets and
+model-authored URLs do not. Claim references and literal quote containment are checked
+against bounded retrieved text. **These checks do not prove factual correctness,
+completeness, competitor identity, or independence of sources.** `completed` means the
+bounded evidence pipeline completed, not that every statement is true.
+Completion requires at least two actually retrieved web pages, a public-web claim with
+a matching literal cited quote, and a supported competitor comparison; search snippets,
+document-only claims and empty model lists cannot satisfy it.
+Missing configuration, failed search/reads or unsupported tool calls report `unavailable`; incomplete budgets,
+discarded citations or failed synthesis report `partial` with limitations. Invalid summary
+JSON fails the analysis rather than becoming a successful blank result. A document-only
+summary may still complete the existing history job while research is unavailable.
+Human edits are marked `edited` server-side, preserving only previously stored evidence
+and invalidating its applicability to the edited summary. Manual-created insights cannot
+run AI analysis or retry and have no research metadata/UI; server-side creation, edits
+and renames discard any client-supplied research. Retry of document insights explicitly
+runs a new claimed attempt.
+
+Offline backend regression tests (no provider requests):
+
+```bash
+cd backend
+.venv/bin/python3.12 -m unittest tests.test_insight_research tests.test_research_web \
+  tests.test_market_insight_language tests.test_market_insight_recovery
+```
 
 ## Repository layout
 

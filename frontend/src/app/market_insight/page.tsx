@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
 import { useToast } from "@/contexts/toast_context";
 import { localizeErrorMessage } from "@/i18n/errors";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import {
   create_manual_insight,
   delete_history_item,
@@ -20,6 +21,9 @@ import {
 import type { AIAnalysis, HistoryRecord } from "@/types/market_insight";
 import type { ContentProject } from "@/types/publishing";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
+import Pagination from "@/components/redesign/Pagination";
+import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
+import { GuardedButton, GuardedInput, useBlockedInteraction } from "@/components/redesign/GuardedControls";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import RedesignInput from "@/components/redesign/RedesignInput";
 import InsightProjectSidebar from "@/components/market_insight/InsightProjectSidebar";
@@ -84,6 +88,8 @@ function MarketInsightOverview() {
   const [repoUrl, setRepoUrl] = useState("");
   const [manualName, setManualName] = useState("");
   const selectedProjectId = searchParams.get("project") || "";
+  const creatingReason = t("正在处理中，请稍候。", "Please wait for the current operation to finish.");
+  const uploadInteraction = useBlockedInteraction(creating, creatingReason);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
@@ -184,6 +190,12 @@ function MarketInsightOverview() {
       return sort === "oldest" ? difference : -difference;
     });
   }, [insights, locale, query, sort, status]);
+  const paginationResetKey = JSON.stringify([query, status, sort, selectedProjectId]);
+  const pagination = usePagination(visibleInsights, paginationResetKey, 12);
+
+  useEffect(() => {
+    setMenuInsightId(null);
+  }, [pagination.page, pagination.pageSize, paginationResetKey]);
 
   const openCreateDialog = () => {
     if (!projectId && projects[0]) setProjectId(projects[0].id);
@@ -220,7 +232,11 @@ function MarketInsightOverview() {
 
   const renameInsight = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!renamingInsight) return;
+    if (renaming) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!renamingInsight || !canManageInsight(user, renamingInsight) || renamingInsight.status === "analyzing") {
+      showWarning(t("仅创建者、项目所有者或项目管理员可重命名未在分析中的洞察", "Only the creator, project owner or project administrator can rename an insight that is not being analyzed."));
+      return;
+    }
     const nextName = renameName.trim();
     if (!nextName) {
       showError(t("洞察名称不能为空", "Insight name is required"));
@@ -269,6 +285,7 @@ function MarketInsightOverview() {
 
   const createInsight = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (creating) { showWarning(creatingReason); return; }
     if (!projectId) {
       showError(t("必须选择所属项目", "A project is required"));
       return;
@@ -303,7 +320,7 @@ function MarketInsightOverview() {
   };
 
   if (authLoading || !user) {
-    return <div className="amp-page-state" role="status">{t("加载中...", "Loading...")}</div>;
+    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
 
   const projectOptions = projects.map((project) => ({ value: project.id, label: project.title }));
@@ -325,7 +342,7 @@ function MarketInsightOverview() {
               : t("汇总当前组织所有可访问项目中的洞察。", "Insights across all accessible projects in this organization.")}</p>
           </div>
           <button type="button" className="amp-button amp-button-primary" onClick={openCreateDialog}>
-            {t("创建洞察", "Create insight")}
+            {t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
           </button>
         </div>
 
@@ -365,7 +382,7 @@ function MarketInsightOverview() {
         </div>
 
         {loading ? (
-          <div className="amp-projects-state" role="status">{t("正在加载洞察...", "Loading insights...")}</div>
+          <div className="amp-projects-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>
         ) : visibleInsights.length === 0 ? (
           <div className="amp-projects-state">
             <span className="amp-projects-empty-icon"><InlineIcon name="insight" /></span>
@@ -375,8 +392,9 @@ function MarketInsightOverview() {
               : t("创建洞察并上传产品资料，获得结构化营销建议。", "Create an insight and upload source material for structured recommendations.")}</p>
           </div>
         ) : (
+          <>
           <div className="amp-insight-grid">
-            {visibleInsights.map((insight) => {
+            {pagination.pageItems.map((insight) => {
               const name = insight.title || insight.filename;
               const summary = insight.ai_analysis?.product_summary
                 || insight.ai_analysis?.product_description
@@ -405,16 +423,20 @@ function MarketInsightOverview() {
                     </button>
                     {menuInsightId === insight.id && (
                       <div role="menu" className="amp-insight-card-popover">
-                        <button type="button" role="menuitem"
+                        <GuardedButton type="button" role="menuitem"
                           disabled={!canManageInsight(user, insight) || insight.status === "analyzing"}
+                          blockedReason={!canManageInsight(user, insight)
+                            ? t("仅创建者、项目所有者或项目管理员可重命名此洞察", "Only the creator, project owner or project administrator can rename this insight.")
+                            : t("洞察正在分析，完成后才能重命名", "Analysis must finish before renaming.")}
                           onClick={() => openRenameDialog(insight)}>
-                          <InlineIcon name="edit" />{t("重命名", "Rename")}
-                        </button>
-                        <button type="button" role="menuitem" className="amp-insight-card-delete"
+                          <InlineIcon name="edit" />{t(CHINESE_ACTIONS.rename, ENGLISH_ACTIONS.rename)}
+                        </GuardedButton>
+                        <GuardedButton type="button" role="menuitem" className="amp-insight-card-delete"
                           disabled={!canManageInsight(user, insight)}
+                          blockedReason={t("仅创建者、项目所有者或项目管理员可删除此洞察", "Only the creator, project owner or project administrator can delete this insight.")}
                           onClick={() => { setMenuInsightId(null); setPendingDeleteInsight(insight); }}>
-                          <InlineIcon name="trash" />{t("删除", "Delete")}
-                        </button>
+                          <InlineIcon name="trash" />{t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+                        </GuardedButton>
                       </div>
                     )}
                   </div>
@@ -422,12 +444,19 @@ function MarketInsightOverview() {
               );
             })}
           </div>
+          <Pagination page={pagination.page} pageSize={pagination.pageSize}
+            pageSizeOptions={DEFAULT_PAGE_SIZE_OPTIONS}
+            totalItems={pagination.totalItems} totalPages={pagination.totalPages}
+            onPageChange={pagination.setPage} onPageSizeChange={pagination.setPageSize} />
+          </>
         )}
       </main>
 
       <dialog ref={dialogRef} aria-labelledby="create-insight-title"
         className="amp-workspace-dialog amp-insight-create-dialog m-auto w-[calc(100%_-_32px)] max-w-2xl bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (creating) event.preventDefault(); }}>
+        onCancel={(event) => {
+          if (creating) { event.preventDefault(); showWarning(creatingReason); }
+        }}>
         <h2 id="create-insight-title" className="text-xl font-semibold">{t("创建市场洞察", "Create market insight")}</h2>
         <p className="mt-1 text-sm text-slate-500">{t("每条洞察必须归属于一个项目。", "Every insight must belong to a project.")}</p>
         <form className="mt-6" onSubmit={createInsight}>
@@ -439,14 +468,15 @@ function MarketInsightOverview() {
             ariaLabel={t("选择所属项目", "Select project")}
             placeholder={t("暂无可用项目", "No projects available")}
             disabled={creating || projects.length === 0}
+            disabledReason={creating ? creatingReason : t("请先创建项目。", "Create a project first.")}
             className="w-full"
           />
 
           <div className="amp-insight-create-modes" role="tablist">
             {([
-              ["files", t("上传资料", "Upload files"), "upload"],
-              ["repo", t("GitHub 仓库", "GitHub repository"), "github-image"],
-              ["manual", t("手动创建", "Create manually"), "edit"],
+              ["files", t(CHINESE_ACTIONS.upload, ENGLISH_ACTIONS.upload), "upload"],
+              ["repo", t("仓库", "Repository"), "github-image"],
+              ["manual", t("手动", "Manual"), "edit"],
             ] as Array<[CreateMode, string, "upload" | "github-image" | "edit"]>).map(([value, label, icon]) => (
               <button key={value} type="button" role="tab" aria-selected={mode === value}
                 onClick={() => setMode(value)}>
@@ -462,11 +492,16 @@ function MarketInsightOverview() {
 
           <div className="amp-insight-create-panel">
             {mode === "files" && (
-              <label className="amp-insight-upload">
+              <label className="amp-insight-upload" role="button" tabIndex={creating ? 0 : undefined}
+                aria-disabled={uploadInteraction["aria-disabled"]}
+                data-blocked-action={uploadInteraction["data-blocked-action"]}
+                onClickCapture={uploadInteraction.onClickCapture}
+                onKeyDownCapture={uploadInteraction.onKeyDownCapture}>
                 <InlineIcon name="upload" />
-                <strong>{t("选择产品资料", "Select product materials")}</strong>
+                <strong>{t("选择产品资料", `${ENGLISH_ACTIONS.select} files`)}</strong>
                 <span>{t("支持 PDF、DOCX 和 Markdown，最多 5 个文件", "PDF, DOCX, and Markdown; up to 5 files")}</span>
                 <input type="file" multiple accept=".pdf,.docx,.md,.markdown" disabled={creating}
+                  style={{ pointerEvents: creating ? "none" : undefined }}
                   onChange={(event) => {
                     appendFiles(Array.from(event.target.files || []));
                     event.currentTarget.value = "";
@@ -476,14 +511,14 @@ function MarketInsightOverview() {
             {mode === "repo" && (
               <label>
                 <span>{t("仓库地址", "Repository URL")}</span>
-                <input className="amp-workspace-control mt-2 w-full" value={repoUrl} disabled={creating}
+                <GuardedInput className="amp-workspace-control mt-2 w-full" value={repoUrl} disabled={creating} blockedReason={creatingReason}
                   onChange={(event) => setRepoUrl(event.target.value)}
                   placeholder="https://github.com/owner/repository" />
               </label>
             )}
             {mode === "manual" && (
               <label><span>{t("洞察名称", "Insight name")}</span>
-                <input className="amp-workspace-control mt-2 w-full" value={manualName} disabled={creating}
+                <GuardedInput className="amp-workspace-control mt-2 w-full" value={manualName} disabled={creating} blockedReason={creatingReason}
                   autoFocus maxLength={120}
                   onChange={(event) => setManualName(event.target.value)}
                   placeholder={t("输入洞察名称", "Enter an insight name")} /></label>
@@ -506,14 +541,14 @@ function MarketInsightOverview() {
                           <span className="amp-insight-selected-file-name" title={file.name}>{file.name}</span>
                           <small>{(file.size / 1024).toFixed(1)} KB</small>
                         </span>
-                        <button type="button" disabled={creating}
+                        <GuardedButton type="button" disabled={creating} blockedReason={creatingReason}
                           aria-label={t("移除文件：{name}", "Remove file: {name}", { name: file.name })}
                           onClick={() => {
                             setFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
                             if (files.length === 1) setFilesExpanded(false);
                           }}>
                           <InlineIcon name="close" />
-                        </button>
+                        </GuardedButton>
                       </li>
                     ))}
                   </ul>
@@ -521,11 +556,12 @@ function MarketInsightOverview() {
               </div>
             )}
             <div className="amp-insight-create-action-buttons">
-              <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={creating}
-                onClick={() => dialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-              <button type="submit" className="amp-button amp-button-primary" disabled={creating || !projectId}>
-                {creating ? t("创建中...", "Creating...") : t("创建洞察", "Create insight")}
-              </button>
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={creating} blockedReason={creatingReason}
+                onClick={() => dialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+              <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={creating || !projectId}
+                blockedReason={creating ? creatingReason : t("请选择所属项目", "Select a project first.")}>
+                {creating ? t(CHINESE_PROGRESS.creating, ENGLISH_PROGRESS.creating) : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+              </GuardedButton>
             </div>
           </div>
         </form>
@@ -538,29 +574,37 @@ function MarketInsightOverview() {
           "Delete “{name}”? This action cannot be undone.",
           { name: pendingDeleteInsight?.title || pendingDeleteInsight?.filename || "" },
         )}
-        cancelLabel={t("取消", "Cancel")}
-        confirmLabel={t("确认删除", "Delete")}
-        busyLabel={t("删除中...", "Deleting...")}
+        cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
+        confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
+        busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}
         busy={deletingInsight}
         onCancel={() => setPendingDeleteInsight(null)}
         onConfirm={() => void deleteInsight()}
       />
       <dialog ref={renameDialogRef} aria-labelledby="rename-overview-insight-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (renaming) event.preventDefault(); }}
+        onCancel={(event) => {
+          if (renaming) {
+            event.preventDefault();
+            showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish."));
+          }
+        }}
         onClose={() => { if (!renaming) setRenamingInsight(null); }}>
         <h2 id="rename-overview-insight-title" className="text-lg font-semibold">{t("重命名洞察", "Rename insight")}</h2>
         <form className="mt-5" onSubmit={renameInsight}>
           <label htmlFor="rename-overview-insight-name" className="mb-2 block text-sm font-medium">{t("洞察名称", "Insight name")}</label>
-          <input id="rename-overview-insight-name" autoFocus required maxLength={120}
+          <GuardedInput id="rename-overview-insight-name" autoFocus required maxLength={120}
             className="amp-workspace-control w-full" value={renameName} disabled={renaming}
+            blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             onChange={(event) => setRenameName(event.target.value)} />
           <div className="mt-6 flex justify-end gap-3">
-            <button type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
-              onClick={() => renameDialogRef.current?.close()}>{t("取消", "Cancel")}</button>
-            <button type="submit" className="amp-button amp-button-primary" disabled={renaming || !renameName.trim()}>
-              {renaming ? t("保存中...", "Saving...") : t("保存", "Save")}
-            </button>
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={renaming}
+              blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+              onClick={() => renameDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={renaming || !renameName.trim()}
+              blockedReason={renaming ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入洞察名称", "Enter an insight name.")}>
+              {renaming ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+            </GuardedButton>
           </div>
         </form>
       </dialog>

@@ -113,7 +113,7 @@ class PublicationContentTests(unittest.TestCase):
             self.assertEqual(response.status_code, 422)
             self.assertEqual(response.json()["detail"][0]["msg"], "Value error, " + message)
 
-    def test_tags_alone_do_not_count_schedule_or_prevent_demotion(self):
+    def test_tags_alone_do_not_count_schedule_or_prevent_clearing_after_cancellation(self):
         response = self.save_tags(["Launch"], content="")
         self.assertEqual(response.status_code, 200)
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
@@ -122,9 +122,10 @@ class PublicationContentTests(unittest.TestCase):
         self.assertEqual(self.schedule().status_code, 400)
         self.save_copy()
         self.assertEqual(self.schedule().status_code, 200)
+        self.cancel()
         self.assertEqual(self.save_copy(content="").json()["data"]["tags"], ["Launch"])
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
-        self.assertEqual((plan["status"], plan["scheduled_for"]), ("draft", ""))
+        self.assertEqual(plan["status"], "cancelled")
         self.assertEqual(self.load_copy().json()["data"]["tags"], ["Launch"])
 
     def test_copy_tags_use_same_permissions_scope_and_published_guards(self):
@@ -189,13 +190,14 @@ class PublicationContentTests(unittest.TestCase):
         for empty in ("", " \n\t ", "\r\n", "\u00a0", "\u2003"):
             self.save_copy()
             self.assertEqual(self.schedule().status_code, 200)
+            self.cancel()
             response = self.save_copy(title="Incomplete title", content=empty)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["data"], {"title": "Incomplete title", "content": "", "tags": []})
             plan = self.client.get(self.path, headers=self.headers()).json()["data"]
             self.assertFalse(plan["has_copy"])
             self.assertEqual((plan["content_count"], plan["document_count"]), (0, 0))
-            self.assertEqual((plan["status"], plan["scheduled_for"]), ("draft", ""))
+            self.assertEqual(plan["status"], "cancelled")
             self.assertEqual(self.schedule().status_code, 400)
         self.assertEqual(self.save_copy(title="", content="").json()["data"], {"title": "", "content": "", "tags": []})
 
@@ -203,6 +205,7 @@ class PublicationContentTests(unittest.TestCase):
         self.account()
         self.save_copy(title="", content="<p>Text without title</p>")
         self.assertEqual(self.schedule().status_code, 200)
+        self.cancel()
         image = self.own_upload().json()["data"]
         document = self.own_upload("document.txt", b"Document snapshot").json()["data"]
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
@@ -210,9 +213,9 @@ class PublicationContentTests(unittest.TestCase):
         self.assertEqual(self.delete_item(image).status_code, 200)
         self.assertEqual(self.delete_item(document).status_code, 200)
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
-        self.assertEqual((plan["status"], plan["content_count"]), ("scheduled", 1))
+        self.assertEqual((plan["status"], plan["content_count"]), ("cancelled", 1))
         self.assertEqual(self.save_copy(content="").status_code, 200)
-        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "draft")
+        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "cancelled")
 
     def test_copy_changes_never_overwrite_document_attachments_or_sources(self):
         source = self.create_copy().json()["data"]
@@ -221,11 +224,12 @@ class PublicationContentTests(unittest.TestCase):
         self.save_copy(content="<p>Independent text</p>")
         self.account()
         self.assertEqual(self.schedule().status_code, 200)
+        self.cancel()
         self.assertEqual(self.save_copy(title="", content="").status_code, 200)
         self.assertEqual(self.document(snapshot).json()["data"], original)
         self.assertEqual(len(self.items()), 1)
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
-        self.assertEqual((plan["status"], plan["content_count"], plan["has_copy"]), ("scheduled", 1, False))
+        self.assertEqual((plan["status"], plan["content_count"], plan["has_copy"]), ("cancelled", 1, False))
         self.assertEqual(self.client.get(
             self.base + f"/materials/{source['id']}/content", headers=self.headers(),
         ).json()["data"], original)
@@ -293,21 +297,22 @@ class PublicationContentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid Unicode"):
             material_copy.validate_copy_text("unsafe\ud800")
 
-    def test_copy_database_failure_rolls_back_body_title_and_demotion(self):
+    def test_copy_database_failure_rolls_back_body_title_and_tags_after_cancellation(self):
         self.save_tags(["Original"])
         self.account()
         self.schedule()
+        self.cancel()
         before = self.load_copy().json()["data"]
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "CREATE TRIGGER reject_copy_demotion BEFORE UPDATE OF status ON project_publications "
-                "WHEN NEW.status = 'draft' BEGIN SELECT RAISE(ABORT, 'reject demotion'); END",
+                "CREATE TRIGGER reject_copy_update BEFORE UPDATE OF copy_text ON project_publications "
+                "WHEN NEW.copy_text = '' BEGIN SELECT RAISE(ABORT, 'reject copy'); END",
             )
         with self.assertRaises(sqlite3.IntegrityError):
             self.save_tags([], content="")
         self.assertEqual(self.load_copy().json()["data"], before)
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
-        self.assertEqual(plan["status"], "scheduled")
+        self.assertEqual(plan["status"], "cancelled")
         self.assertTrue(plan["has_copy"])
 
     def test_copy_schema_upgrade_is_idempotent_and_preserves_plan_metadata(self):
@@ -323,6 +328,7 @@ class PublicationContentTests(unittest.TestCase):
         self.assertEqual(self.load_copy().json()["data"], {"title": "", "content": "", "tags": []})
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
         self.assertEqual((plan["name"], plan["status"], plan["content_count"]), (self.plan["name"], "scheduled", 1))
+        self.cancel()
         saved = self.save_copy().json()["data"]
         storage.init_db()
         self.assertEqual(self.load_copy().json()["data"], saved)
@@ -341,8 +347,9 @@ class PublicationContentTests(unittest.TestCase):
             self.assertEqual((plan["content_count"], plan["document_count"]), (1, 1))
         self.account()
         self.assertEqual(self.schedule().status_code, 200)
+        self.cancel()
         self.assertEqual(self.save_copy(content=" \n\t ").json()["data"]["content"], "")
-        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "draft")
+        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "cancelled")
 
     def test_legacy_copy_migration_decodes_once_and_preserves_original_html_and_metadata(self):
         html = (
@@ -476,6 +483,11 @@ class PublicationContentTests(unittest.TestCase):
             "channel_account_id": "account", "scheduled_for": "2026-10-01T10:00:00Z",
             "status": "scheduled",
         })
+
+    def cancel(self):
+        response = self.client.patch(self.path, headers=self.headers(), json={"status": "cancelled"})
+        self.assertEqual(response.status_code, 200, response.text)
+        return response
 
     def test_own_uploads_persist_images_copy_and_counts_without_html_in_lists(self):
         for filename, data in (("photo.png", b"image"), ("second.jpg", b"image"), ("copy.md", b"**Text**")):
@@ -720,7 +732,7 @@ class PublicationContentTests(unittest.TestCase):
         self.assertEqual(self.delete_item(doc).status_code, 400)
         self.assertEqual(self.client.delete(self.path, headers=self.headers()).status_code, 400)
 
-    def test_scheduling_requires_contents_account_time_and_last_removal_demotes(self):
+    def test_scheduling_requires_contents_account_time_and_cancellation_before_removal(self):
         self.account()
         self.assertEqual(self.schedule().status_code, 400)
         item = self.own_upload().json()["data"]
@@ -729,6 +741,7 @@ class PublicationContentTests(unittest.TestCase):
         self.assertEqual(scheduled.status_code, 200, scheduled.text)
         self.assertEqual(scheduled.json()["data"]["portfolio_id"], "")
         self.assertEqual(scheduled.json()["data"]["status"], "scheduled")
+        self.cancel()
         other_project = storage.create_manual_project(self.owner["id"], title="Account project")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("UPDATE project_channel_accounts SET project_id = ? WHERE id = 'account'", (other_project.id,))
@@ -745,10 +758,10 @@ class PublicationContentTests(unittest.TestCase):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("UPDATE project_channel_accounts SET authorization_status = 'active' WHERE id = 'account'")
         self.assertEqual(self.delete_item(item).status_code, 200)
-        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "scheduled")
+        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "cancelled")
         self.assertEqual(self.delete_item(other).status_code, 200)
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
-        self.assertEqual((plan["status"], plan["scheduled_for"], plan["content_count"]), ("draft", "", 0))
+        self.assertEqual((plan["status"], plan["content_count"]), ("cancelled", 0))
         self.assertEqual(self.client.post(self.plans, headers=self.headers(), json={
             "project_id": self.project.id, "name": "Cannot schedule empty", "channel_account_id": "account",
             "scheduled_for": "2026-10-01",
@@ -808,6 +821,7 @@ class PublicationContentTests(unittest.TestCase):
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
         self.assertEqual((plan["portfolio_id"], plan["status"], plan["content_count"]), ("legacy", "scheduled", 0))
         self.assertEqual(self.client.patch(self.path, headers=self.headers(), json={"note": "edit"}).status_code, 400)
+        self.cancel()
         self.assertEqual(self.client.patch(self.path, headers=self.headers(), json={"status": "draft"}).status_code, 200)
         self.own_upload()
         self.assertLess(

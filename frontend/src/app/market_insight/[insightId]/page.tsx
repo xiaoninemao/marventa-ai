@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
 import { useToast } from "@/contexts/toast_context";
 import { localizeErrorMessage } from "@/i18n/errors";
+import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import {
   download_source_file,
   fetch_content_projects,
@@ -19,12 +20,17 @@ import {
 import type { AIAnalysis, HistoryRecord, InsightSource, SourcePreview } from "@/types/market_insight";
 import type { ContentProject } from "@/types/publishing";
 import InlineIcon from "@/components/redesign/InlineIcon";
+import { GuardedButton } from "@/components/redesign/GuardedControls";
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import InsightProjectSidebar from "@/components/market_insight/InsightProjectSidebar";
-import { canManageInsight } from "@/utils/insight_permissions";
+import InsightResearchPanel from "@/components/market_insight/InsightResearchPanel";
+import { canEditInsightResults, canManageInsight } from "@/utils/insight_permissions";
 import { startPolling } from "@/utils/polling";
+import { insightSupportsResearch } from "@/utils/insight_research";
 
-type InsightTab = "result" | "sources";
+type InsightTab = "result" | "research" | "sources";
+type AnalysisListField = keyof Pick<AIAnalysis,
+  "strengths" | "weaknesses" | "use_cases" | "tech_highlights" | "similar_products" | "suggested_marketing_angles">;
 
 function InsightList({ values, empty }: { values: string[]; empty: string }) {
   if (values.length === 0) return <p className="amp-insight-empty-copy">{empty}</p>;
@@ -41,7 +47,7 @@ export default function MarketInsightDetailPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { t, locale } = useI18n();
-  const { showError, showSuccess } = useToast();
+  const { showError, showSuccess, showWarning } = useToast();
   const sourcePreviewDialogRef = useRef<HTMLDialogElement>(null);
   const [insight, setInsight] = useState<HistoryRecord | null>(null);
   const [sources, setSources] = useState<InsightSource[]>([]);
@@ -106,7 +112,11 @@ export default function MarketInsightDetailPage() {
   }, [insight?.id, insight?.status, insightId, locale, showError, user]);
 
   const retryAnalysis = async () => {
-    if (!insight || retrying || !canManageInsight(user, insight)) return;
+    if (!insight || !canManageInsight(user, insight)) {
+      showWarning(t("仅创建者、项目所有者或项目管理员可重新分析此洞察", "Only the creator, project owner or project administrator can retry this insight."));
+      return;
+    }
+    if (retrying) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
     setRetrying(true);
     try {
       const response = await retry_history_item(insight.id, locale);
@@ -121,7 +131,10 @@ export default function MarketInsightDetailPage() {
   };
 
   const openSourcePreview = async (source: InsightSource) => {
-    if (previewLoading || !insight) return;
+    if (previewLoading || !insight) {
+      showWarning(previewLoading ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请先加载洞察", "Load the insight first."));
+      return;
+    }
     if (selectedSource?.id === source.id && sourcePreview) {
       sourcePreviewDialogRef.current?.showModal();
       return;
@@ -141,7 +154,10 @@ export default function MarketInsightDetailPage() {
   };
 
   const downloadSourceFile = async () => {
-    if (!insight || !selectedSource || sourceDownloading) return;
+    if (!insight || !selectedSource || sourceDownloading) {
+      showWarning(sourceDownloading ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请先选择资料来源", "Select a source first."));
+      return;
+    }
     setSourceDownloading(true);
     try {
       const blob = await download_source_file(insight.id, selectedSource.id);
@@ -159,7 +175,10 @@ export default function MarketInsightDetailPage() {
   };
 
   const loadMoreSourcePreview = async () => {
-    if (!insight || !selectedSource || !sourcePreview?.has_more || previewLoadingMore) return;
+    if (!insight || !selectedSource || !sourcePreview?.has_more || previewLoadingMore) {
+      showWarning(previewLoadingMore ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("没有更多可加载的资料内容", "No more source content is available."));
+      return;
+    }
     setPreviewLoadingMore(true);
     try {
       const response = await fetch_source_preview(
@@ -178,8 +197,10 @@ export default function MarketInsightDetailPage() {
   };
 
   const startEditing = () => {
-    if (!insight || !canManageInsight(user, insight) || !insight.ai_analysis
-      || (insight.source_type !== "manual" && ["analyzing", "failed"].includes(insight.status))) return;
+    if (!insight || !canEditInsightResults(user, insight) || !insight.ai_analysis) {
+      showWarning(t("仅有权限的手动洞察支持编辑", "Only manual insights you have permission to manage can be edited."));
+      return;
+    }
     setDraft(structuredClone(insight.ai_analysis));
     setTab("result");
     setEditing(true);
@@ -190,7 +211,12 @@ export default function MarketInsightDetailPage() {
   };
 
   const saveInsight = async () => {
-    if (!insight || !canManageInsight(user, insight) || !draft || !draft.product_name.trim()) {
+    if (saving) { showWarning(t("正在处理中，请稍候。", "Please wait for the current operation to finish.")); return; }
+    if (!insight || !canEditInsightResults(user, insight)) {
+      showError(t("此洞察不支持手动编辑", "This insight cannot be edited manually"));
+      return;
+    }
+    if (!draft || !draft.product_name.trim()) {
       showError(t("洞察名称不能为空", "Insight name is required"));
       return;
     }
@@ -219,15 +245,16 @@ export default function MarketInsightDetailPage() {
   };
 
   if (authLoading || loading || !insight || !user) {
-    return <div className="amp-page-state" role="status">{t("正在加载洞察...", "Loading insight...")}</div>;
+    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
 
   const analysis = insight.ai_analysis;
   const name = insight.title || insight.filename;
-  const externalAnalysis = insight.source_type !== "manual";
-  const editingLocked = externalAnalysis && ["analyzing", "failed"].includes(insight.status);
+  const externalAnalysis = insightSupportsResearch(insight.source_type);
+  const activeTab = tab === "research" && !externalAnalysis ? "result" : tab;
   const canManage = canManageInsight(user, insight);
-  const canEdit = canManage && !editingLocked;
+  const canEdit = canEditInsightResults(user, insight);
+  const isEditing = editing && canEdit;
   const canRetry = canManage && externalAnalysis && ["failed", "completed"].includes(insight.status);
   const statusLabel = insight.status === "analyzing"
     ? t("分析中", "Analyzing")
@@ -251,37 +278,43 @@ export default function MarketInsightDetailPage() {
               <p><Link href={`/projects/${encodeURIComponent(insight.project_id)}`}>{insight.project_title}</Link></p>
             </div>
           </div>
-          {!editing && (canRetry || canEdit) && (
+          {!isEditing && (canRetry || canEdit) && (
             <div className="flex gap-2">
               {canRetry && (
-                <button type="button" className="amp-button amp-button-secondary"
+                <GuardedButton type="button" className="amp-button amp-button-secondary"
+                  blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                   disabled={retrying} onClick={() => void retryAnalysis()}>
                   <InlineIcon name="refresh" className="h-4 w-4" />
-                  {retrying ? t("正在重新分析...", "Restarting...") : t("重新分析", "Retry analysis")}
-                </button>
+                  {retrying ? t(CHINESE_PROGRESS.retrying, ENGLISH_PROGRESS.retrying) : t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}
+                </GuardedButton>
               )}
               {canEdit && (
-                <button type="button" className="amp-button amp-button-secondary" disabled={retrying} onClick={startEditing}>
+                <GuardedButton type="button" className="amp-button amp-button-secondary" disabled={retrying} onClick={startEditing}
+                  blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
                   <InlineIcon name="edit" className="h-4 w-4" />
-                  {t("编辑", "Edit")}
-                </button>
+                  {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
+                </GuardedButton>
               )}
             </div>
           )}
         </header>
 
         <div className="amp-project-detail-tabs" role="tablist">
-          <button type="button" role="tab" aria-selected={tab === "result"} onClick={() => setTab("result")}>{t("洞察结果", "Insight result")}</button>
-          <button type="button" role="tab" aria-selected={tab === "sources"} disabled={editing}
-            onClick={() => setTab("sources")}>{t("资料来源", "Sources")}</button>
+          <button type="button" role="tab" aria-selected={activeTab === "result"} onClick={() => setTab("result")}>{t("洞察结果", "Insight result")}</button>
+          {externalAnalysis && <GuardedButton type="button" role="tab" aria-selected={activeTab === "research"} disabled={isEditing || insight.status === "analyzing"}
+            blockedReason={isEditing ? t("请先保存或取消编辑，再查看研究证据", "Save or cancel editing first.") : t("分析完成后才能查看研究证据", "Research evidence requires completed analysis.")}
+            onClick={() => setTab("research")}>{t("研究证据", "Research evidence")}</GuardedButton>}
+          <GuardedButton type="button" role="tab" aria-selected={activeTab === "sources"} disabled={isEditing}
+            blockedReason={t("请先保存或取消编辑，再查看资料来源", "Save or cancel editing first.")}
+            onClick={() => setTab("sources")}>{t("资料来源", "Sources")}</GuardedButton>
         </div>
 
-        {tab === "result" && (
+        {activeTab === "result" && (
           insight.status === "analyzing" ? (
             <div className="amp-insight-processing" role="status">
               <span className="amp-insight-processing-icon"><InlineIcon name="sparkle" /></span>
               <strong>{t("AI 正在分析资料", "AI is analyzing the source material")}</strong>
-              <p>{t("分析完成后，本页面会自动更新。", "This page updates automatically when analysis is complete.")}</p>
+              <p>{t("启用外部研究时还会检索并整理证据；分析完成后，本页面会自动更新。", "When external research is enabled, this includes collecting evidence. This page updates automatically when analysis is complete.")}</p>
             </div>
           ) : !analysis ? (
             <div className="amp-projects-state amp-insight-empty-result amp-empty-state">
@@ -293,7 +326,7 @@ export default function MarketInsightDetailPage() {
                 ? t("原始资料已保留，请点击“重新分析”重试。", "Your source material is preserved. Select Retry analysis to try again.")
                 : t("请联系创建者或项目管理员重新分析。", "Ask the creator or a project administrator to retry the analysis.")}</p>}
             </div>
-          ) : editing && draft ? (
+          ) : isEditing && draft ? (
             <form className="amp-insight-edit-form" onSubmit={(event) => { event.preventDefault(); void saveInsight(); }}>
               <div className="amp-insight-edit-grid">
                 <label className="amp-insight-edit-wide"><span>{t("洞察摘要", "Insight summary")}</span>
@@ -312,23 +345,25 @@ export default function MarketInsightDetailPage() {
                   ["tech_highlights", t("技术亮点", "Technical highlights")],
                   ["similar_products", t("竞品", "Similar products")],
                   ["suggested_marketing_angles", t("建议营销角度", "Suggested marketing angles")],
-                ] as Array<[keyof AIAnalysis, string]>).map(([key, label]) => (
+                ] as Array<[AnalysisListField, string]>).map(([key, label]) => (
                   <label key={key}><span>{label}</span>
                     <textarea className="amp-workspace-control resize-none" rows={4}
-                      value={(draft[key] as string[]).join("\n")}
+                      value={draft[key].join("\n")}
                       placeholder={t("每行一项", "One item per line")}
                       onChange={(event) => updateDraft(
                         key,
-                        event.target.value.split("\n") as never,
+                        event.target.value.split("\n"),
                       )} /></label>
                 ))}
               </div>
               <div className="amp-insight-edit-actions">
-                <button type="button" className="amp-button amp-button-secondary" disabled={saving}
-                  onClick={() => { setEditing(false); setDraft(null); }}>{t("取消", "Cancel")}</button>
-                <button type="submit" className="amp-button amp-button-primary" disabled={saving}>
-                  {saving ? t("保存中...", "Saving...") : t("保存洞察", "Save insight")}
-                </button>
+                <GuardedButton type="button" className="amp-button amp-button-secondary" disabled={saving}
+                  blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                  onClick={() => { setEditing(false); setDraft(null); }}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+                <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={saving}
+                  blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
+                  {saving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+                </GuardedButton>
               </div>
             </form>
           ) : (
@@ -373,7 +408,11 @@ export default function MarketInsightDetailPage() {
           )
         )}
 
-        {tab === "sources" && (
+        {activeTab === "research" && externalAnalysis && (
+          <InsightResearchPanel research={analysis?.research} locale={locale} t={t} />
+        )}
+
+        {activeTab === "sources" && (
           <section className="amp-insight-source-section">
             <div className="amp-insight-source-list">
               {sources.map((source) => {
@@ -408,7 +447,7 @@ export default function MarketInsightDetailPage() {
                     </span>
                     <span className="amp-insight-source-type">
                       {source.source_type === "manual"
-                        ? t("手动创建", "Manual")
+                        ? t("手动", "Manual")
                         : source.source_type === "repo" ? t("仓库", "Repository") : t("文档", "Document")}
                     </span>
                   </article>
@@ -428,14 +467,15 @@ export default function MarketInsightDetailPage() {
             <div className="amp-insight-source-preview-header-actions">
               {selectedSource?.source_type === "repo" && (
                 <a href={selectedSource.filename} target="_blank" rel="noreferrer">
-                  {t("打开仓库", "Open repository")}
+                  {t(CHINESE_ACTIONS.open, ENGLISH_ACTIONS.open)}
                 </a>
               )}
               {selectedSource?.has_source_file && (
-                <button type="button" className="amp-insight-source-download"
+                <GuardedButton type="button" className="amp-insight-source-download"
+                  blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                   disabled={sourceDownloading} onClick={() => void downloadSourceFile()}>
-                  {sourceDownloading ? t("下载中...", "Downloading...") : t("下载原文件", "Download original")}
-                </button>
+                  {sourceDownloading ? t(CHINESE_PROGRESS.downloading, ENGLISH_PROGRESS.downloading) : t(CHINESE_ACTIONS.download, ENGLISH_ACTIONS.download)}
+                </GuardedButton>
               )}
               <button type="button" className="amp-insight-source-preview-close"
                 aria-label={t("关闭预览", "Close preview")}
@@ -452,10 +492,11 @@ export default function MarketInsightDetailPage() {
               </div>
             )}
             {sourcePreview?.has_more && (
-              <button type="button" className="amp-insight-source-preview-more"
+              <GuardedButton type="button" className="amp-insight-source-preview-more"
+                blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 disabled={previewLoadingMore} onClick={() => void loadMoreSourcePreview()}>
-                {previewLoadingMore ? t("加载中...", "Loading...") : t("加载更多", "Load more")}
-              </button>
+                {previewLoadingMore ? t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading) : t("加载更多", "Load more")}
+              </GuardedButton>
             )}
           </div>
         </dialog>

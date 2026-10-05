@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 from fastapi import (
@@ -28,6 +28,12 @@ from app.config import (
     MAX_IMAGE_SIZE_BYTES,
     MAX_UPLOAD_SIZE_BYTES,
     MAX_VIDEO_SIZE_BYTES,
+)
+from app.engines.publishing.account_content import (
+    AccountContentProviderError,
+    get_account_content,
+    get_account_content_player,
+    list_account_content_accounts,
 )
 from app.engines.publishing.channel_credentials import (
     ChannelCredentialEncryptionUnavailable,
@@ -760,6 +766,66 @@ async def edit_project(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return success_response("Project updated", project.model_dump())
+
+
+@router.get("/account-content/accounts")
+async def get_account_content_accounts(
+    current_user: Annotated[dict, Depends(get_current_user)],
+    project_id: Annotated[str | None, Query(min_length=1)] = None,
+):
+    try:
+        accounts = await run_in_threadpool(
+            list_account_content_accounts, current_user["id"], project_id,
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    return success_response("Account content accounts retrieved", [
+        account.model_dump() for account in accounts
+    ])
+
+
+@router.get("/projects/{project_id}/channel-accounts/{account_id}/content")
+async def get_channel_account_content(
+    project_id: str, account_id: str, request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    source: Annotated[Literal["platform", "marventa"], Query()] = "platform",
+    cursor: Annotated[str, Query(pattern=r"^[0-9]{1,19}$", max_length=19)] = "0",
+    count: Annotated[int, Query(ge=1, le=24)] = 12,
+    page: Annotated[int, Query(ge=1)] = 1,
+):
+    try:
+        result = await get_account_content(
+            current_user["id"], project_id, account_id, source=source,
+            cursor=cursor, count=count, page=page, base_url=str(request.base_url),
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Channel account not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except AccountContentProviderError as exc:
+        raise HTTPException(
+            status_code=502, detail="The account content provider is unavailable or returned an invalid response",
+        ) from exc
+    return success_response("Account content retrieved", result.model_dump())
+
+
+@router.get("/projects/{project_id}/channel-accounts/{account_id}/content/player")
+async def get_channel_account_player(
+    project_id: str, account_id: str,
+    video_id: Annotated[str, Query(pattern=r"^[1-9][0-9]{0,18}$", max_length=19)],
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
+    try:
+        result = await get_account_content_player(current_user["id"], project_id, account_id, video_id)
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Channel account not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except AccountContentProviderError as exc:
+        raise HTTPException(
+            status_code=502, detail="The account video player is unavailable or returned an invalid response",
+        ) from exc
+    return success_response("Account video player retrieved", result.model_dump())
 
 
 @router.get("/projects/{project_id}/channel-accounts")

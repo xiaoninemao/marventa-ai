@@ -20,6 +20,7 @@ const navItems: Array<{ label: string; labelEn: string; path: string; icon: Inli
   { label: "智能创作", labelEn: "Content Studio", path: "/content_generator", icon: "edit" },
   { label: "作品集", labelEn: "Portfolio", path: "/portfolio", icon: "briefcase" },
   { label: "发布管理", labelEn: "Publishing", path: "/publishing", icon: "send" },
+  { label: "账号内容", labelEn: "Account Content", path: "/account_content", icon: "content" },
 ];
 
 const utilityNavItems: Array<{ label: string; labelEn: string; path: string; icon: InlineIconName }> = [

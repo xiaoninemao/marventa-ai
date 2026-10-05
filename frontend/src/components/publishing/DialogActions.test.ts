@@ -156,3 +156,49 @@ test("existing create/upload/import and rename confirmations retain guarded Canc
     assert.equal(dismissalButtons[0], button);
   }
 });
+
+test("account selection reports a missing channel before unsupported-channel or missing-account feedback", () => {
+  const dialog = find(source("../../app/publishing/[planId]/page.tsx"), "dialog", "ref", "{settingsDialog}");
+  const account = find(dialog, "EnterpriseSelect", "ariaLabel", '{t("选择发布账号", "Select publication account")}');
+  const reason = attribute(account, "disabledReason");
+  assert.match(reason, /!settingsEditable \|\| saving \|\| contentBusy \|\| cancelling \? settingsReason/);
+  assert.match(reason, /: !form\.platform \? selectChannelReason/);
+  assert.match(reason, /: form\.platform !== "douyin" \? unsupportedReason/);
+  assert.ok(reason.indexOf("!form.platform") < reason.indexOf('form.platform !== "douyin"'));
+  assert.match(reason, /: noAccountReason/);
+});
+
+test("save button and form submission share validation instead of separate platform checks", () => {
+  const file = source("../../app/publishing/[planId]/page.tsx");
+  const dialog = find(file, "dialog", "ref", "{settingsDialog}");
+  const save = find(dialog, "GuardedButton", "blockedReason", "{saveReason}");
+  assert.equal(attribute(save, "disabled"), "{Boolean(saveReason)}");
+  assert.match(file.getText(), /const validationReason = settingsValidationReason\(plan, form\)/);
+  assert.match(file.getText(), /if \(validationReason\) \{ showError\(validationReason\); return; \}/);
+  assert.match(file.getText(), /const saveReason = saving \|\| contentBusy \|\| cancelling \|\| !settingsEditable \? settingsReason\s+: settingsValidationReason\(plan, form\)/);
+  assert.match(file.getText(), /"missing-channel": selectChannelReason/);
+  assert.match(file.getText(), /"unsupported-channel": unsupportedReason/);
+  assert.match(file.getText(), /"no-accounts": noAccountReason/);
+});
+
+test("publication media menu follows its caption width instead of reserving 180 pixels", () => {
+  const css = readFileSync(new URL("../../styles/projects.css", import.meta.url), "utf8");
+  const menu = css.match(/\.amp-redesign\.amp-publication-add-menu\s*\{([^}]*)\}/)?.[1];
+  assert.ok(menu);
+  assert.match(menu, /min-width:\s*0\s*;/);
+  assert.match(menu, /width:\s*max-content\s*;/);
+  assert.doesNotMatch(menu, /(?:min-)?width:\s*180px/);
+});
+
+test("scheduled plans have no Edit escape hatch while cancellation remains available to managers", () => {
+  const file = source("../../app/publishing/[planId]/page.tsx");
+  assert.match(file.getText(), /const settingsEditable = editable/);
+  assert.doesNotMatch(file.getText(), /editingPlanId|setEditingPlanId/);
+  assert.match(file.getText(), /!canManage \|\| !publicationHasScheduledRelease/);
+  assert.match(file.getText(), /canManage && publicationHasScheduledRelease/);
+  assert.match(file.getText(), /is-publication-readonly/);
+  assert.match(file.getText(), /Scheduled content and settings are locked/);
+  const styles = readFileSync(new URL("../../styles/projects.css", import.meta.url), "utf8");
+  assert.match(styles, /\.is-publication-readonly \[data-blocked-action="true"\]/);
+  assert.match(styles, /background: #f2f4f7/);
+});

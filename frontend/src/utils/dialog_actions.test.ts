@@ -68,6 +68,7 @@ const dialogModes: Record<string, Mode> = {
     { mode: "confirm", bindings: { kind: "time" } },
   ] },
   "components/projects/MaterialDocumentPreview.tsx:component": editingModes("editing"),
+  "components/account_content/AccountContentPreview.tsx:titleId": "view",
 };
 
 function sourceFiles(directory: string): string[] {

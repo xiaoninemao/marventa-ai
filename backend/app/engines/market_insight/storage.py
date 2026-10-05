@@ -249,6 +249,18 @@ def finish_analysis(
         conn.close()
 
 
+def analysis_time_remaining(record_id: str, attempt_id: str) -> float:
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT analysis_deadline FROM insights WHERE id = ? AND analysis_attempt_id = ? "
+            "AND status = 'analyzing'", (record_id, attempt_id),
+        ).fetchone()
+        return max(0, (row["analysis_deadline"] or 0) - time.time()) if row else 0
+    finally:
+        conn.close()
+
+
 def _reconcile_source_files(conn: sqlite3.Connection) -> None:
     expected_files: set[str] = set()
     rows = conn.execute(
@@ -549,22 +561,32 @@ def update_insight(
     record_id: str, analysis: AIAnalysis, user_id: str | None = None,
 ) -> HistoryRecord | None:
     init_db()
-    analysis_json = analysis.model_dump_json()
     conn = _get_conn()
-    if user_id is not None:
-        existing = get_insight(record_id, user_id)
-        if existing is None:
-            conn.close()
-            return None
-        if existing.project_role not in {"owner", "admin"} and existing.owner_id != user_id:
-            conn.close()
-            raise InsightProjectAccessDenied(
-                "Only the insight creator and project administrators can edit insights"
-            )
-    conn.execute(
-        "UPDATE insights SET ai_analysis = ?, is_edited = 1 WHERE id = ?",
+    existing = get_insight(record_id, user_id)
+    if existing is None:
+        conn.close()
+        return None
+    if user_id is not None and existing.project_role not in {"owner", "admin"} and existing.owner_id != user_id:
+        conn.close()
+        raise InsightProjectAccessDenied(
+            "Only the insight creator and project administrators can edit insights"
+        )
+    if existing.status == "analyzing":
+        conn.close()
+        raise InsightRetryNotAllowed("Analyzing insights cannot be edited")
+    analysis = (
+        analysis.model_copy(deep=True, update={"research": None})
+        if existing.source_type == "manual" else _human_analysis(analysis, existing.ai_analysis)
+    )
+    analysis_json = analysis.model_dump_json()
+    updated = conn.execute(
+        "UPDATE insights SET ai_analysis = ?, is_edited = 1 WHERE id = ? AND status != 'analyzing'",
         (analysis_json, record_id),
     )
+    if updated.rowcount != 1:
+        conn.rollback()
+        conn.close()
+        raise InsightRetryNotAllowed("Insight analysis started before the edit could be saved")
     conn.commit()
     conn.close()
     return get_insight(record_id, user_id)
@@ -588,10 +610,21 @@ def rename_insight(
     if existing.status == "analyzing":
         conn.close()
         raise InsightRetryNotAllowed("Analyzing insights cannot be renamed")
-    conn.execute(
-        "UPDATE insights SET title = ?, is_edited = 1 WHERE id = ?",
-        (normalized_name, record_id),
+    edited_analysis = None
+    if existing.ai_analysis:
+        edited_analysis = (
+            existing.ai_analysis.model_copy(deep=True, update={"research": None})
+            if existing.source_type == "manual"
+            else _human_analysis(existing.ai_analysis, existing.ai_analysis)
+        )
+    updated = conn.execute(
+        "UPDATE insights SET title = ?, is_edited = 1, ai_analysis = ? WHERE id = ? AND status != 'analyzing'",
+        (normalized_name, edited_analysis.model_dump_json() if edited_analysis else None, record_id),
     )
+    if updated.rowcount != 1:
+        conn.rollback()
+        conn.close()
+        raise InsightRetryNotAllowed("Insight analysis started before the rename could be saved")
     conn.commit()
     conn.close()
     return get_insight(record_id, user_id)
@@ -686,6 +719,7 @@ def save_manual_insight(
     analysis: AIAnalysis, owner_id: str, project_id: str,
 ) -> HistoryRecord:
     init_db()
+    analysis = analysis.model_copy(deep=True, update={"research": None})
     record_id = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     analysis_json = analysis.model_dump_json()
@@ -723,6 +757,19 @@ def save_manual_insight(
     )
 
 
+def _human_analysis(analysis: AIAnalysis, previous: AIAnalysis | None = None) -> AIAnalysis:
+    from app.engines.market_insight.models import InsightResearch
+
+    result = analysis.model_copy(deep=True)
+    # Request-supplied evidence is not a trusted source registry. Preserve only stored evidence.
+    research = previous.research.model_copy(deep=True) if previous and previous.research else InsightResearch(status="edited")
+    research.status = "edited"
+    notice = "Human-edited summary; prior evidence may no longer support it. Not verified."
+    if notice not in research.limitations:
+        research.limitations.append(notice)
+    result.research = research
+    return result
+
 def delete_insight(record_id: str, user_id: str | None = None) -> bool:
     init_db()
     if user_id is not None:
@@ -742,7 +789,10 @@ def _row_to_record(row: sqlite3.Row) -> HistoryRecord:
     analysis = None
     if row["ai_analysis"]:
         try:
-            analysis = AIAnalysis(**json.loads(row["ai_analysis"]))
+            analysis_data = json.loads(row["ai_analysis"])
+            if row["source_type"] == "manual" and isinstance(analysis_data, dict):
+                analysis_data["research"] = None
+            analysis = AIAnalysis(**analysis_data)
         except (json.JSONDecodeError, TypeError):
             pass
 

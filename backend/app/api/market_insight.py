@@ -131,6 +131,8 @@ async def update_history_item(record_id: str, body: HistoryUpdateRequest, curren
         )
     try:
         record = update_insight(record_id, body.ai_analysis, current_user["id"])
+    except InsightRetryNotAllowed as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except InsightProjectAccessDenied as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     if record is None:
@@ -260,7 +262,9 @@ async def parse_file(
                     status_code=413,
                     detail=f"Upload too large. Max total size: {MAX_UPLOAD_SIZE_BYTES // 1024 // 1024}MB",
                 )
-            temp_path = f"/tmp/{uuid.uuid4().hex}{ext}"
+            staging_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "parse-staging"))
+            os.makedirs(staging_dir, exist_ok=True)
+            temp_path = os.path.join(staging_dir, f"{uuid.uuid4().hex}{ext}")
             temp_paths.append(temp_path)
             async with aiofiles.open(temp_path, "wb") as temp:
                 await temp.write(content_bytes)

@@ -1,4 +1,4 @@
-import React, { useId } from "react";
+import { useId } from "react";
 import { translate, type Locale } from "@/i18n/locale";
 import type { PortfolioReport } from "@/utils/portfolio_report";
 

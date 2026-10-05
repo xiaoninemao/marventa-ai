@@ -1646,6 +1646,16 @@
   outline-offset: 2px;
 }
 
+.amp-redesign .amp-button-cancel,
+.amp-redesign .amp-button-cancel:hover,
+.amp-redesign .amp-button-cancel:active,
+.amp-redesign.amp-app-shell .amp-button-cancel,
+.amp-redesign.amp-app-shell .amp-button-cancel:hover,
+.amp-redesign.amp-app-shell .amp-button-cancel:active {
+  background: transparent;
+  box-shadow: none;
+}
+
 .amp-redesign .amp-app-content-home {
   padding: 0 28px 32px;
 }

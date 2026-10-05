@@ -1,8 +1,9 @@
 import sqlite3
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
-from app.engines.publishing import storage
+from app.engines.publishing import publication_executor, storage
 from scripts import migrate_sqlite_to_postgres
 from tests import test_publication_contents as content_tests
 
@@ -14,6 +15,122 @@ class PublicationLifecycleTests(unittest.TestCase):
     save_copy = content_tests.PublicationContentTests.save_copy
     account = content_tests.PublicationContentTests.account
     create_copy = content_tests.PublicationContentTests.create_copy
+    schedule = content_tests.PublicationContentTests.schedule
+
+    def test_scheduled_plan_freezes_all_content_settings_and_combined_cancellation(self):
+        self.account()
+        self.save_copy()
+        image = self.own_upload().json()["data"]
+        second = self.own_upload("second.png").json()["data"]
+        material = self.create_copy().json()["data"]
+        scheduled = self.schedule()
+        self.assertEqual(scheduled.status_code, 200, scheduled.text)
+        before = scheduled.json()["data"]
+        settings = {
+            "name": before["name"], "media_mode": "image_text", "portfolio_id": "",
+            "channel_account_id": "account", "scheduled_for": before["scheduled_for"], "note": "",
+        }
+        updates = [{field: value} for field, value in settings.items()]
+        updates += [{"status": status} for status in ("draft", "scheduled")]
+        updates += [{"status": "cancelled", field: value} for field, value in settings.items()]
+        requests = [
+            ("patch", self.path, {"json": update}) for update in updates
+        ] + [
+            ("patch", self.path + "/copy", {"json": {"title": "New", "content": "New", "tags": ["New"]}}),
+            ("post", self.contents, {"files": {"file": ("new.png", b"image", "image/png")}}),
+            ("post", self.contents + "/from-materials", {"json": {"material_ids": [material["id"]]}}),
+            ("patch", self.contents + "/order", {"json": {"content_ids": [second["id"], image["id"]]}}),
+            ("delete", self.contents + "/" + image["id"], {}),
+            ("delete", self.path, {}),
+            ("delete", self.base + "/channel-accounts/account", {}),
+            ("delete", self.base, {}),
+        ]
+        with (
+            patch("app.engines.publishing.publication_contents.put_media_bytes") as save_media,
+            patch("app.api.publishing.delete_media_prefix") as delete_prefix,
+        ):
+            for method, url, kwargs in requests:
+                with self.subTest(method=method, url=url, kwargs=kwargs):
+                    response = getattr(self.client, method)(url, headers=self.headers(), **kwargs)
+                    self.assertEqual(response.status_code, 400, response.text)
+                    self.assertEqual(
+                        response.json()["detail"], "Scheduled plans cannot be edited; cancel the schedule first",
+                    )
+            save_media.assert_not_called()
+            delete_prefix.assert_not_called()
+        self.assertEqual(self.get_plan(), before)
+        self.assertEqual(
+            self.client.get(self.path + "/copy", headers=self.headers()).json()["data"]["content"],
+            "Saved body",
+        )
+
+    def test_exact_authorized_cancellation_unlocks_edits_and_rescheduling(self):
+        self.account()
+        self.save_copy()
+        self.assertEqual(self.schedule().status_code, 200)
+        for user, code in ((self.member, 403), (self.outsider, 404)):
+            response = self.client.patch(
+                self.path, headers=self.headers(user), json={"status": "cancelled"},
+            )
+            self.assertEqual(response.status_code, code, response.text)
+            self.assertEqual(self.get_plan()["status"], "scheduled")
+        response = self.client.patch(
+            self.path, headers=self.headers(self.admin), json={"status": "cancelled"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["status"], "cancelled")
+        response = self.client.patch(
+            self.path, headers=self.headers(), json={"name": "Unlocked", "note": "Edited"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.save_copy(content="Updated body").status_code, 200)
+        image = self.own_upload().json()["data"]
+        self.assertEqual(self.client.patch(
+            self.contents + "/order", headers=self.headers(), json={"content_ids": [image["id"]]},
+        ).status_code, 200)
+        self.assertEqual(self.client.delete(
+            self.contents + "/" + image["id"], headers=self.headers(),
+        ).status_code, 200)
+        material = self.create_copy().json()["data"]
+        imported = self.client.post(
+            self.contents + "/from-materials", headers=self.headers(),
+            json={"material_ids": [material["id"]]},
+        )
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertEqual(self.get_plan()["status"], "cancelled")
+        response = self.client.patch(
+            self.path, headers=self.headers(), json={"scheduled_for": "2026-10-02T10:00:00Z"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"]["status"], "scheduled")
+        self.assertEqual(self.client.patch(
+            self.path, headers=self.headers(), json={"note": "Locked again"},
+        ).status_code, 400)
+
+    def test_worker_claim_and_finish_ignore_edit_freeze_but_respect_cancellation(self):
+        self.account()
+        self.save_copy()
+        self.assertEqual(self.schedule().status_code, 200)
+        executor = publication_executor.PublicationExecutor(
+            None, clock=lambda: datetime(2026, 10, 3, tzinfo=timezone.utc),
+        )
+        response = self.client.patch(self.path, headers=self.headers(), json={"status": "cancelled"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIsNone(executor.claim())
+        self.assertEqual(self.schedule().status_code, 200)
+        job = executor.claim()
+        self.assertIsNotNone(job)
+        self.assertEqual(self.get_plan()["status"], "publishing")
+        response = self.client.patch(self.path, headers=self.headers(), json={"status": "cancelled"})
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(response.json()["detail"], "Publishing plans cannot be edited")
+        self.assertIsNone(executor.claim())
+        executor.before_submit(job)
+        executor.finish(job, result=publication_executor.PublicationResult(platform_post_id="accepted-id"))
+        self.assertEqual(self.get_plan()["status"], "published")
+        response = self.client.patch(self.path, headers=self.headers(), json={"status": "cancelled"})
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(response.json()["detail"], "Published plans cannot be edited")
 
     def seed_execution(self, *, state="running", status="scheduled", **results):
         with sqlite3.connect(self.db_path) as conn:

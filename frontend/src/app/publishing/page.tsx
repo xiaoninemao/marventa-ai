@@ -171,9 +171,9 @@ function PublishingOverview() {
 
   const cancelPlan = async (plan: PublicationPlan) => {
     const current = plans.find((item) => item.id === plan.id);
-    if (!current || saving || !canRename(current)
+    if (!current || saving || !canManagePlan(current)
       || !publicationHasScheduledRelease(current.status, current.scheduled_for)) {
-      showError(!current || saving || !canRename(current) ? manageReason(current)
+      showError(!current || saving || !canManagePlan(current) ? manageReason(current)
         : t("此计划当前没有可取消的定时发布。", "This plan has no scheduled publication to cancel.")); return;
     }
     setMenuPlanId(null);
@@ -213,15 +213,17 @@ function PublishingOverview() {
     }
   };
 
-  const canRename = (plan: PublicationPlan) => {
+  const canManagePlan = (plan: PublicationPlan) => {
     const project = projects.find((item) => item.id === plan.project_id);
-    return Boolean(user) && !publicationReadOnly(plan.status) && (plan.created_by_user_id === user?.id
+    return Boolean(user) && (plan.created_by_user_id === user?.id
       || project?.role === "owner" || project?.role === "admin");
   };
+  const canRename = (plan: PublicationPlan) => canManagePlan(plan) && !publicationReadOnly(plan.status);
   const manageReason = (plan?: PublicationPlan) => saving ? busyReason : !plan
     ? t("此发布计划已不可用，请刷新列表。", "This publication plan is unavailable. Refresh the list.")
     : plan.status === "published" ? t("已发布的计划不能修改或删除。", "Published plans cannot be changed or deleted.")
       : plan.status === "publishing" ? t("正在发布，不能修改或删除计划。", "Publishing is in progress; the plan cannot be changed or deleted.")
+        : plan.status === "scheduled" ? t("计划已锁定，请先取消定时发布再修改。", "Scheduled plans are locked. Cancel the scheduled publication before editing.")
         : t("仅计划创建者和项目管理员可以管理此计划。", "Only the plan creator and project managers can manage this plan.");
 
   const openRenameDialog = (plan: PublicationPlan) => {
@@ -374,7 +376,7 @@ function PublishingOverview() {
               const channel = plan.platform ? CHANNELS[plan.platform] : null;
               const publishedNotice = publicationPublishedNotice(plan.status);
               return (
-                <article key={plan.id} className="amp-insight-card amp-publication-card">
+                <article key={plan.id} className={`amp-insight-card amp-publication-card${publicationReadOnly(plan.status) ? " is-publication-readonly" : ""}`}>
                   <Link href={`/publishing/${encodeURIComponent(plan.id)}`}
                     className="amp-insight-card-link amp-publication-card-link"
                     aria-label={t("设置发布计划：{name}", "Configure publication plan: {name}", { name: plan.name })}>
@@ -452,14 +454,14 @@ function PublishingOverview() {
                           <InlineIcon name="edit" />{t(CHINESE_ACTIONS.rename, ENGLISH_ACTIONS.rename)}
                         </GuardedButton>
                         {publicationHasScheduledRelease(plan.status, plan.scheduled_for) && (
-                          <GuardedButton blockedReason={busyReason} type="button" role="menuitem" disabled={saving}
+                          <GuardedButton blockedReason={busyReason} type="button" role="menuitem" disabled={saving || !canManagePlan(plan)}
                             onClick={() => void cancelPlan(plan)}>
                             <InlineIcon name="close" />
                             {t("取消发布", `${ENGLISH_ACTIONS.cancel} publication`)}
                           </GuardedButton>
                         )}
-                        <GuardedButton blockedReason={busyReason} type="button" role="menuitem"
-                          className="amp-insight-card-delete" disabled={saving}
+                        <GuardedButton blockedReason={manageReason(plan)} type="button" role="menuitem"
+                          className="amp-insight-card-delete" disabled={saving || !canRename(plan)}
                           onClick={() => {
                             setMenuPlanId(null);
                             setPendingDelete(plan);

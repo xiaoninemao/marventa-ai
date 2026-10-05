@@ -56,7 +56,7 @@ def _required_scope(platform: str) -> str:
     return "write_notes" if platform == "xiaohongshu" else "video.create.bind"
 
 
-def _ensure_plan_mutable(conn, plan) -> None:
+def _ensure_plan_mutable(conn, plan, *, allow_scheduled_cancel: bool = False) -> None:
     if plan["status"] == "published":
         raise ValueError("Published plans cannot be edited")
     execution = conn.execute(
@@ -64,6 +64,8 @@ def _ensure_plan_mutable(conn, plan) -> None:
     ).fetchone()
     if execution is not None and execution["state"] == "running":
         raise ValueError("Publishing plans cannot be edited")
+    if plan["status"] == "scheduled" and not allow_scheduled_cancel:
+        raise ValueError("Scheduled plans cannot be edited; cancel the schedule first")
 
 
 def ensure_publications_deletable(conn, project_id: str, account_id: str | None = None) -> None:
@@ -312,7 +314,14 @@ def update_publication_plan(
             raise ProjectPermissionDenied(
                 "Only the plan creator and project managers can update publication plans",
             )
-        _ensure_plan_mutable(conn, existing)
+        _ensure_plan_mutable(
+            conn, existing,
+            allow_scheduled_cancel=status == "cancelled" and all(
+                value is None for value in (
+                    name, media_mode, portfolio_id, channel_account_id, scheduled_for, note,
+                )
+            ),
+        )
         changes = {
             key: value.strip()
             for key, value in {

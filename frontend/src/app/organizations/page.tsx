@@ -249,7 +249,7 @@ export default function OrganizationsPage() {
           <GuardedInput id="organization-name" autoFocus value={name} maxLength={80} disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
             onChange={(event) => setName(event.target.value)} placeholder={t("例如：产品团队", "For example: Product Team")}
             className="amp-workspace-control w-full" />
-          <p className="mt-2 text-xs leading-5 text-slate-500">{t("最多 80 个字符。自定义名称按原文保存，不会自动翻译。", "Up to 80 characters. Custom names are saved as entered and are not translated.")}</p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{t("最多 80 个字符。", "Up to 80 characters.")}</p>
           <div className="mt-6 flex justify-end gap-3">
             <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} onClick={() => setEditorOpen(false)}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
             <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={organizationBusy} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>

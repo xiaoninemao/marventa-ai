@@ -10,6 +10,38 @@ export interface Section {
   subsections: Section[];
 }
 
+export interface ResearchSource {
+  id: string;
+  title: string;
+  url: string | null;
+  kind: "web" | "document";
+  retrieved_at: string;
+  excerpt: string;
+}
+
+export interface ResearchClaim {
+  id: string;
+  text: string;
+  kind: "fact" | "inference";
+  source_ids: string[];
+  quote: string;
+}
+
+export interface ResearchCompetitor {
+  name: string;
+  comparison: string;
+  source_ids: string[];
+}
+
+export interface InsightResearch {
+  status: "completed" | "partial" | "unavailable" | "edited";
+  sources: ResearchSource[];
+  claims: ResearchClaim[];
+  competitors: ResearchCompetitor[];
+  limitations: string[];
+  searched_at: string | null;
+}
+
 export interface AIAnalysis {
   product_name: string;
   product_category: string;
@@ -25,6 +57,7 @@ export interface AIAnalysis {
   tech_highlights: string[];
   suggested_marketing_angles: string[];
   marketing_stage: string;
+  research?: InsightResearch | null;
 }
 
 export interface ParsedDocument {

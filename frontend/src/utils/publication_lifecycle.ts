@@ -1,5 +1,5 @@
 export function publicationReadOnly(status: string): boolean {
-  return status === "publishing" || status === "published";
+  return status === "scheduled" || status === "publishing" || status === "published";
 }
 
 export function publicationNeedsPolling(status: string): boolean {

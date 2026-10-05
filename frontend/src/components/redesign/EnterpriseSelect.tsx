@@ -20,6 +20,7 @@ interface EnterpriseSelectProps<T extends string> {
   options: Array<EnterpriseSelectOption<T>>;
   onChange: (value: T) => void;
   ariaLabel: string;
+  title?: string;
   placeholder?: string;
   disabled?: boolean;
   disabledReason?: string;
@@ -32,6 +33,7 @@ export default function EnterpriseSelect<T extends string>({
   options,
   onChange,
   ariaLabel,
+  title,
   placeholder = "",
   disabled = false,
   disabledReason,
@@ -83,6 +85,7 @@ export default function EnterpriseSelect<T extends string>({
         type="button"
         className="amp-enterprise-select-trigger"
         aria-label={ariaLabel}
+        title={title}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}

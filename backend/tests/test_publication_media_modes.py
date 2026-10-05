@@ -22,6 +22,7 @@ class PublicationMediaModeTests(unittest.TestCase):
     load_copy = contents_tests.PublicationContentTests.load_copy
     account = contents_tests.PublicationContentTests.account
     schedule = contents_tests.PublicationContentTests.schedule
+    cancel = contents_tests.PublicationContentTests.cancel
     migrate_to_memory = contents_tests.PublicationContentTests.migrate_to_memory
 
     def mode(self, value, user=None):
@@ -105,23 +106,27 @@ class PublicationMediaModeTests(unittest.TestCase):
         self.assertEqual(len(self.items()), 2)
         self.assertTrue(media_storage.media_exists(video["object_key"]))
 
-    def test_video_schedule_requires_one_video_and_deletion_demotes_with_copy_remaining(self):
+    def test_video_schedule_requires_one_video_and_cancellation_before_deletion(self):
         self.account()
         self.save_copy()
         self.assertEqual(self.schedule().status_code, 200)
-        self.assertEqual(self.mode("video").json()["detail"], "Video mode requires one video to schedule")
+        self.assertEqual(
+            self.mode("video").json()["detail"], "Scheduled plans cannot be edited; cancel the schedule first",
+        )
+        self.cancel()
         self.client.patch(self.path, headers=self.headers(), json={"status": "draft", "scheduled_for": ""})
         self.mode("video")
         self.own_upload("doc.txt", b"Document")
         self.assertEqual(self.schedule().json()["detail"], "Video mode requires one video to schedule")
         video = self.own_upload("clip.mp4", b"video").json()["data"]
         self.assertEqual(self.schedule().status_code, 200)
+        self.cancel()
         self.assertEqual(self.save_copy(content="").status_code, 200)
-        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "scheduled")
+        self.assertEqual(self.client.get(self.path, headers=self.headers()).json()["data"]["status"], "cancelled")
         self.save_copy()
         self.assertEqual(self.delete_item(video).status_code, 200)
         plan = self.client.get(self.path, headers=self.headers()).json()["data"]
-        self.assertEqual((plan["status"], plan["scheduled_for"], plan["has_copy"]), ("draft", "", True))
+        self.assertEqual((plan["status"], plan["has_copy"]), ("cancelled", True))
         self.assertEqual((plan["media_mode"], plan["video_count"]), ("video", 0))
         self.assertEqual(plan["document_count"], 2)
         self.assertEqual(self.mode("image_text").status_code, 200)

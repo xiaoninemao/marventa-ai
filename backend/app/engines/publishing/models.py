@@ -69,6 +69,62 @@ class ProjectChannelAccount(BaseModel):
     updated_at: str
 
 
+AccountContentStatus = Literal[
+    "ready", "unsupported_platform", "authorization_required",
+    "scope_required", "configuration_required",
+]
+
+
+class AccountContentAccount(ProjectChannelAccount):
+    project_title: str = ""
+    content_status: AccountContentStatus
+    required_scope: str = ""
+    content_message: str = ""
+
+
+class AccountContentStatistics(BaseModel):
+    likes: int | None = None
+    comments: int | None = None
+    views: int | None = None
+    shares: int | None = None
+
+
+class AccountContentPost(BaseModel):
+    id: str
+    title: str = ""
+    content: str = ""
+    cover_url: str = ""
+    image_urls: list[str] = Field(default_factory=list)
+    video_url: str = ""
+    platform_video_id: str = ""
+    share_url: str = ""
+    published_at: str = ""
+    media_type: Literal["video", "image_text", "unknown"] = "unknown"
+    visibility: Literal[
+        "published", "reviewing", "not_public", "unknown", "accepted",
+    ] = "unknown"
+    statistics: AccountContentStatistics = Field(default_factory=AccountContentStatistics)
+    plan_id: str = ""
+
+
+class AccountContentPlayer(BaseModel):
+    video_id: str
+    player_url: str
+
+
+class AccountContentPage(BaseModel):
+    account: AccountContentAccount
+    source: Literal["platform", "marventa"]
+    status: AccountContentStatus
+    items: list[AccountContentPost] = Field(default_factory=list)
+    next_cursor: str | None = None
+    has_more: bool = False
+    page: int
+    page_size: int
+    limited: bool = False
+    message: str
+
+
 class ProjectChannelAuthorizationRequest(BaseModel):
     platform: Literal["xiaohongshu", "douyin"]
 

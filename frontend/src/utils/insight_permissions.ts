@@ -19,3 +19,10 @@ export function isInsightAnalyzed(
 ): boolean {
   return insight.status === "completed" && Boolean(insight.ai_analysis);
 }
+
+export function canEditInsightResults(
+  user: User | null,
+  insight: Pick<HistoryRecord, "owner_id" | "organization_id" | "project_role" | "source_type">,
+): boolean {
+  return insight.source_type === "manual" && canManageInsight(user, insight);
+}

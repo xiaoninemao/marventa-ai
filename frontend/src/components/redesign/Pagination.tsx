@@ -6,31 +6,40 @@ import { GuardedButton } from "./GuardedControls";
 import InlineIcon from "./InlineIcon";
 import { paginationPageNumbers } from "@/utils/pagination";
 
-export default function Pagination({
-  page,
-  pageSize,
-  pageSizeOptions,
-  totalItems,
-  totalPages,
-  onPageChange,
-  onPageSizeChange,
-}: {
+type PaginationProps = {
   page: number;
   pageSize: number;
   pageSizeOptions: readonly number[];
-  totalItems: number;
-  totalPages: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
-}) {
+} & ({
+  mode?: "numbered";
+  totalItems: number;
+  totalPages: number;
+} | {
+  mode: "cursor";
+  pageItems: number;
+  visitedPages: number;
+  hasMore: boolean;
+  nextBlockedReason?: string;
+});
+
+export default function Pagination(props: PaginationProps) {
+  const { page, pageSize, pageSizeOptions, onPageChange, onPageSizeChange } = props;
   const { t } = useI18n();
-  if (totalItems === 0) return null;
+  if (props.mode !== "cursor" && props.totalItems === 0) return null;
+  if (props.mode === "cursor" && props.pageItems === 0 && page === 1 && !props.hasMore) return null;
+  const totalPages = props.mode === "cursor"
+    ? props.hasMore ? Math.max(props.visitedPages, page + 1) : page
+    : props.totalPages;
   const firstPage = page <= 1;
-  const lastPage = page >= totalPages;
+  const lastPage = props.mode === "cursor" ? !props.hasMore : page >= totalPages;
 
   return (
     <nav className="amp-pagination" aria-label={t("分页", "Pagination")}>
-      <p>{t("共 {count} 条", "{count} total", { count: totalItems })}</p>
+      <p>{props.mode === "cursor"
+        ? t("本页 {count} 条", "{count} on this page", { count: props.pageItems })
+        : t("共 {count} 条", "{count} total", { count: props.totalItems })}</p>
       <div className="amp-pagination-pages">
         <GuardedButton type="button" className="amp-pagination-arrow"
           aria-label={t("上一页", "Previous page")}
@@ -50,7 +59,8 @@ export default function Pagination({
         <GuardedButton type="button" className="amp-pagination-arrow"
           aria-label={t("下一页", "Next page")}
           disabled={lastPage}
-          blockedReason={t("已经是最后一页。", "This is the last page.")}
+          blockedReason={props.mode === "cursor" && props.nextBlockedReason
+            ? props.nextBlockedReason : t("已经是最后一页。", "This is the last page.")}
           onClick={() => onPageChange(page + 1)}>
           <InlineIcon name="chevronRight" />
         </GuardedButton>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canManageInsight, isInsightAnalyzed } from "./insight_permissions.ts";
+import { canEditInsightResults, canManageInsight, isInsightAnalyzed } from "./insight_permissions.ts";
 import type { User } from "../types/auth.ts";
 
 const organization = {
@@ -63,4 +63,27 @@ test("only completed insights with analysis can be referenced", () => {
       marketing_stage: "",
     },
   }), true);
+});
+
+test("AI-generated insight results do not expose manual editing to any project role", () => {
+  for (const source_type of ["markdown", "pdf", "docx", "repo"]) {
+    assert.equal(canEditInsightResults(user, {
+      ...insight, owner_id: user.id, source_type,
+    }), false);
+    for (const project_role of ["owner", "admin", "member"] as const) {
+      assert.equal(canEditInsightResults(user, { ...insight, project_role, source_type }), false);
+    }
+  }
+});
+
+test("manual insight editing retains creator and project-manager permissions", () => {
+  const manual = { ...insight, source_type: "manual" };
+  assert.equal(canEditInsightResults(user, manual), false);
+  assert.equal(canEditInsightResults(user, { ...manual, owner_id: user.id }), true);
+  assert.equal(canEditInsightResults(user, { ...manual, project_role: "owner" }), true);
+  assert.equal(canEditInsightResults(user, { ...manual, project_role: "admin" }), true);
+  assert.equal(canEditInsightResults(null, { ...manual, owner_id: user.id }), false);
+  assert.equal(canEditInsightResults({
+    ...user, current_organization: { ...organization, id: "org-b" },
+  }, { ...manual, owner_id: user.id }), false);
 });

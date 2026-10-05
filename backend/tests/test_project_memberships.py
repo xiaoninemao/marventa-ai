@@ -2133,6 +2133,9 @@ class ProjectMembershipTests(unittest.TestCase):
             self.assertEqual(self.client.patch(
                 path, headers=headers, json={field: "", "status": "scheduled"},
             ).status_code, 400)
+        self.assertEqual(self.client.patch(
+            path, headers=headers, json={"status": "cancelled"},
+        ).status_code, 200)
         for field in ("portfolio_id", "channel_account_id"):
             self.assertEqual(self.client.patch(
                 path, headers=headers, json={field: "missing"},
@@ -2163,7 +2166,9 @@ class ProjectMembershipTests(unittest.TestCase):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("UPDATE portfolio SET status = 'completed' WHERE id = ?", (portfolio_id,))
             conn.execute("UPDATE project_channel_accounts SET authorization_status = 'revoked' WHERE id = ?", (account_id,))
-        self.assertEqual(self.client.patch(path, headers=headers, json={"note": "Invalid account"}).status_code, 404)
+        self.assertEqual(self.client.patch(
+            path, headers=headers, json={"status": "scheduled"},
+        ).status_code, 404)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("UPDATE project_channel_accounts SET authorization_status = 'active' WHERE id = ?", (account_id,))
         cleared = self.client.patch(path, headers=headers, json={
@@ -2191,6 +2196,9 @@ class ProjectMembershipTests(unittest.TestCase):
                 "UPDATE project_memberships SET role = 'admin' WHERE project_id = ? AND user_id = ?",
                 (self.project.id, self.member["id"]),
             )
+        self.assertEqual(self.client.patch(
+            path, headers=member_headers, json={"status": "cancelled"},
+        ).status_code, 200)
         self.assertEqual(self.client.patch(path, headers=member_headers, json={"note": "Admin edit"}).status_code, 200)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(

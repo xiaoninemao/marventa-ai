@@ -37,6 +37,7 @@ class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
     own_upload = contents_tests.PublicationContentTests.own_upload
     account = contents_tests.PublicationContentTests.account
     schedule = contents_tests.PublicationContentTests.schedule
+    cancel = contents_tests.PublicationContentTests.cancel
     save_copy = contents_tests.PublicationContentTests.save_copy
     items = contents_tests.PublicationContentTests.items
     load_copy = contents_tests.PublicationContentTests.load_copy
@@ -83,6 +84,7 @@ class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
     async def test_future_cancelled_and_draft_plans_are_not_published(self):
         self.prepare()
         executor = self.executor()
+        self.cancel()
         self.client.patch(self.path, headers=self.headers(), json={"scheduled_for": "2026-10-02T10:00:00+08:00"})
         self.assertFalse(await executor.run_once())
         self.client.patch(self.path, headers=self.headers(), json={"status": "cancelled"})

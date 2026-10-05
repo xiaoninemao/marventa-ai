@@ -14,6 +14,7 @@ export type InlineIconName =
   | "close"
   | "clock"
   | "collection"
+  | "content"
   | "copy"
   | "download"
   | "edit"
@@ -49,6 +50,7 @@ export type InlineIconName =
   | "search"
   | "send"
   | "share"
+  | "shareForward"
   | "settings"
   | "sparkle"
   | "star"
@@ -105,6 +107,7 @@ const paths: Record<InlineIconName, ReactNode> = {
   lock: <path d="M7 10V8a5 5 0 0 1 10 0v2m-11 0h12v10H6V10Zm6 4v3" />,
   mail: <><path d="M3 5h18v14H3V5Z" /><path d="m4 7 8 6 8-6" /></>,
   media: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m10 8 6 4-6 4V8Z" /></>,
+  content: <><rect x="3" y="3" width="18" height="18" rx="2" /><rect x="6" y="6" width="5" height="6" rx="1" /><path d="M14 7h4M14 11h4M6 16h12" /></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   message: <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z" />,
   moon: <path d="M20.8 15.1A9 9 0 0 1 8.9 3.2 9 9 0 1 0 20.8 15.1Z" />,
@@ -118,6 +121,7 @@ const paths: Record<InlineIconName, ReactNode> = {
   search: <path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" />,
   send: <><path d="m22 2-7 20-4-9-9-4 20-7Z" /><path d="M22 2 11 13" /></>,
   share: <><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5" /></>,
+  shareForward: <path d="m14 4 8 7-8 7v-4c-5.5 0-9 1.8-12 6 0-8 4-13 12-13V4Z" />,
   settings: <><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" /><path d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8.1 8.1 0 0 0-2.6-1.5L14 2h-4l-.4 2.5A8.1 8.1 0 0 0 7 6L4.6 5l-2 3.5 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8.1 8.1 0 0 0 2.6 1.5L10 22h4l.4-2.5A8.1 8.1 0 0 0 17 18l2.4 1 2-3.5-2-1.5Z" /></>,
   sparkle: <path d="M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3Zm6 12 .7 2.3L21 18l-2.3.7L18 21l-.7-2.3L15 18l2.3-.7L18 15Z" />,
   star: <path d="m12 2.8 2.8 5.7 6.3.9-4.6 4.4 1.1 6.2-5.6-2.9L6.4 20l1.1-6.2-4.6-4.4 6.3-.9L12 2.8Z" />,

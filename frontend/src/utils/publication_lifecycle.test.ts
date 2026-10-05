@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { publicationHasScheduledRelease, publicationNeedsPolling, publicationPublishedNotice, publicationReadOnly } from "./publication_lifecycle.ts";
 
-test("only publishing and published plans prohibit mutations", () => {
-  for (const status of ["publishing", "published"]) assert.equal(publicationReadOnly(status), true);
-  for (const status of ["draft", "scheduled", "cancelled", "failed"]) assert.equal(publicationReadOnly(status), false);
+test("scheduled, publishing and published plans prohibit mutations until scheduling is cancelled", () => {
+  for (const status of ["scheduled", "publishing", "published"]) assert.equal(publicationReadOnly(status), true);
+  for (const status of ["draft", "cancelled", "failed"]) assert.equal(publicationReadOnly(status), false);
 });
 
 test("scheduled and publishing plans refresh until execution reaches a terminal status", () => {

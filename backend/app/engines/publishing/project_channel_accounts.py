@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from contextlib import closing
+from collections.abc import Callable, Iterator
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Callable
 
 from jose import JWTError, jwt
 
@@ -25,7 +25,6 @@ from app.engines.publishing.project_memberships import (
 )
 from app.engines.publishing.publication_plans import ensure_publications_deletable
 from app.storage_schema import resolve_user_organization_id
-
 
 _connection_factory: Callable[[], sqlite3.Connection] = lambda: connect_database(DB_PATH)
 _schema_initializer: Callable[[], None] = lambda: None
@@ -64,6 +63,19 @@ def ensure_project_channel_access(user_id: str, project_id: str) -> None:
     _schema_initializer()
     with closing(_connection_factory()) as conn:
         _project_access(conn, user_id, project_id)
+
+
+@contextmanager
+def account_content_connection(
+    user_id: str, project_id: str | None = None,
+) -> Iterator[tuple[sqlite3.Connection, str]]:
+    """Server-only connection; callers must scope queries to the returned organization."""
+    _schema_initializer()
+    with closing(_connection_factory()) as conn:
+        organization_id = resolve_user_organization_id(conn, user_id)
+        if project_id is not None:
+            _project_access(conn, user_id, project_id)
+        yield conn, organization_id
 
 
 def list_project_channel_accounts(

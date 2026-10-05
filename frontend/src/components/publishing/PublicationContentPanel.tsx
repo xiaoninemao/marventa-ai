@@ -72,6 +72,7 @@ export default function PublicationContentPanel({ plan, editable, disabled, onCh
     ? t("发布设置正在保存，请稍候。", "Publication settings are being saved. Please wait.")
     : plan.status === "published" ? t("已发布的计划不能修改内容。", "Published plans cannot change content.")
       : plan.status === "publishing" ? t("正在发布，不能修改媒体或文案。", "Publishing is in progress; media and copy cannot change.")
+        : plan.status === "scheduled" ? t("计划已锁定，请先取消定时发布再修改。", "Scheduled plans are locked. Cancel the scheduled publication before editing.")
         : !editable ? t("仅计划创建者和项目管理员可以修改内容。", "Only the plan creator and project managers can edit content.")
           : loading ? t("内容正在加载，请稍候。", "Content is loading. Please wait.")
             : error ? t("内容加载失败，请先重试。", "Content failed to load. Retry first.") : busyReason;

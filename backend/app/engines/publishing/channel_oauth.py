@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
-import uuid
 
 import httpx
 
@@ -12,6 +13,7 @@ from app.config import (
     DOUYIN_CHANNEL_CLIENT_KEY,
     DOUYIN_CHANNEL_CLIENT_SECRET,
     DOUYIN_CHANNEL_REDIRECT_URI,
+    DOUYIN_CHANNEL_SCOPES,
     XIAOHONGSHU_CHANNEL_APP_ID,
     XIAOHONGSHU_CHANNEL_APP_SECRET,
     XIAOHONGSHU_CHANNEL_CLIENT_NAME,
@@ -25,7 +27,6 @@ from app.engines.publishing.project_channel_accounts import (
     create_channel_authorization_state,
     ensure_project_channel_access,
 )
-
 
 DOUYIN_AUTHORIZE_URL = "https://open.douyin.com/platform/oauth/connect"
 DOUYIN_TOKEN_URL = "https://open.douyin.com/oauth/access_token/"
@@ -91,6 +92,17 @@ def _require_configuration(platform: str, values: dict[str, str]) -> None:
         ensure_channel_credential_encryption()
     except ChannelCredentialEncryptionUnavailable as exc:
         raise ChannelOAuthConfigurationError(str(exc)) from exc
+
+
+def configured_douyin_scopes() -> str:
+    scopes = DOUYIN_CHANNEL_SCOPES.split(",")
+    if (
+        not scopes or "user_info" not in scopes
+        or len(scopes) != len(set(scopes))
+        or any(not re.fullmatch(r"[a-z][a-z0-9_.]{0,63}", scope) for scope in scopes)
+    ):
+        raise ChannelOAuthConfigurationError("Douyin authorization scopes are invalid")
+    return ",".join(scopes)
 
 
 def _utc_from_seconds(seconds: object) -> str:
@@ -166,11 +178,12 @@ async def start_channel_authorization(
             "DOUYIN_CHANNEL_CLIENT_SECRET": DOUYIN_CHANNEL_CLIENT_SECRET,
             "DOUYIN_CHANNEL_REDIRECT_URI": DOUYIN_CHANNEL_REDIRECT_URI,
         })
+        scopes = configured_douyin_scopes()
         state = create_channel_authorization_state(user_id, project_id, platform)
         query = urlencode({
             "client_key": DOUYIN_CHANNEL_CLIENT_KEY,
             "response_type": "code",
-            "scope": "user_info",
+            "scope": scopes,
             "redirect_uri": DOUYIN_CHANNEL_REDIRECT_URI,
             "state": state,
         })
