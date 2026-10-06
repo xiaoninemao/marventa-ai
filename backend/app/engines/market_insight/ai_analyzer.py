@@ -8,7 +8,7 @@ import time
 
 from openai import OpenAI
 
-from app.config import CASE_AI_API_KEY, CASE_AI_BASE_URL, CASE_AI_MODEL
+from app.ai_provider import get_ai_provider
 from app.engines.market_insight.models import AIAnalysis, AnalysisLocale, ParsedDocument
 from app.engines.market_insight.research_agent import (
     AnalysisCancelled,
@@ -76,13 +76,21 @@ Return a JSON object with exactly this structure:
 Return only the JSON object, with no preamble or explanation."""
 
 def _has_case_ai_provider() -> bool:
-    return bool(CASE_AI_API_KEY)
+    return get_ai_provider("market_insight").configured
 
 
 def _get_case_ai_client() -> OpenAI:
-    if not CASE_AI_API_KEY:
-        raise ValueError("CASE_AI_API_KEY is not configured")
-    return OpenAI(api_key=CASE_AI_API_KEY, base_url=CASE_AI_BASE_URL, timeout=25, max_retries=0)
+    return get_ai_provider("market_insight").client(
+        timeout=25,
+        max_retries=0,
+    )
+
+
+def _get_research_ai_client() -> OpenAI:
+    return get_ai_provider("market_insight").client(
+        timeout=25,
+        max_retries=0,
+    )
 
 
 def _analyze_text(doc: ParsedDocument, *, locale: AnalysisLocale = "zh-CN") -> AIAnalysis | None:
@@ -113,7 +121,7 @@ def _analyze_text(doc: ParsedDocument, *, locale: AnalysisLocale = "zh-CN") -> A
     client = _get_case_ai_client()
     request_timeout = min(25, remaining)
     response = bounded_call(lambda: client.chat.completions.create(
-        model=CASE_AI_MODEL,
+        model=get_ai_provider("market_insight").model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT if locale == "zh-CN"
              else build_system_prompt(TASK_INSTRUCTIONS, output_locale=locale)},
@@ -150,12 +158,12 @@ def analyze_document(
         if provider is None:
             doc.ai_analysis = unavailable(analysis, doc, reason)
         else:
-            client = _get_case_ai_client()
+            client = _get_research_ai_client()
             try:
                 doc.ai_analysis = research_analysis(doc, analysis, client, locale=locale, provider=provider)
             finally:
                 client.close()
-        doc.ai_model = CASE_AI_MODEL
+        doc.ai_model = get_ai_provider("market_insight").model
     return doc
 
 

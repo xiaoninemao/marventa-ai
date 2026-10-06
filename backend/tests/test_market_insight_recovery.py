@@ -184,7 +184,11 @@ class MarketInsightRecoveryTests(unittest.TestCase):
     def test_missing_provider_fails_without_external_call(self):
         doc, record = self.save()
         heartbeat, run = self.start_worker(doc, record)
-        with patch.object(ai_analyzer, "CASE_AI_API_KEY", ""), patch.object(
+        with patch.object(
+            ai_analyzer,
+            "get_ai_provider",
+            return_value=SimpleNamespace(configured=False),
+        ), patch.object(
             ai_analyzer, "_get_case_ai_client",
         ) as client:
             run()

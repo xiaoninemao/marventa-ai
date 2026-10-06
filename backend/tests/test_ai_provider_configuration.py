@@ -5,7 +5,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from app import config as runtime_config
+from app.ai_provider import (
+    AIProviderArea,
+    AIProviderConfigurationError,
+    get_ai_provider,
+)
 from app.engines.case_library import ai_analyzer
+from app.engines.content_generator import ai_analyzer as content_ai
+from app.engines.market_insight import ai_analyzer as insight_ai
+from app.engines.publishing import lead_analysis
 
 
 def valid_case_analysis_payload(video: bool = False) -> dict:
@@ -33,17 +42,40 @@ class AIProviderConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ, environment, clear=True), patch("dotenv.load_dotenv"):
             return runpy.run_path(str(Path(__file__).resolve().parents[1] / "app" / "config.py"))
 
-    def test_new_case_analysis_names_are_read(self):
+    def test_unified_provider_names_are_read(self):
         config = self.load_config({
-            "CASE_ANALYSIS_AI_API_KEY": " analysis-key ",
-            "CASE_ANALYSIS_AI_BASE_URL": " https://analysis.example/v1 ",
-            "CASE_ANALYSIS_AI_MODEL": " vision-model ",
+            "AI_API_KEY": " unified-key ",
+            "AI_BASE_URL": " https://unified.example/v1 ",
+            "AI_MODEL": " unified-model ",
         })
-        self.assertEqual(config["CASE_ANALYSIS_AI_API_KEY"], "analysis-key")
-        self.assertEqual(config["CASE_ANALYSIS_AI_BASE_URL"], "https://analysis.example/v1")
-        self.assertEqual(config["CASE_ANALYSIS_AI_MODEL"], "vision-model")
+        self.assertEqual(config["AI_API_KEY"], "unified-key")
+        self.assertEqual(config["AI_BASE_URL"], "https://unified.example/v1")
+        self.assertEqual(config["AI_MODEL"], "unified-model")
 
-    def test_old_provider_names_are_not_read_or_exported(self):
+    def test_legacy_case_ai_names_feed_unified_provider_only(self):
+        config = self.load_config({
+            "CASE_AI_API_KEY": "legacy-key",
+            "CASE_AI_BASE_URL": "https://legacy.example/v1",
+            "CASE_AI_MODEL": "legacy-model",
+        })
+        self.assertEqual(config["AI_API_KEY"], "legacy-key")
+        self.assertEqual(config["AI_BASE_URL"], "https://legacy.example/v1")
+        self.assertEqual(config["AI_MODEL"], "legacy-model")
+        self.assertNotIn("CASE_AI_API_KEY", config)
+
+    def test_business_override_values_require_explicit_switch(self):
+        config = self.load_config({
+            "CASE_LIBRARY_AI_OVERRIDE_ENABLED": "true",
+            "CASE_LIBRARY_AI_API_KEY": "analysis-key",
+            "CASE_LIBRARY_AI_BASE_URL": "https://analysis.example/v1",
+            "CASE_LIBRARY_AI_MODEL": "vision-model",
+        })
+        self.assertTrue(config["CASE_LIBRARY_AI_OVERRIDE_ENABLED"])
+        self.assertEqual(config["CASE_LIBRARY_AI_API_KEY"], "analysis-key")
+        self.assertEqual(config["CASE_LIBRARY_AI_BASE_URL"], "https://analysis.example/v1")
+        self.assertEqual(config["CASE_LIBRARY_AI_MODEL"], "vision-model")
+
+    def test_removed_provider_names_are_not_read_or_exported(self):
         config = self.load_config({
             "DEEPSEEK_API_KEY": "old-key",
             "DEEPSEEK_BASE_URL": "https://old.example/v1",
@@ -52,55 +84,88 @@ class AIProviderConfigurationTests(unittest.TestCase):
             "QWEN_BASE_URL": "https://old-analysis.example/v1",
             "QWEN_MODEL": "old-analysis-model",
         })
-        self.assertEqual(config["CASE_AI_API_KEY"], "")
-        self.assertEqual(config["CASE_AI_BASE_URL"], "https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.assertEqual(config["CASE_AI_MODEL"], "qwen3.8-flash")
-        self.assertEqual(config["CASE_ANALYSIS_AI_API_KEY"], "")
-        self.assertEqual(config["CASE_ANALYSIS_AI_BASE_URL"], "https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.assertEqual(config["CASE_ANALYSIS_AI_MODEL"], "qwen3.8-flash")
+        self.assertEqual(config["AI_API_KEY"], "")
+        self.assertEqual(config["AI_BASE_URL"], "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        self.assertEqual(config["AI_MODEL"], "qwen3.8-flash")
         self.assertFalse(any(key.startswith(("QWEN_", "DEEPSEEK_")) for key in config))
-
-    def test_primary_configuration_is_inherited_by_card_modification(self):
-        config = self.load_config({
-            "CASE_AI_API_KEY": "primary-key",
-            "CASE_AI_BASE_URL": "https://primary.example/v1",
-            "CASE_AI_MODEL": "primary-model",
-        })
-        self.assertEqual(config["CASE_AI_API_KEY"], "primary-key")
-        self.assertEqual(config["MODIFY_CARD_AI_API_KEY"], "primary-key")
-        self.assertEqual(config["MODIFY_CARD_AI_BASE_URL"], "https://primary.example/v1")
-        self.assertEqual(config["MODIFY_CARD_AI_MODEL"], "primary-model")
 
     def test_removed_legacy_key_cannot_enable_ai(self):
         config = self.load_config({"LWAN_API_KEY_3RD": "legacy-key"})
         self.assertNotIn("LWAN_API_KEY_3RD", config)
-        self.assertEqual(config["CASE_AI_API_KEY"], "")
-        self.assertEqual(config["MODIFY_CARD_AI_API_KEY"], "")
-        self.assertEqual(config["CASE_AI_BASE_URL"], "https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.assertEqual(config["CASE_AI_MODEL"], "qwen3.8-flash")
-        self.assertEqual(config["CASE_ANALYSIS_AI_API_KEY"], "")
+        self.assertEqual(config["AI_API_KEY"], "")
+        self.assertEqual(config["AI_BASE_URL"], "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        self.assertEqual(config["AI_MODEL"], "qwen3.8-flash")
+
+    def test_resolver_uses_unified_provider_until_override_is_enabled(self):
+        with patch.multiple(
+            runtime_config,
+            AI_API_KEY="unified-key",
+            AI_BASE_URL="https://unified.example/v1",
+            AI_MODEL="unified-model",
+            CASE_LIBRARY_AI_OVERRIDE_ENABLED=False,
+        ):
+            provider = get_ai_provider("case_library")
+        self.assertEqual(provider.source, "unified")
+        self.assertEqual(provider.api_key, "unified-key")
+        self.assertEqual(provider.model, "unified-model")
+
+    def test_each_business_area_can_use_a_complete_override(self):
+        prefixes: dict[AIProviderArea, str] = {
+            "market_insight": "MARKET_INSIGHT_AI",
+            "case_library": "CASE_LIBRARY_AI",
+            "content_studio": "CONTENT_STUDIO_AI",
+            "lead_tracking": "LEAD_TRACKING_AI",
+        }
+        for area, prefix in prefixes.items():
+            with self.subTest(area=area), patch.multiple(
+                runtime_config,
+                **{
+                    f"{prefix}_OVERRIDE_ENABLED": True,
+                    f"{prefix}_API_KEY": f"{area}-key",
+                    f"{prefix}_BASE_URL": f"https://{area}.example/v1",
+                    f"{prefix}_MODEL": f"{area}-model",
+                },
+            ):
+                provider = get_ai_provider(area)
+            self.assertEqual(provider.source, "override")
+            self.assertEqual(provider.api_key, f"{area}-key")
+            self.assertEqual(provider.model, f"{area}-model")
+
+    def test_incomplete_enabled_override_fails_explicitly(self):
+        with patch.multiple(
+            runtime_config,
+            LEAD_TRACKING_AI_OVERRIDE_ENABLED=True,
+            LEAD_TRACKING_AI_API_KEY="",
+            LEAD_TRACKING_AI_BASE_URL="https://lead.example/v1",
+            LEAD_TRACKING_AI_MODEL="lead-model",
+        ), self.assertRaisesRegex(
+            AIProviderConfigurationError,
+            "LEAD_TRACKING_AI_OVERRIDE_ENABLED requires",
+        ):
+            get_ai_provider("lead_tracking")
 
 
 class CaseAnalysisProviderTests(unittest.TestCase):
     def setUp(self):
-        self.enterContext(patch.multiple(
+        self.client = MagicMock()
+        self.provider = MagicMock(model="analysis-model")
+        self.provider.client.return_value = self.client
+        self.enterContext(patch.object(
             ai_analyzer,
-            CASE_ANALYSIS_AI_API_KEY="analysis-key",
-            CASE_ANALYSIS_AI_BASE_URL="https://analysis.example/v1",
-            CASE_ANALYSIS_AI_MODEL="analysis-model",
+            "get_ai_provider",
+            return_value=self.provider,
         ))
 
     def test_case_analyzer_uses_new_provider_configuration(self):
-        with patch.object(ai_analyzer, "OpenAI") as provider:
-            provider.return_value.chat.completions.create.return_value.choices[0].message.content = (
-                json.dumps(valid_case_analysis_payload(), ensure_ascii=False)
-            )
-            result = ai_analyzer.analyze_case("Title", "image_text", "Body", [])
-            provider.assert_called_once_with(api_key="analysis-key", base_url="https://analysis.example/v1")
-            call = provider.return_value.chat.completions.create.call_args
-            self.assertEqual(call.kwargs["model"], "analysis-model")
-            self.assertEqual(call.kwargs["response_format"], {"type": "json_object"})
-            self.assertIn("内容结构", result.content_analysis)
+        self.client.chat.completions.create.return_value.choices[0].message.content = (
+            json.dumps(valid_case_analysis_payload(), ensure_ascii=False)
+        )
+        result = ai_analyzer.analyze_case("Title", "image_text", "Body", [])
+        self.provider.client.assert_called_once_with()
+        call = self.client.chat.completions.create.call_args
+        self.assertEqual(call.kwargs["model"], "analysis-model")
+        self.assertEqual(call.kwargs["response_format"], {"type": "json_object"})
+        self.assertIn("内容结构", result.content_analysis)
 
     def test_case_analyzer_retries_invalid_structured_output_once(self):
         invalid = MagicMock()
@@ -109,17 +174,52 @@ class CaseAnalysisProviderTests(unittest.TestCase):
         valid.choices[0].message.content = json.dumps(
             valid_case_analysis_payload(), ensure_ascii=False,
         )
-        with patch.object(ai_analyzer, "OpenAI") as provider:
-            provider.return_value.chat.completions.create.side_effect = [invalid, valid]
-            result = ai_analyzer.analyze_case("Title", "image_text", "Body", [])
+        self.client.chat.completions.create.side_effect = [invalid, valid]
+        result = ai_analyzer.analyze_case("Title", "image_text", "Body", [])
 
         self.assertIn("内容结构", result.content_analysis)
-        self.assertEqual(provider.return_value.chat.completions.create.call_count, 2)
+        self.assertEqual(self.client.chat.completions.create.call_count, 2)
 
     def test_video_analysis_requires_video_specific_fields(self):
         payload = valid_case_analysis_payload()
         with self.assertRaisesRegex(ValueError, "video-specific"):
             ai_analyzer.validate_generated_case_analysis(payload, "video")
+
+
+class CapabilityRoutingTests(unittest.TestCase):
+    def provider(self):
+        provider = MagicMock(model="test-model")
+        provider.client.return_value = MagicMock()
+        return provider
+
+    def test_all_content_studio_actions_share_one_provider(self):
+        provider = self.provider()
+        with patch.object(content_ai, "get_ai_provider", return_value=provider) as resolve:
+            content_ai._get_client()
+            content_ai._get_modify_client()
+        self.assertEqual(
+            [call.args for call in resolve.call_args_list],
+            [("content_studio",), ("content_studio",)],
+        )
+
+    def test_market_analysis_and_research_share_one_provider(self):
+        provider = self.provider()
+        with patch.object(insight_ai, "get_ai_provider", return_value=provider) as resolve:
+            insight_ai._get_case_ai_client()
+            insight_ai._get_research_ai_client()
+        self.assertEqual(
+            [call.args for call in resolve.call_args_list],
+            [("market_insight",), ("market_insight",)],
+        )
+
+    def test_case_and_lead_analysis_use_their_product_providers(self):
+        provider = self.provider()
+        with patch.object(ai_analyzer, "get_ai_provider", return_value=provider) as case_resolve:
+            ai_analyzer._get_client()
+        with patch.object(lead_analysis, "get_ai_provider", return_value=provider) as lead_resolve:
+            lead_analysis._get_ai_client()
+        case_resolve.assert_called_once_with("case_library")
+        lead_resolve.assert_called_once_with("lead_tracking")
 
 
 

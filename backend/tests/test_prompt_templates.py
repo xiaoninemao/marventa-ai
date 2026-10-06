@@ -192,7 +192,11 @@ class EnglishMasterPromptTests(unittest.TestCase):
         client = MagicMock()
         client.chat.completions.create.return_value = completion('{"product_name": "Example"}')
         with (
-            patch.object(insight_ai, "CASE_AI_API_KEY", "test-key"),
+            patch.object(
+                insight_ai,
+                "get_ai_provider",
+                return_value=SimpleNamespace(configured=True, model="test-model"),
+            ),
             patch.object(insight_ai, "_get_case_ai_client", return_value=client),
         ):
             insight_ai.analyze_document(ParsedDocument(

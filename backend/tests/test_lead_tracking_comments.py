@@ -353,7 +353,11 @@ class LeadTrackingCommentTests(unittest.IsolatedAsyncioTestCase):
         )
         with (
             patch.object(lead_analysis, "LEAD_TRACKING_ANALYSIS_MODE", "ai"),
-            patch.object(lead_analysis, "LEAD_TRACKING_AI_MODEL", "test-ai"),
+            patch.object(
+                lead_analysis,
+                "get_ai_provider",
+                return_value=SimpleNamespace(model="test-ai"),
+            ),
             patch.object(lead_analysis, "LEAD_TRACKING_AI_BATCH_SIZE", 2),
         ):
             result = lead_analysis.analyze_comment_snapshot(
@@ -401,7 +405,11 @@ class LeadTrackingCommentTests(unittest.IsolatedAsyncioTestCase):
         )
         with (
             patch.object(lead_analysis, "LEAD_TRACKING_ANALYSIS_MODE", "ai"),
-            patch.object(lead_analysis, "LEAD_TRACKING_AI_MODEL", "test-ai"),
+            patch.object(
+                lead_analysis,
+                "get_ai_provider",
+                return_value=SimpleNamespace(model="test-ai"),
+            ),
             self.assertRaises(lead_analysis.LeadAnalysisProviderError),
         ):
             lead_analysis.analyze_comment_snapshot(

@@ -7,11 +7,7 @@ from typing import Literal
 
 from openai import OpenAI
 
-from app.config import (
-    CASE_ANALYSIS_AI_API_KEY,
-    CASE_ANALYSIS_AI_BASE_URL,
-    CASE_ANALYSIS_AI_MODEL,
-)
+from app.ai_provider import get_ai_provider
 from app.engines.case_library.models import (
     CaseAIAnalysis,
     validate_generated_case_analysis,
@@ -81,7 +77,7 @@ MIME_MAP = {
 
 
 def _get_client() -> OpenAI:
-    return OpenAI(api_key=CASE_ANALYSIS_AI_API_KEY, base_url=CASE_ANALYSIS_AI_BASE_URL)
+    return get_ai_provider("case_library").client()
 
 
 def _image_to_data_url(path: str) -> str | None:
@@ -145,7 +141,7 @@ def analyze_case(
     last_error: Exception | None = None
     for attempt in range(2):
         response = client.chat.completions.create(
-            model=CASE_ANALYSIS_AI_MODEL,
+            model=get_ai_provider("case_library").model,
             messages=messages,
             response_format={"type": "json_object"},
             max_tokens=8192,

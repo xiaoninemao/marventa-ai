@@ -16,7 +16,11 @@ class MarketInsightPromptLanguageTests(unittest.TestCase):
             choices=[SimpleNamespace(message=SimpleNamespace(content='{"product_name":"Example"}'))],
         )
         document = ParsedDocument(title="English document", source_type="markdown", raw_text="English source material")
-        with patch.object(ai_analyzer, "CASE_AI_API_KEY", "test-key"), patch.object(ai_analyzer, "_get_case_ai_client", return_value=client):
+        with patch.object(
+            ai_analyzer,
+            "get_ai_provider",
+            return_value=SimpleNamespace(configured=True, model="test-model"),
+        ), patch.object(ai_analyzer, "_get_case_ai_client", return_value=client):
             if locale is None:
                 ai_analyzer.analyze_document(document)
             else:

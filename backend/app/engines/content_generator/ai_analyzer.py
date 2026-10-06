@@ -5,8 +5,7 @@ from typing import Literal
 
 from openai import OpenAI
 from pydantic import BaseModel, Field, model_validator
-from app.config import CASE_AI_API_KEY, CASE_AI_BASE_URL, CASE_AI_MODEL
-from app.config import MODIFY_CARD_AI_API_KEY, MODIFY_CARD_AI_BASE_URL, MODIFY_CARD_AI_MODEL
+from app.ai_provider import get_ai_provider
 from app.engines.content_generator.models import ContentCard
 from app.shared.prompts import build_system_prompt
 
@@ -126,13 +125,11 @@ def strip_markdown(text: str) -> str:
 
 
 def _get_client() -> OpenAI:
-    return OpenAI(api_key=CASE_AI_API_KEY, base_url=CASE_AI_BASE_URL)
+    return get_ai_provider("content_studio").client()
 
 
 def _get_modify_client() -> OpenAI:
-    key = MODIFY_CARD_AI_API_KEY or CASE_AI_API_KEY
-    url = MODIFY_CARD_AI_BASE_URL or CASE_AI_BASE_URL
-    return OpenAI(api_key=key, base_url=url)
+    return get_ai_provider("content_studio").client()
 
 
 def build_reference_context(
@@ -208,7 +205,7 @@ def chat(messages: list[dict], reference_context: str = "") -> str:
 
     client = _get_client()
     response = client.chat.completions.create(
-        model=CASE_AI_MODEL,
+        model=get_ai_provider("content_studio").model,
         messages=[
             {"role": "system", "content": system},
             *messages,
@@ -327,7 +324,7 @@ def generate_cards(
     def request_cards(request_prompt: str) -> list[dict]:
         client = _get_client()
         response = client.chat.completions.create(
-            model=CASE_AI_MODEL,
+            model=get_ai_provider("content_studio").model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": request_prompt},
@@ -406,7 +403,7 @@ def modify_card(
 
     client = _get_modify_client()
     response = client.chat.completions.create(
-        model=MODIFY_CARD_AI_MODEL or CASE_AI_MODEL,
+        model=get_ai_provider("content_studio").model,
         messages=[
             {"role": "system", "content": MODIFY_SYSTEM_PROMPT + (
                 "\n\nReference context:\n" + reference_context if reference_context else ""
@@ -553,7 +550,7 @@ def generate_document(cards: list[ContentCard], reference_context: str = "") -> 
     last_error: Exception | None = None
     for attempt in range(2):
         response = client.chat.completions.create(
-            model=CASE_AI_MODEL,
+            model=get_ai_provider("content_studio").model,
             messages=messages,
             response_format={"type": "json_object"},
             max_tokens=8192,

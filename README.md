@@ -71,112 +71,58 @@ Collect reusable images, videos, and copy into project material sets. Build publ
 
 ## Capabilities
 
-### Project workspaces
+### Projects and collaboration
 
-- Explicit project membership and roles
-- Workspace actions explain unmet requirements, permission restrictions, editing locks, and pending operations through localized toasts instead of gray controls; action guards and server validation remain enforced.
-- Chinese and English action captions use shared concise verbs and consistent progress labels; contextual headings and accessible descriptions retain the details needed to identify the action.
-- Project-bound insights, cases, creations, media, and portfolio work
-- Platform-authorized Xiaohongshu and Douyin account connections at project level; disconnecting an account requires confirmation.
-- Creator attribution and project-aware permissions
-- Searchable project navigation across the core workflow
-- Project, Case Library, Content Studio, Portfolio, Publishing, and Organization lists include page navigation, totals, and page-size selection in a bottom-aligned, sticky footer. Searches and filters reset the page, and deleting the last item on a page returns to a valid page. The home dashboard remains a five-project preview.
-
-### Materials management
-
-- Project material sets organize images, videos, and editable rich-text copy, with real-media collage covers and in-app previews.
-- Upload media or import one TXT, Markdown, PDF, or DOCX document at a time as editable copy. Imports retain readable text and supported formatting, not embedded images or complex page layouts; textless PDFs require OCR and are not supported.
-- Write and edit rich-text copy with safe, isolated previews. New copy titles come from the first sentence or non-empty line; editing the body does not change its title.
-- Rename and delete collections or individual materials without replacing existing files. Collection names are unique; duplicate filenames receive numeric suffixes.
-- Repeated file selections are detected, and original project materials remain independent of publication snapshots.
-
-### Publishing management
-
-- Create and rename project-scoped plans, then manage image or single-video media alongside a plain-text publication title and body.
-- Large image previews support insertion-based drag ordering; videos use a full-width player with controls and uncropped playback. Material imports are batched, and platform limits still apply.
-- Media changes save immediately. Title/body edits and imported copy autosave, with visible progress, failure recovery, and protection against older requests overwriting newer edits.
-- Publication settings select the channel, account, date, and time. A complete local date/time is required, with dates strictly after today. Scheduled content and settings are read-only; cancel the scheduled publication before making changes.
-- Cancel an existing scheduled publication or arrange a cancelled/failed plan again without deleting its content.
-- An opt-in backend scheduler uploads and creates Douyin image/video posts through official APIs, records platform results, and protects against duplicate execution.
-- Publishing and published plans lock content and settings on both server and client. Failures retain content and explain how to retry; uncertain outcomes require checking the platform first.
-
-See [Scheduled publication](#scheduled-publication) for activation, authorization requirements, platform limits, and Xiaohongshu availability.
-
-### Account Content
-
-- Image-text works support a compact gallery with image counts, thumbnails, and previous/next controls. Workspace publication images retain their saved order. The current platform contract returns a cover only, so a full platform gallery is not inferred from it.
-- Workspace media URLs follow the backend address, including local HTTP development. Third-party platform media and share links still require public HTTPS URLs.
-- Saved through-Marventa video records support direct playback with native controls and no autoplay. A platform `share_url` remains a webpage link, not a playable media URL; platform direct playback is not inferred from it.
-- Public Douyin videos with a verified video ID can load the [official iframe player](https://developer.open-douyin.com/docs/resource/zh-CN/dop/develop/openapi/video-management/douyin/iframe-player/get-iframe-by-video) on click. The backend calls `GET /api/douyin/v1/video/get_iframe_by_video` without forwarding account credentials, extracts only an allowlisted player URL, and never injects provider HTML. Playback remains opt-in with autoplay disabled; this is embedded playback, not an MP4/HLS URL. The player API documents no extra permission application, while obtaining account works still requires `video.list` approval and authorization.
-- Platform account reading and embedded playback have automated contract coverage but have not yet been validated against a real authorized account in this development environment.
-- The verified list, video-detail, and basic-statistics contracts do not expose collection counts, complete gallery URLs, or a separate body field. These remain unavailable for platform records rather than guessed or inferred. Other restricted capabilities require separately verified applicable contracts and approval.
-- Content details display the title separately from the body. Workspace publication records use the saved copy title and content; the current platform contract only provides a title, which is preserved without splitting it into an invented body.
-- Content details show views, likes, comments, and shares in centered groups below the media preview. Unavailable metrics display `—`, not zero. Favorites are omitted because the verified platform contract does not supply them.
-
-- Choose a channel, then a connected account through the navigation entry below Publishing. Switching channels clears the account selection and pagination. Every account selection reloads the first page, including reselecting the same account.
-- Content-source selection is included in the URL, so bookmarked account/project views retain platform works or published-here records after refresh.
-- Persisted platform-work simulations are stored separately and are available only on explicitly synthetic, credential-free accounts. Cards and details label them **Demo data**; no live platform request, share link, or official player is used. They do not replace authorization errors or provider results for real accounts.
-- Platform works use Douyin's documented `video.list` read capability, including returned video and gallery entries. This older official contract is limited to four pages and is not a complete account archive; current application approval and coverage of newer formats must be confirmed with the platform.
-- Keep platform results separate from **Published here**, which shows only through-Marventa records accepted by the platform, not proof of public visibility.
-- Scope every request to the current organization and project membership. Unsupported platforms, expired authorization, missing read permissions, and provider errors remain explicit.
-- To enable authorized Douyin reads, obtain application approval for `video.list`, add it to `DOUYIN_CHANNEL_SCOPES` (alongside existing approved scopes), and reauthorize the account. The existing default scope is unchanged. No unofficial Xiaohongshu scraping is used.
-
-### Lead Tracking
-
-- The first-level workspace groups accessible bindings by channel identity, showing the same platform account once with all associated projects. It retains project navigation, account/project search, channel filters, and shared pagination.
-- Opening a grouped account uses a project binding only to authorize access to the account workspace. Within one organization, verified works, daily comment snapshots, Top 50 results, AI analysis, and human-review state are shared by stable platform-account identity, so the scheduler synchronizes and analyzes that account only once.
-- Comment Insights and Lead Analysis are separate account-scoped tabs. When comment sync is enabled, the backend runs at 00:00 in the configured IANA timezone, stores the previous local calendar day's accessible comments, and displays a deterministic Top 50 ranked by `likes + replies × 2`, then newest comment and comment ID. Partial and unavailable snapshots remain explicit.
-- A successful daily comment sync automatically runs Lead Analysis, producing a 0–100 intent score, high/medium/low intent, demand labels, scoring evidence, and a recommended action. Operators can mark each result confirmed, dismissed, or pending. `LEAD_TRACKING_ANALYSIS_MODE=rules` keeps analysis local and deterministic; explicitly selecting `ai` sends bounded batches to the configured `CASE_AI_*` OpenAI-compatible provider and identifies the model in the UI. Provider payloads omit commenter, account, and project identifiers, and every response must pass strict JSON, fixed-enum, and complete-ID-set validation. Refreshing the source snapshot invalidates stale same-day analysis, while rerunning analysis preserves reviews for comments that still exist. Any failed AI batch fails the whole analysis explicitly and never silently falls back to rules.
-- Comment sync is opt-in (`LEAD_TRACKING_SYNC_ENABLED=true`) and requires approved `item.comment` access plus account reauthorization. It only follows verified works registered after successful official account-content reads, with bounded pages/comments and idempotent snapshots. Lead analysis does not infer phone numbers, private messaging identities, real-world identity, or conversion outcomes; persisted demonstrations remain explicitly labeled as simulated data.
+- Organize insights, cases, materials, creations, publications, and finished work by project.
+- Manage organization and project roles, invitations, channel-account access, and creator attribution.
+- Search, filter, and paginate shared workspaces with clear permission and operation feedback.
 
 ### Market Insight
 
-- Markdown, PDF, DOCX, and repository parsing
-- An opt-in research Agent performs bounded public search and page reading before synthesis, with traceable sources, quoted evidence, and explicit analytical inferences. See [Optional bounded market research](#optional-bounded-market-research) for configuration, privacy boundaries, and limits.
-- Research reports completed, partial, unavailable, or edited states honestly. Reference and quote checks establish provenance, not factual correctness; missing provider configuration does not become a successful empty research result.
-- Structured product and market analysis
-- AI-generated results are read-only in the interface; authorized users can still edit manually created insights.
-- Analysis follows the selected interface language, with status refresh, interruption recovery, and safe manual retries.
-- Background processing with clear completion and failure states
-- Direct use of completed insights as creative context
+- Turn Markdown, PDF, DOCX, or repository content into structured product, audience, competitor, positioning, and campaign analysis.
+- Optionally enrich analysis with bounded public research, traceable sources, quotations, and explicit limitations.
+- Reuse completed insights as context in Content Studio.
 
 ### Case Library
 
-- Image, video, text, and supported public-link imports
-- Background enrichment of publicly available metadata
-- On-demand structured AI analysis
-- Analysis follows the selected interface language, with consistent detail previews and upload validation.
-- Project-scoped favorites and creative references
-- The case submission action is labeled **Upload** for both media uploads and public-link imports.
+- Collect image, video, text, and supported public-link examples by project.
+- Produce structured analysis of hooks, audiences, marketing angles, strengths, and reusable lessons.
+- Favorite and reference selected cases during creation.
+
+### Materials
+
+- Organize images, videos, and editable copy into reusable project material sets.
+- Import TXT, Markdown, PDF, and DOCX copy, edit rich text, and preview source media in the workspace.
+- Reuse materials in Content Studio and Publishing without changing project originals.
 
 ### Content Studio
 
-- Guided conversations grounded in project knowledge
-- Independent insight and case reference flows
-- Choose a material set, then reference its images, videos, or copy. Selections are retained when switching sets within the current project. Selected references are saved with the submitted message and creation context; copy text becomes AI context, while media references provide metadata rather than automatic visual or video analysis.
-- Short-video and image-text planning
-- Five structured content cards for every generation
-- Card-level editing, activity history, versioning, and rollback
-- Standard card titles follow the interface language without changing custom titles or translating stored content.
-- Complete original-content previews and consistent reference-card layouts
-- Live presence for collaborators viewing the same creation
+- Develop short-video or image-text concepts through guided conversations grounded in project insights, cases, and material references.
+- Generate five structured content cards, refine individual cards, restore earlier versions, and keep a visible activity history.
+- Produce bilingual long-form reports and collaborate with live viewer presence.
+
+### Publishing
+
+- Assemble image or video publication plans with ordered media, copy, account, and schedule settings.
+- Save work continuously, lock submitted plans, retain failed content, and safely cancel or reschedule eligible plans.
+- Publish authorized Douyin content through the optional scheduler with durable execution records.
+
+### Account Content
+
+- Browse platform-readable works separately from records published through Marventa.
+- Review galleries, saved videos, official embedded playback, visibility, and available engagement metrics.
+- Preserve explicit unavailable, authorization, provider, and demonstration-data states.
+
+### Lead Tracking
+
+- View each channel account once across its linked projects while retaining organization access boundaries.
+- Review a daily account-level Top 50 comment snapshot and consistent results across every project binding.
+- Qualify intent with rules or AI, inspect evidence and recommended actions, and confirm or dismiss leads.
 
 ### Portfolio
 
-- Reports use a continuous, single-column reading layout with clear chapter headings instead of separate cards. The detail view is read-only, with bilingual preview and PDF export.
-
-- Dedicated work list and report detail views
-- Background generation states
-- Complete Chinese and English report versions
-- Seven substantive strategy sections
-- Modular editing, preview, and PDF export
-
-### Team collaboration
-
-- Personal and custom organizations
-- Organization and project roles with separate permission boundaries
-- Persistent invitation and role-change notifications
-- Stable account identities and profile images
+- Keep finished strategy reports in a dedicated work list.
+- Read, preview, and export complete Chinese and English versions as PDF.
 
 ## Permissions
 
@@ -424,29 +370,28 @@ success. Keep the SQLite backup until the PostgreSQL deployment has been validat
 ## AI configuration
 
 ```env
-CASE_AI_API_KEY=your-api-key
-CASE_AI_BASE_URL=https://your-provider.example/v1
-CASE_AI_MODEL=your-chat-model
+AI_API_KEY=your-api-key
+AI_BASE_URL=https://your-provider.example/v1
+AI_MODEL=your-chat-model
 
-CASE_ANALYSIS_AI_API_KEY=your-api-key
-CASE_ANALYSIS_AI_BASE_URL=https://your-provider.example/v1
-CASE_ANALYSIS_AI_MODEL=your-vision-capable-model
-
-# Optional. Empty values inherit CASE_AI_*.
-MODIFY_CARD_AI_API_KEY=
-MODIFY_CARD_AI_BASE_URL=
-MODIFY_CARD_AI_MODEL=
+# Example: route Case Library analysis to a vision-capable alternative.
+CASE_LIBRARY_AI_OVERRIDE_ENABLED=true
+CASE_LIBRARY_AI_API_KEY=your-alternative-key
+CASE_LIBRARY_AI_BASE_URL=https://your-vision-provider.example/v1
+CASE_LIBRARY_AI_MODEL=your-vision-capable-model
 
 JWT_SECRET=replace-with-a-long-random-string
 ```
 
 | Configuration | Purpose |
 | --- | --- |
-| `CASE_AI_*` | Market insight, conversation, content cards, and reports |
-| `CASE_ANALYSIS_AI_*` | Structured case analysis, including image inputs |
-| `MODIFY_CARD_AI_*` | Optional separate provider for card editing |
+| `AI_*` | Unified default used by every AI feature |
+| `MARKET_INSIGHT_AI_*` | Optional provider for document insight and its public-research Agent |
+| `CASE_LIBRARY_AI_*` | Optional provider for structured case analysis, including image inputs |
+| `CONTENT_STUDIO_AI_*` | Optional provider shared by conversation, content cards, card modification, and report generation |
+| `LEAD_TRACKING_AI_*` | Optional provider for comment lead qualification |
 
-Use an OpenAI-compatible API base URL rather than the full `/chat/completions` path. Models must support the request parameters and structured JSON used by the selected feature. Image analysis additionally requires `image_url` input support.
+Each alternative has an `*_OVERRIDE_ENABLED` switch, which defaults to `false`. A disabled switch always uses `AI_*`, even when alternative values are present. An enabled switch requires its API key, base URL, and model; incomplete alternatives fail explicitly and never fall back silently. Use an OpenAI-compatible API base URL rather than the full `/chat/completions` path. Models must support the request parameters and structured JSON used by the selected feature. Image analysis additionally requires `image_url` input support.
 
 ### Optional bounded market research
 
@@ -460,7 +405,7 @@ INSIGHT_SEARCH_PROVIDER=tavily
 TAVILY_API_KEY=your-search-provider-key
 ```
 
-The selected `CASE_AI_*` model must support OpenAI-compatible function tool calls.
+The effective Market Insight model must support OpenAI-compatible function tool calls when public research is enabled.
 A single adaptive loop uses the selectable search-provider interface (initial adapter:
 Tavily HTTP) and reads returned pages; no multi-agent framework or guessed fallback search
 is used. The tool-enabled model sees only a fixed public category label, never uploaded

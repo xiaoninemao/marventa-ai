@@ -60,6 +60,12 @@ class ResearchAgentTests(unittest.TestCase):
             "Competitor", url + "/final", "Free plan available. Deployment is cloud hosted.",
         ))
         self.client = MagicMock()
+        self.ai_provider = SimpleNamespace(configured=True, model="test-model")
+        self.enterContext(patch.object(
+            agent,
+            "get_ai_provider",
+            return_value=self.ai_provider,
+        ))
 
     def run_research(self, responses):
         self.client.chat.completions.create.side_effect = responses
@@ -99,29 +105,34 @@ class ResearchAgentTests(unittest.TestCase):
         def research(document, summary, client, *, locale, provider):
             return agent.research_analysis(document, summary, client, locale=locale,
                                            provider=provider, reader=self.reader)
-        with patch.object(ai_analyzer, "CASE_AI_API_KEY", "fake"), patch.object(
+        with patch.object(ai_analyzer, "get_ai_provider", return_value=self.ai_provider), patch.object(
             ai_analyzer, "_get_case_ai_client", return_value=self.client,
+        ), patch.object(
+            ai_analyzer, "_get_research_ai_client", return_value=self.client,
         ), patch.object(ai_analyzer, "configured_provider", return_value=(self.provider, "")), patch.object(
             ai_analyzer, "research_analysis", side_effect=research,
         ):
             result = ai_analyzer.analyze_document(self.document, locale="en")
         self.assertEqual(result.ai_analysis.research.status, "completed")
         self.assertEqual(result.ai_analysis.strengths, ["From upload"])
-        self.assertEqual(result.ai_model, ai_analyzer.CASE_AI_MODEL)
+        self.assertEqual(result.ai_model, "test-model")
         self.assertEqual(self.provider.search.call_count, 1)
 
     def test_document_summary_does_not_create_research_client_when_public_research_is_unavailable(self):
         for enabled, key in ((False, ""), (True, "")):
             with self.subTest(enabled=enabled), patch.object(config, "INSIGHT_RESEARCH_ENABLED", enabled), \
                     patch.object(config, "TAVILY_API_KEY", key), \
+                    patch.object(ai_analyzer, "get_ai_provider", return_value=self.ai_provider), \
                     patch.object(ai_analyzer, "_has_case_ai_provider", return_value=True), \
                     patch.object(ai_analyzer, "_analyze_text", return_value=self.analysis.model_copy(deep=True)), \
-                    patch.object(ai_analyzer, "_get_case_ai_client") as client:
+                    patch.object(ai_analyzer, "_get_case_ai_client") as analysis_client, \
+                    patch.object(ai_analyzer, "_get_research_ai_client") as research_client:
                 result = ai_analyzer.analyze_document(self.document, locale="en")
-                client.assert_not_called()
+                analysis_client.assert_not_called()
+                research_client.assert_not_called()
                 self.assertEqual(result.ai_analysis.product_summary, "Document summary")
                 self.assertEqual(result.ai_analysis.research.status, "unavailable")
-                self.assertEqual(result.ai_model, ai_analyzer.CASE_AI_MODEL)
+                self.assertEqual(result.ai_model, "test-model")
         self.provider.search.assert_not_called()
         self.reader.assert_not_called()
 
@@ -312,8 +323,10 @@ class ResearchAgentTests(unittest.TestCase):
 
     def test_no_longer_live_guard_prevents_initial_summary_model_call(self):
         self.document._analysis_guard = lambda: (_ for _ in ()).throw(agent.AnalysisCancelled("lost"))
-        with patch.object(ai_analyzer, "CASE_AI_API_KEY", "fake"), patch.object(
+        with patch.object(ai_analyzer, "get_ai_provider", return_value=self.ai_provider), patch.object(
             ai_analyzer, "_get_case_ai_client", return_value=self.client,
+        ), patch.object(
+            ai_analyzer, "_get_research_ai_client", return_value=self.client,
         ), self.assertRaises(agent.AnalysisCancelled):
             ai_analyzer.analyze_document(self.document)
         self.client.chat.completions.create.assert_not_called()
@@ -450,9 +463,12 @@ class ResearchApiTests(unittest.TestCase):
                                     headers=self.headers(self.owner["id"]))
         self.assertEqual(response.status_code, 409, response.text)
         document = ParsedDocument(title="Manual", source_type="manual", ai_analysis=analysis)
-        with patch.object(ai_analyzer, "_get_case_ai_client") as provider:
+        with patch.object(ai_analyzer, "_get_case_ai_client") as provider, patch.object(
+            ai_analyzer, "_get_research_ai_client",
+        ) as research_provider:
             result = ai_analyzer.analyze_document(document)
         provider.assert_not_called()
+        research_provider.assert_not_called()
         self.assertIsNone(result.ai_analysis.research)
 
 

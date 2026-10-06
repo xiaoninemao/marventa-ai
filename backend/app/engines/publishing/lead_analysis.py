@@ -11,11 +11,9 @@ from typing import Literal
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.ai_provider import AIProviderConfigurationError, get_ai_provider
 from app.config import (
-    CASE_AI_API_KEY,
-    CASE_AI_BASE_URL,
     LEAD_TRACKING_AI_BATCH_SIZE,
-    LEAD_TRACKING_AI_MODEL,
     LEAD_TRACKING_AI_TIMEOUT_SECONDS,
     LEAD_TRACKING_ANALYSIS_MODE,
     LEAD_TRACKING_TIMEZONE,
@@ -194,14 +192,24 @@ def _analyze_comment(row: dict) -> dict:
 
 
 def _get_ai_client() -> OpenAI:
-    if not CASE_AI_API_KEY:
-        raise LeadAnalysisProviderError("AI lead analysis provider is not configured")
-    return OpenAI(
-        api_key=CASE_AI_API_KEY,
-        base_url=CASE_AI_BASE_URL,
-        timeout=LEAD_TRACKING_AI_TIMEOUT_SECONDS,
-        max_retries=0,
-    )
+    try:
+        return get_ai_provider("lead_tracking").client(
+            timeout=LEAD_TRACKING_AI_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
+    except AIProviderConfigurationError as exc:
+        raise LeadAnalysisProviderError(
+            "AI lead analysis provider is not configured",
+        ) from exc
+
+
+def _configured_lead_model() -> str:
+    if LEAD_TRACKING_ANALYSIS_MODE != "ai":
+        return ""
+    try:
+        return get_ai_provider("lead_tracking").model
+    except AIProviderConfigurationError:
+        return ""
 
 
 def _redact_comment_for_ai(content: object) -> str:
@@ -237,7 +245,7 @@ def _analyze_comments_ai(
                 ],
             }
             response = provider.chat.completions.create(
-                model=LEAD_TRACKING_AI_MODEL,
+                model=get_ai_provider("lead_tracking").model,
                 messages=[
                     {"role": "system", "content": AI_SYSTEM_PROMPT},
                     {
@@ -346,7 +354,7 @@ def analyze_comment_snapshot_internal(
         if LEAD_TRACKING_ANALYSIS_MODE == "ai":
             analyzed = _analyze_comments_ai(comment_rows, client)
             analysis_method = "ai"
-            analysis_model = LEAD_TRACKING_AI_MODEL
+            analysis_model = get_ai_provider("lead_tracking").model
             version = AI_PROMPT_VERSION
         else:
             analyzed = {
@@ -431,7 +439,14 @@ def _record_analysis_failure(
 ) -> None:
     stamp = _now()
     analysis_method = LEAD_TRACKING_ANALYSIS_MODE
-    analysis_model = LEAD_TRACKING_AI_MODEL if analysis_method == "ai" else ""
+    try:
+        analysis_model = (
+            get_ai_provider("lead_tracking").model
+            if analysis_method == "ai"
+            else ""
+        )
+    except AIProviderConfigurationError:
+        analysis_model = ""
     version = AI_PROMPT_VERSION if analysis_method == "ai" else RULE_VERSION
     with storage._get_conn() as conn:
         run = conn.execute(
@@ -553,11 +568,7 @@ def get_lead_analysis_internal(
                 date=selected.isoformat(),
                 timezone=LEAD_TRACKING_TIMEZONE,
                 analysis_method=LEAD_TRACKING_ANALYSIS_MODE,
-                model=(
-                    LEAD_TRACKING_AI_MODEL
-                    if LEAD_TRACKING_ANALYSIS_MODE == "ai"
-                    else ""
-                ),
+                model=_configured_lead_model(),
                 message="No lead analysis has been generated for this snapshot",
             )
         if run["status"] == "failed":

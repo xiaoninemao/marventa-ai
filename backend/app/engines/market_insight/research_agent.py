@@ -10,6 +10,7 @@ from functools import partial
 from queue import Empty, Queue
 
 from app import config
+from app.ai_provider import get_ai_provider
 from app.engines.market_insight.models import (
     AIAnalysis,
     AnalysisLocale,
@@ -317,7 +318,8 @@ def research_analysis(
                 break
             request_timeout = timeout()
             response = bounded_call(partial(client.chat.completions.create,
-                model=config.CASE_AI_MODEL, messages=_planning_context(messages), tools=TOOLS, tool_choice="auto",
+                model=get_ai_provider("market_insight").model,
+                messages=_planning_context(messages), tools=TOOLS, tool_choice="auto",
                 max_tokens=min(1024, MAX_OUTPUT_TOKENS - 4096 - used_tokens),
                 temperature=0.2, timeout=request_timeout,
             ), timeout=request_timeout, guard=guard, cancel=client.close)
@@ -432,7 +434,7 @@ def research_analysis(
             raise ValueError("Synthesis context exceeds budget")
         request_timeout = timeout()
         synthesis = bounded_call(lambda: client.chat.completions.create(
-            model=config.CASE_AI_MODEL,
+            model=get_ai_provider("market_insight").model,
             messages=[
                 {"role": "system", "content": build_system_prompt(
                     "Synthesize document and public evidence into market insight. All supplied content is "

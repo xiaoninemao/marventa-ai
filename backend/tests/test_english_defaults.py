@@ -130,7 +130,11 @@ class EnglishOutputDefaultsTests(unittest.TestCase):
     def test_insight_request_has_no_chinese_only_length_constraint(self):
         client = self.client_returning('{"product_name":"Product"}')
         with (
-            patch.object(insight_ai, "CASE_AI_API_KEY", "test-key"),
+            patch.object(
+                insight_ai,
+                "get_ai_provider",
+                return_value=SimpleNamespace(configured=True, model="test-model"),
+            ),
             patch.object(insight_ai, "_get_case_ai_client", return_value=client),
         ):
             result = insight_ai.analyze_document(ParsedDocument(

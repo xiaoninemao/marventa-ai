@@ -21,26 +21,59 @@ FRONTEND_ORIGINS = [
 ]
 
 # ---- LLM Providers ----
-# Global AI configuration used by market insight and content generation.
-# Change only these CASE_AI_* values when switching providers.
-CASE_AI_API_KEY = _env("CASE_AI_API_KEY")
-CASE_AI_BASE_URL = _env("CASE_AI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-CASE_AI_MODEL = _env("CASE_AI_MODEL", "qwen3.8-flash")
+# All AI features use this provider unless their explicit override switch is on.
+# CASE_AI_* remains an environment-only compatibility fallback.
+AI_API_KEY = _env("AI_API_KEY", _env("CASE_AI_API_KEY"))
+AI_BASE_URL = _env(
+    "AI_BASE_URL",
+    _env(
+        "CASE_AI_BASE_URL",
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    ),
+)
+AI_MODEL = _env("AI_MODEL", _env("CASE_AI_MODEL", "qwen3.8-flash"))
+
+MARKET_INSIGHT_AI_OVERRIDE_ENABLED = _env(
+    "MARKET_INSIGHT_AI_OVERRIDE_ENABLED", "false",
+).lower() == "true"
+MARKET_INSIGHT_AI_API_KEY = _env("MARKET_INSIGHT_AI_API_KEY")
+MARKET_INSIGHT_AI_BASE_URL = _env("MARKET_INSIGHT_AI_BASE_URL")
+MARKET_INSIGHT_AI_MODEL = _env("MARKET_INSIGHT_AI_MODEL")
+
+CASE_LIBRARY_AI_OVERRIDE_ENABLED = _env(
+    "CASE_LIBRARY_AI_OVERRIDE_ENABLED", "false",
+).lower() == "true"
+CASE_LIBRARY_AI_API_KEY = _env(
+    "CASE_LIBRARY_AI_API_KEY",
+    _env("CASE_ANALYSIS_AI_API_KEY"),
+)
+CASE_LIBRARY_AI_BASE_URL = _env(
+    "CASE_LIBRARY_AI_BASE_URL",
+    _env("CASE_ANALYSIS_AI_BASE_URL"),
+)
+CASE_LIBRARY_AI_MODEL = _env(
+    "CASE_LIBRARY_AI_MODEL",
+    _env("CASE_ANALYSIS_AI_MODEL"),
+)
+
+CONTENT_STUDIO_AI_OVERRIDE_ENABLED = _env(
+    "CONTENT_STUDIO_AI_OVERRIDE_ENABLED", "false",
+).lower() == "true"
+CONTENT_STUDIO_AI_API_KEY = _env("CONTENT_STUDIO_AI_API_KEY")
+CONTENT_STUDIO_AI_BASE_URL = _env("CONTENT_STUDIO_AI_BASE_URL")
+CONTENT_STUDIO_AI_MODEL = _env("CONTENT_STUDIO_AI_MODEL")
+
+LEAD_TRACKING_AI_OVERRIDE_ENABLED = _env(
+    "LEAD_TRACKING_AI_OVERRIDE_ENABLED", "false",
+).lower() == "true"
+LEAD_TRACKING_AI_API_KEY = _env("LEAD_TRACKING_AI_API_KEY")
+LEAD_TRACKING_AI_BASE_URL = _env("LEAD_TRACKING_AI_BASE_URL")
+LEAD_TRACKING_AI_MODEL = _env("LEAD_TRACKING_AI_MODEL")
 
 # Public market research is opt-in and never falls back to another provider.
 INSIGHT_RESEARCH_ENABLED = _env("INSIGHT_RESEARCH_ENABLED", "false").lower() == "true"
 INSIGHT_SEARCH_PROVIDER = _env("INSIGHT_SEARCH_PROVIDER", "tavily").lower()
 TAVILY_API_KEY = _env("TAVILY_API_KEY")
-
-# Provider-independent configuration for case library analysis.
-CASE_ANALYSIS_AI_API_KEY = _env("CASE_ANALYSIS_AI_API_KEY")
-CASE_ANALYSIS_AI_BASE_URL = _env("CASE_ANALYSIS_AI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-CASE_ANALYSIS_AI_MODEL = _env("CASE_ANALYSIS_AI_MODEL", "qwen3.8-flash")
-
-# Card Modification AI inherits the same provider unless explicitly overridden.
-MODIFY_CARD_AI_API_KEY = _env("MODIFY_CARD_AI_API_KEY", CASE_AI_API_KEY) or CASE_AI_API_KEY
-MODIFY_CARD_AI_BASE_URL = _env("MODIFY_CARD_AI_BASE_URL", CASE_AI_BASE_URL) or CASE_AI_BASE_URL
-MODIFY_CARD_AI_MODEL = _env("MODIFY_CARD_AI_MODEL", CASE_AI_MODEL) or CASE_AI_MODEL
 
 # ---- Database ----
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "market_insight.db"))
@@ -77,7 +110,6 @@ LEAD_TRACKING_SYNC_ENABLED = _env("LEAD_TRACKING_SYNC_ENABLED", "false").lower()
 LEAD_TRACKING_TIMEZONE = _env("LEAD_TRACKING_TIMEZONE", "Asia/Shanghai")
 LEAD_TRACKING_REQUIRED_SCOPE = _env("LEAD_TRACKING_REQUIRED_SCOPE", "item.comment")
 LEAD_TRACKING_ANALYSIS_MODE = _env("LEAD_TRACKING_ANALYSIS_MODE", "rules").lower()
-LEAD_TRACKING_AI_MODEL = _env("LEAD_TRACKING_AI_MODEL", CASE_AI_MODEL) or CASE_AI_MODEL
 LEAD_TRACKING_AI_BATCH_SIZE = int(_env("LEAD_TRACKING_AI_BATCH_SIZE", "10"))
 LEAD_TRACKING_AI_TIMEOUT_SECONDS = float(
     _env("LEAD_TRACKING_AI_TIMEOUT_SECONDS", "90"),

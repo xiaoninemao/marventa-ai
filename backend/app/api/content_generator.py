@@ -3,6 +3,7 @@ import logging
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from openai import APIConnectionError, APIStatusError, AuthenticationError
+from app.ai_provider import AIProviderConfigurationError
 from app.engines.content_generator.models import (
     SessionCreate, SessionRename, SessionResponse, ChatRequest, ChatMessage, ChatReference,
     ModifyCardRequest, PresenceHeartbeat, RewriteUserMessageRequest,
@@ -35,10 +36,12 @@ _PREFERENCE_LABELS = {
 
 
 def _ai_http_exception(exc: Exception) -> HTTPException:
+    if isinstance(exc, AIProviderConfigurationError):
+        return HTTPException(status_code=500, detail=str(exc))
     if isinstance(exc, AuthenticationError):
-        return HTTPException(status_code=502, detail="AI 鉴权失败，请检查 backend/.env 里的 CASE_AI_API_KEY 是否有效。")
+        return HTTPException(status_code=502, detail="AI 鉴权失败，请检查所选统一或替代 AI API Key 是否有效。")
     if isinstance(exc, APIConnectionError):
-        return HTTPException(status_code=502, detail="无法连接 AI 服务，请检查 CASE_AI_BASE_URL 和网络。")
+        return HTTPException(status_code=502, detail="无法连接 AI 服务，请检查所选统一或替代 AI Base URL 和网络。")
     if isinstance(exc, APIStatusError):
         return HTTPException(status_code=502, detail=f"AI 服务返回错误 {exc.status_code}，请检查模型名、额度或服务状态。")
     return HTTPException(status_code=500, detail="AI 生成失败，请检查后端日志。")
