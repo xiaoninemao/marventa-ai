@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const sourceRoot = fileURLToPath(new URL("../", import.meta.url));
-type ActionMode = "confirm" | "view" | "composed" | "authorize";
+type ActionMode = "confirm" | "view" | "composed" | "authorize" | "auth";
 type Bindings = Record<string, boolean | string>;
 type Variants = { variants: Array<{ mode: ActionMode; bindings: Bindings }> };
 type Mode = ActionMode | Variants;
@@ -52,7 +52,7 @@ const dialogModes: Record<string, Mode> = {
   "app/publishing/[planId]/page.tsx:publication-plan-heading": editingModes("settingsEditable"),
   "app/portfolio/page.tsx:rename-work-title": "confirm",
   "app/portfolio/[scriptId]/page.tsx:portfolio-pdf-preview-title": "view",
-  "components/auth/sliding_panel.tsx:role:dialog": "confirm",
+  "components/auth/sliding_panel.tsx:role:dialog": "auth",
   "components/redesign/DeleteConfirmDialog.tsx:titleId": "confirm",
   "components/content_generator/ReferencePickerDialog.tsx:titleId": "composed",
   "components/content_generator/ReferencePanel.tsx:ReferencePickerDialog": "confirm",
@@ -223,6 +223,9 @@ test("every dialog follows its audited confirmation or preview action pattern", 
       if (expected === "authorize" && (found.back !== 1 || found.confirm !== 1 || found.cancel > 0
         || found.close > 0 || found.order.join(",") !== "back,confirm")) {
         failures.push(`${key}: authorization introduction uses Back then Connect without Cancel/X (${JSON.stringify(found)})`);
+      }
+      if (expected === "auth" && (found.close !== 1 || found.cancel > 0 || found.confirm === 0)) {
+        failures.push(`${key}: authentication uses one close X, submit actions, and no Cancel (${JSON.stringify(found)})`);
       }
     };
     if (typeof mode === "string") check(mode, {});

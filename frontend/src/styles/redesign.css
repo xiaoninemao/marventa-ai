@@ -2188,23 +2188,6 @@
   transform: none;
 }
 
-.amp-redesign .amp-login-actions {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.amp-redesign .amp-login-actions > .amp-button {
-  min-height: 50px;
-}
-
-.amp-redesign .amp-login-actions > .amp-login-submit {
-  flex: 1;
-  margin-top: 0;
-  width: auto;
-}
-
 @media (max-width: 768px) {
 
   .amp-redesign .amp-slide-panel {
