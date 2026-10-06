@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -17,7 +17,8 @@
     "next": "16.3.6",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "source-map-js": "file:vendor/source-map-js-1.2.2.tgz"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -30,5 +31,8 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "overrides": {
+    "source-map-js": "$source-map-js"
   }
 }

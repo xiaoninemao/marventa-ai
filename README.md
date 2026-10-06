@@ -580,7 +580,7 @@ npm audit --omit=dev
 
 Development-tool advisories are reported separately, not treated as fixed or hidden. Avoid `npm audit fix --force` when it proposes an incompatible framework or lint-config downgrade. Track unresolved upstream advisories and rebuild/restart the frontend after updating the lockfile.
 
-As of v1.4.0, `npm audit --omit=dev` reports three linked high-severity entries for `source-map-js → postcss → next` under [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). The advisory requires `source-map-js >=1.2.2`, while the registry currently publishes `1.2.1` as latest; npm's only suggested remediation is an incompatible downgrade to Next.js 12.0.8. This upstream advisory is therefore disclosed as unresolved rather than suppressed or force-fixed.
+As of v1.4.1, the official upstream `source-map-js@1.2.2` release archive is pinned locally because the configured npm proxy has not published the patched version. A root dependency plus npm override makes Next.js, PostCSS, and Tailwind use the same fixed package; provenance and SHA-256 are recorded under `frontend/vendor/`. `npm audit --omit=dev` reports zero vulnerabilities. The full audit still reports five high-severity development-only entries in the ESLint/fast-glob/micromatch/braces chain; no incompatible downgrade or audit suppression is applied.
 
 ## Contributing
 

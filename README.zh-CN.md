@@ -558,7 +558,7 @@ npm audit --omit=dev
 
 开发工具通告单独报告，不将其隐藏或标为已修复。若 `npm audit fix --force` 建议不兼容的框架或 lint 配置降级，不应直接执行。继续跟踪未修复的上游通告，更新锁文件后重新构建并重启前端。
 
-截至 v1.4.0，`npm audit --omit=dev` 对 `source-map-js → postcss → next` 依赖链报告 3 条关联 high 通告，对应 [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)。通告要求 `source-map-js >=1.2.2`，但 npm 当前最新版本仍为 `1.2.1`；npm 唯一建议是将 Next.js 不兼容地降级到 12.0.8。因此该上游通告按“未解决”公开记录，不隐藏，也不执行强制修复。
+截至 v1.4.1，由于当前 npm 代理尚未发布已修复版本，项目在本地固定官方上游 `source-map-js@1.2.2` Release 归档。通过根依赖与 npm override，Next.js、PostCSS 和 Tailwind 统一使用该安全版本；来源与 SHA-256 记录在 `frontend/vendor/`。`npm audit --omit=dev` 报告 0 个漏洞。完整审计仍有 5 条来自 ESLint/fast-glob/micromatch/braces 链的开发工具 high 通告，不执行不兼容降级或审计隐藏。
 
 ## 参与贡献
 
