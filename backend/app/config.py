@@ -1,5 +1,6 @@
 import math
 import os
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -72,6 +73,32 @@ PUBLISHING_SCHEDULER_ENABLED = _env("PUBLISHING_SCHEDULER_ENABLED", "false").low
 PUBLISHING_POLL_SECONDS = float(_env("PUBLISHING_POLL_SECONDS", "10"))
 if not math.isfinite(PUBLISHING_POLL_SECONDS) or PUBLISHING_POLL_SECONDS < 1:
     raise ValueError("PUBLISHING_POLL_SECONDS must be at least 1")
+LEAD_TRACKING_SYNC_ENABLED = _env("LEAD_TRACKING_SYNC_ENABLED", "false").lower() == "true"
+LEAD_TRACKING_TIMEZONE = _env("LEAD_TRACKING_TIMEZONE", "Asia/Shanghai")
+LEAD_TRACKING_REQUIRED_SCOPE = _env("LEAD_TRACKING_REQUIRED_SCOPE", "item.comment")
+LEAD_TRACKING_ANALYSIS_MODE = _env("LEAD_TRACKING_ANALYSIS_MODE", "rules").lower()
+LEAD_TRACKING_AI_MODEL = _env("LEAD_TRACKING_AI_MODEL", CASE_AI_MODEL) or CASE_AI_MODEL
+LEAD_TRACKING_AI_BATCH_SIZE = int(_env("LEAD_TRACKING_AI_BATCH_SIZE", "10"))
+LEAD_TRACKING_AI_TIMEOUT_SECONDS = float(
+    _env("LEAD_TRACKING_AI_TIMEOUT_SECONDS", "90"),
+)
+try:
+    ZoneInfo(LEAD_TRACKING_TIMEZONE)
+except ZoneInfoNotFoundError as exc:
+    raise ValueError("LEAD_TRACKING_TIMEZONE must be a valid IANA timezone") from exc
+if not LEAD_TRACKING_REQUIRED_SCOPE or any(char.isspace() for char in LEAD_TRACKING_REQUIRED_SCOPE):
+    raise ValueError("LEAD_TRACKING_REQUIRED_SCOPE must be one OAuth scope")
+if LEAD_TRACKING_ANALYSIS_MODE not in {"rules", "ai"}:
+    raise ValueError("LEAD_TRACKING_ANALYSIS_MODE must be rules or ai")
+if not 1 <= LEAD_TRACKING_AI_BATCH_SIZE <= 50:
+    raise ValueError("LEAD_TRACKING_AI_BATCH_SIZE must be between 1 and 50")
+if (
+    not math.isfinite(LEAD_TRACKING_AI_TIMEOUT_SECONDS)
+    or not 10 <= LEAD_TRACKING_AI_TIMEOUT_SECONDS <= 180
+):
+    raise ValueError(
+        "LEAD_TRACKING_AI_TIMEOUT_SECONDS must be between 10 and 180",
+    )
 
 # ---- File Handling ----
 ALLOWED_DOCUMENT_TYPES = {

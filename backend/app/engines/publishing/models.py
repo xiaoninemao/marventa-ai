@@ -91,6 +91,7 @@ class AccountContentStatistics(BaseModel):
 
 class AccountContentPost(BaseModel):
     id: str
+    is_simulated: bool = False
     title: str = ""
     content: str = ""
     cover_url: str = ""
@@ -123,6 +124,74 @@ class AccountContentPage(BaseModel):
     page_size: int
     limited: bool = False
     message: str
+
+
+LeadTrackingRunStatus = Literal["completed", "partial", "unavailable", "failed"]
+
+
+class LeadTrackingComment(BaseModel):
+    comment_id: str
+    comment_user_id: str
+    content: str
+    create_time: int
+    digg_count: int
+    reply_comment_total: int
+    top: bool
+    item_id: str
+    interaction_score: int
+
+
+class LeadTrackingCommentInsight(BaseModel):
+    status: LeadTrackingRunStatus
+    date: str
+    timezone: str
+    top_limit: int = 50
+    items: list[LeadTrackingComment] = Field(default_factory=list)
+    is_simulated: bool = False
+    limited: bool = False
+    message: str = ""
+    last_synced_at: str = ""
+
+
+LeadIntent = Literal["high", "medium", "low"]
+LeadReviewStatus = Literal["pending", "confirmed", "dismissed"]
+
+
+class LeadTrackingLead(BaseModel):
+    comment_id: str
+    comment_user_id: str
+    content: str
+    create_time: int
+    item_id: str
+    score: int
+    intent: LeadIntent
+    demand_labels: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    recommended_action: str
+    review_status: LeadReviewStatus = "pending"
+    reviewed_at: str = ""
+
+
+class LeadTrackingAnalysis(BaseModel):
+    status: Literal["completed", "unavailable", "failed"]
+    date: str
+    timezone: str
+    analysis_method: Literal["rules", "ai"] = "rules"
+    model: str = ""
+    rule_version: str = ""
+    is_simulated: bool = False
+    items: list[LeadTrackingLead] = Field(default_factory=list)
+    analyzed_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+    pending_count: int = 0
+    generated_at: str = ""
+    message: str = ""
+
+
+class LeadTrackingReviewRequest(BaseModel):
+    status: LeadReviewStatus
 
 
 class ProjectChannelAuthorizationRequest(BaseModel):

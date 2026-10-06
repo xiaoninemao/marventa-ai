@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import uuid
+from datetime import date
 from typing import Annotated, Literal
 from urllib.parse import urlencode
 
@@ -13,6 +14,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Path,
     Query,
     Request,
     UploadFile,
@@ -46,6 +48,13 @@ from app.engines.publishing.channel_oauth import (
     start_channel_authorization,
 )
 from app.engines.publishing.document_copy import parse_document_copy
+from app.engines.publishing.lead_analysis import (
+    LeadAnalysisProviderError,
+    analyze_comment_snapshot,
+    get_lead_analysis,
+    review_lead,
+)
+from app.engines.publishing.lead_tracking import get_comment_insight
 from app.engines.publishing.material_copy import (
     DOCUMENT_CONTENT_TYPES,
     copy_html_to_text,
@@ -69,6 +78,7 @@ from app.engines.publishing.models import (
     PublicationCopy,
     PublicationPlanCreate,
     PublicationPlanUpdate,
+    LeadTrackingReviewRequest,
     UpdateProjectRequest,
 )
 from app.engines.publishing.project_channel_accounts import (
@@ -826,6 +836,111 @@ async def get_channel_account_player(
             status_code=502, detail="The account video player is unavailable or returned an invalid response",
         ) from exc
     return success_response("Account video player retrieved", result.model_dump())
+
+
+@router.get(
+    "/projects/{project_id}/channel-accounts/{account_id}"
+    "/lead-tracking/comment-insights",
+)
+async def get_channel_account_comment_insights(
+    project_id: str,
+    account_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    snapshot_date: Annotated[date | None, Query(alias="date")] = None,
+):
+    try:
+        result = await run_in_threadpool(
+            get_comment_insight,
+            current_user["id"],
+            project_id,
+            account_id,
+            snapshot_date,
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Channel account not found") from exc
+    return success_response("Daily comment insight retrieved", result.model_dump())
+
+
+@router.get(
+    "/projects/{project_id}/channel-accounts/{account_id}"
+    "/lead-tracking/analysis",
+)
+async def get_channel_account_lead_analysis(
+    project_id: str,
+    account_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    snapshot_date: Annotated[date | None, Query(alias="date")] = None,
+):
+    try:
+        result = await run_in_threadpool(
+            get_lead_analysis,
+            current_user["id"],
+            project_id,
+            account_id,
+            snapshot_date,
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Channel account not found") from exc
+    return success_response("Lead analysis retrieved", result.model_dump())
+
+
+@router.post(
+    "/projects/{project_id}/channel-accounts/{account_id}"
+    "/lead-tracking/analysis",
+)
+async def analyze_channel_account_comments(
+    project_id: str,
+    account_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    snapshot_date: Annotated[date | None, Query(alias="date")] = None,
+):
+    try:
+        result = await run_in_threadpool(
+            analyze_comment_snapshot,
+            current_user["id"],
+            project_id,
+            account_id,
+            snapshot_date,
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Channel account not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LeadAnalysisProviderError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="The AI lead analysis provider failed or returned an invalid response",
+        ) from exc
+    return success_response("Lead analysis completed", result.model_dump())
+
+
+@router.patch(
+    "/projects/{project_id}/channel-accounts/{account_id}"
+    "/lead-tracking/analysis/{comment_id}",
+)
+async def review_channel_account_lead(
+    project_id: str,
+    account_id: str,
+    comment_id: Annotated[str, Path(min_length=1, max_length=512)],
+    body: LeadTrackingReviewRequest,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    snapshot_date: Annotated[date | None, Query(alias="date")] = None,
+):
+    try:
+        result = await run_in_threadpool(
+            review_lead,
+            current_user["id"],
+            project_id,
+            account_id,
+            comment_id,
+            body.status,
+            snapshot_date,
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Channel account not found") from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return success_response("Lead review updated", result.model_dump())
 
 
 @router.get("/projects/{project_id}/channel-accounts")

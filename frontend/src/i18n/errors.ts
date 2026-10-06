@@ -72,6 +72,8 @@ const messages: ReadonlyArray<readonly [string, string]> = [
   ["无法加载账号视频播放器，请重试", "Could not load account video player"],
   ["平台视频播放器暂不可用，或视频不公开，请重试或在平台查看", "The account video player is unavailable or returned an invalid response"],
   ["平台视频编号无效", "Invalid platform video ID"],
+  ["无法加载每日评论洞察", "Could not load daily comment insights"],
+  ["评论洞察响应格式异常，请更新服务后重试", "Lead tracking comment insight response is invalid"],
   ["官方视频内嵌播放目前仅支持抖音", "Official video embedding is only available for Douyin"],
   ["渠道账号不存在或你没有访问权限", "Channel account not found"],
   ["平台内容读取失败或响应格式异常，请重试并检查账号授权", "The account content provider is unavailable or returned an invalid response"],

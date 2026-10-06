@@ -26,7 +26,7 @@ import type {
   ContentProject,
   PublicationPlan,
 } from "@/types/publishing";
-import { publicationHasScheduledRelease, publicationPublishedNotice, publicationReadOnly } from "@/utils/publication_lifecycle";
+import { publicationHasScheduledRelease, publicationReadOnly } from "@/utils/publication_lifecycle";
 import { startPolling } from "@/utils/polling";
 import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
 
@@ -374,7 +374,6 @@ function PublishingOverview() {
           <div className="amp-publication-brief-grid">
             {pagination.pageItems.map((plan) => {
               const channel = plan.platform ? CHANNELS[plan.platform] : null;
-              const publishedNotice = publicationPublishedNotice(plan.status);
               return (
                 <article key={plan.id} className={`amp-insight-card amp-publication-card${publicationReadOnly(plan.status) ? " is-publication-readonly" : ""}`}>
                   <Link href={`/publishing/${encodeURIComponent(plan.id)}`}
@@ -418,9 +417,6 @@ function PublishingOverview() {
                       </div>
                     </dl>
                     {plan.note && <span className="amp-insight-card-summary" title={plan.note}>{plan.note}</span>}
-                    {publishedNotice && <span className="amp-insight-card-summary" title={t(publishedNotice.zh, publishedNotice.en)}>
-                      {t(publishedNotice.zh, publishedNotice.en)}
-                    </span>}
                     {plan.last_error && <span className="amp-insight-card-summary break-words"
                       title={localizeErrorMessage(plan.last_error, locale)}>{localizeErrorMessage(plan.last_error, locale)}</span>}
                     {plan.outcome_unknown && <strong className="amp-insight-card-summary">

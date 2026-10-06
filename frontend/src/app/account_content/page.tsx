@@ -17,6 +17,7 @@ import PublishingProjectSidebar from "@/components/publishing/PublishingProjectS
 import AccountContentCard from "@/components/account_content/AccountContentCard";
 import AccountContentPreview from "@/components/account_content/AccountContentPreview";
 import AccountContentEmptyState from "@/components/account_content/AccountContentEmptyState";
+import { accountContentSourceHref, parseAccountContentSource } from "@/utils/account_content_navigation";
 
 export default function AccountContentPageRoute() {
   return <Suspense fallback={<div className="amp-page-state" role="status">Loading...</div>}><AccountContentWorkspace /></Suspense>;
@@ -39,10 +40,16 @@ function AccountContentWorkspace() {
   }>({ scope: "", platform: "", accountId: "" });
   const platform = selection.scope === scope ? selection.platform : "";
   const accountId = selection.scope === scope ? selection.accountId : "";
-  const [source, setSource] = useState<AccountContentSource>("platform");
+  const source = parseAccountContentSource(params.get("source"));
+  const setSource = (value: AccountContentSource) => {
+    router.replace(accountContentSourceHref(params.toString(), value), { scroll: false });
+  };
   const [count, setCount] = useState(12);
-  const [cursors, setCursors] = useState<string[]>(["0"]);
-  const [pageIndex, setPageIndex] = useState(0);
+  const [storedCursors, setCursors] = useState<string[]>(["0"]);
+  const [storedPageIndex, setPageIndex] = useState(0);
+  const [pagingSource, setPagingSource] = useState(source);
+  const cursors = pagingSource === source ? storedCursors : ["0"];
+  const pageIndex = pagingSource === source ? storedPageIndex : 0;
   const [attempt, setAttempt] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const [postsState, setPostsState] = useState<{
@@ -96,7 +103,7 @@ function AccountContentWorkspace() {
   }, [user, scope, projectId, requestedAccount, attempt, locale]);
 
   useEffect(() => {
-    if (!user || !account) return;
+    if (!user || !account || !source) return;
     const controller = new AbortController();
     let active = true;
     setPostsState({ key: requestKey, loading: true, error: "", data: null });
@@ -111,7 +118,7 @@ function AccountContentWorkspace() {
     return () => { active = false; controller.abort(); };
   }, [user, account, requestKey, source, cursor, count, pageIndex, locale]);
 
-  const resetPages = () => { setCursors(["0"]); setPageIndex(0); };
+  const resetPages = () => { setPagingSource(source); setCursors(["0"]); setPageIndex(0); };
   const unavailable = (status: AccountContentStatus) => ({
     ready: "",
     unsupported_platform: t("此平台暂未提供已验证的账号作品读取接口。可查看本系统发布记录。", "No verified account-content API is available for this platform. You can view publications from this workspace."),
@@ -126,8 +133,8 @@ function AccountContentWorkspace() {
     <div className="amp-projects-layout">
       <PublishingProjectSidebar projects={projects} selectedProjectId={projectId} accountContent />
       <main className="amp-projects-main amp-account-content-main">
-        <header className="amp-account-content-heading">
-          <div><h1>{t("账号内容", "Account Content")}</h1>
+        <header className="amp-projects-header">
+          <div><h1 className="amp-module-title">{t("账号内容", "Account Content")}</h1>
             <p>{t("按账号查看平台可读取的作品或本系统发布记录。", "Browse platform-readable works or this workspace's publication records by account.")}</p></div>
         </header>
         <div className="amp-account-content-toolbar">
@@ -151,14 +158,16 @@ function AccountContentWorkspace() {
               resetPages();
               setRefresh((revision) => revision + 1);
             }} className="amp-account-content-select" />
-          <EnterpriseSelect value={source}
+          <EnterpriseSelect value={source || "platform"}
             options={[{ value: "platform", label: t("平台作品", "Platform works") },
               { value: "marventa", label: t("本系统发布", "Published here") }]}
             ariaLabel={t("内容来源", "Content source")}
             onChange={(value) => { setSource(value); resetPages(); }}
             className="amp-account-content-source-select" />
         </div>
-        {accountsState.scope === scope && accountsState.error ? <div className="amp-dialog-state" role="alert">
+        {!source ? <div className="amp-dialog-state" role="alert">
+          <p>{t("内容来源无效，请选择平台作品或本系统发布。", "Invalid content source. Choose platform works or published-here records.")}</p>
+        </div> : accountsState.scope === scope && accountsState.error ? <div className="amp-dialog-state" role="alert">
           <p>{accountsState.error}</p><button type="button" className="amp-button amp-button-secondary" onClick={() => setAttempt((value) => value + 1)}>
             {t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
         </div> : accountsLoading || postsLoading ? <div className="amp-dialog-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>
@@ -185,6 +194,8 @@ function AccountContentWorkspace() {
                     hasMore={data.has_more && Boolean(data.next_cursor)}
                     nextBlockedReason={data.limited ? t("已达到平台读取范围上限。", "The platform's read limit has been reached.") : t("没有更多内容。", "No more content.")}
                     onPageChange={(value) => {
+                      if (pagingSource !== source) setCursors(["0"]);
+                      setPagingSource(source);
                       const nextIndex = value - 1;
                       if (nextIndex === pageIndex + 1) {
                           const nextCursor = data.next_cursor;

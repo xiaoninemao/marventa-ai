@@ -114,10 +114,20 @@ See [Scheduled publication](#scheduled-publication) for activation, authorizatio
 - Content details show views, likes, comments, and shares in centered groups below the media preview. Unavailable metrics display `—`, not zero. Favorites are omitted because the verified platform contract does not supply them.
 
 - Choose a channel, then a connected account through the navigation entry below Publishing. Switching channels clears the account selection and pagination. Every account selection reloads the first page, including reselecting the same account.
+- Content-source selection is included in the URL, so bookmarked account/project views retain platform works or published-here records after refresh.
+- Persisted platform-work simulations are stored separately and are available only on explicitly synthetic, credential-free accounts. Cards and details label them **Demo data**; no live platform request, share link, or official player is used. They do not replace authorization errors or provider results for real accounts.
 - Platform works use Douyin's documented `video.list` read capability, including returned video and gallery entries. This older official contract is limited to four pages and is not a complete account archive; current application approval and coverage of newer formats must be confirmed with the platform.
 - Keep platform results separate from **Published here**, which shows only through-Marventa records accepted by the platform, not proof of public visibility.
 - Scope every request to the current organization and project membership. Unsupported platforms, expired authorization, missing read permissions, and provider errors remain explicit.
 - To enable authorized Douyin reads, obtain application approval for `video.list`, add it to `DOUYIN_CHANNEL_SCOPES` (alongside existing approved scopes), and reauthorize the account. The existing default scope is unchanged. No unofficial Xiaohongshu scraping is used.
+
+### Lead Tracking
+
+- The first-level workspace groups accessible bindings by channel identity, showing the same platform account once with all associated projects. It retains project navigation, account/project search, channel filters, and shared pagination.
+- Opening a grouped account uses a project binding only to authorize access to the account workspace. Within one organization, verified works, daily comment snapshots, Top 50 results, AI analysis, and human-review state are shared by stable platform-account identity, so the scheduler synchronizes and analyzes that account only once.
+- Comment Insights and Lead Analysis are separate account-scoped tabs. When comment sync is enabled, the backend runs at 00:00 in the configured IANA timezone, stores the previous local calendar day's accessible comments, and displays a deterministic Top 50 ranked by `likes + replies × 2`, then newest comment and comment ID. Partial and unavailable snapshots remain explicit.
+- A successful daily comment sync automatically runs Lead Analysis, producing a 0–100 intent score, high/medium/low intent, demand labels, scoring evidence, and a recommended action. Operators can mark each result confirmed, dismissed, or pending. `LEAD_TRACKING_ANALYSIS_MODE=rules` keeps analysis local and deterministic; explicitly selecting `ai` sends bounded batches to the configured `CASE_AI_*` OpenAI-compatible provider and identifies the model in the UI. Provider payloads omit commenter, account, and project identifiers, and every response must pass strict JSON, fixed-enum, and complete-ID-set validation. Refreshing the source snapshot invalidates stale same-day analysis, while rerunning analysis preserves reviews for comments that still exist. Any failed AI batch fails the whole analysis explicitly and never silently falls back to rules.
+- Comment sync is opt-in (`LEAD_TRACKING_SYNC_ENABLED=true`) and requires approved `item.comment` access plus account reauthorization. It only follows verified works registered after successful official account-content reads, with bounded pages/comments and idempotent snapshots. Lead analysis does not infer phone numbers, private messaging identities, real-world identity, or conversion outcomes; persisted demonstrations remain explicitly labeled as simulated data.
 
 ### Market Insight
 
@@ -569,6 +579,8 @@ npm audit --omit=dev
 ```
 
 Development-tool advisories are reported separately, not treated as fixed or hidden. Avoid `npm audit fix --force` when it proposes an incompatible framework or lint-config downgrade. Track unresolved upstream advisories and rebuild/restart the frontend after updating the lockfile.
+
+As of v1.4.0, `npm audit --omit=dev` reports three linked high-severity entries for `source-map-js → postcss → next` under [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). The advisory requires `source-map-js >=1.2.2`, while the registry currently publishes `1.2.1` as latest; npm's only suggested remediation is an incompatible downgrade to Next.js 12.0.8. This upstream advisory is therefore disclosed as unresolved rather than suppressed or force-fixed.
 
 ## Contributing
 

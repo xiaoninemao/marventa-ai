@@ -21,6 +21,7 @@ const navItems: Array<{ label: string; labelEn: string; path: string; icon: Inli
   { label: "作品集", labelEn: "Portfolio", path: "/portfolio", icon: "briefcase" },
   { label: "发布管理", labelEn: "Publishing", path: "/publishing", icon: "send" },
   { label: "账号内容", labelEn: "Account Content", path: "/account_content", icon: "content" },
+  { label: "线索追踪", labelEn: "Lead Tracking", path: "/lead_tracking", icon: "target" },
 ];
 
 const utilityNavItems: Array<{ label: string; labelEn: string; path: string; icon: InlineIconName }> = [

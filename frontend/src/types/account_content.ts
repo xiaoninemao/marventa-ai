@@ -14,6 +14,7 @@ export interface AccountContentPost {
   id: string;
   title: string;
   content: string;
+  is_simulated?: boolean;
   cover_url: string;
   image_urls?: string[];
   video_url?: string;

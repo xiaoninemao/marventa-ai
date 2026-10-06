@@ -20,6 +20,10 @@ from app.engines.publishing import (
     publication_plans,
 )
 from app.engines.publishing.material_copy import copy_html_to_text
+from app.engines.publishing.lead_identity import (
+    lead_account_key,
+    legacy_lead_account_key,
+)
 from app.engines.publishing.models import ContentProject as ContentProject
 
 # Keep the original storage-module imports available to existing project clients.
@@ -285,6 +289,447 @@ def _ensure_db_initialized() -> None:
         init_db()
 
 
+def _initialize_account_lead_tracking(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_tracking_account_targets (
+            account_key TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            platform_user_id TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            discovered_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, item_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_tracking_account_comment_runs (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            timezone TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (
+                status IN ('completed', 'partial', 'unavailable', 'failed')
+            ),
+            is_simulated INTEGER NOT NULL DEFAULT 0 CHECK (is_simulated IN (0, 1)),
+            limited INTEGER NOT NULL DEFAULT 0 CHECK (limited IN (0, 1)),
+            message TEXT NOT NULL DEFAULT '',
+            comments_seen INTEGER NOT NULL DEFAULT 0,
+            last_synced_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_tracking_account_comments (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            comment_id TEXT NOT NULL,
+            comment_user_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            create_time BIGINT NOT NULL,
+            digg_count BIGINT NOT NULL,
+            reply_comment_total BIGINT NOT NULL,
+            top INTEGER NOT NULL CHECK (top IN (0, 1)),
+            raw_data TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (account_key, local_date, comment_id),
+            FOREIGN KEY (account_key, local_date)
+                REFERENCES lead_tracking_account_comment_runs(account_key, local_date)
+                ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_lead_tracking_account_comments_rank
+        ON lead_tracking_account_comments(
+            account_key, local_date,
+            digg_count DESC, reply_comment_total DESC, create_time DESC, comment_id
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_tracking_account_analysis_runs (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'completed' CHECK (
+                status IN ('completed', 'failed')
+            ),
+            analysis_method TEXT NOT NULL DEFAULT 'rules' CHECK (
+                analysis_method IN ('rules', 'ai')
+            ),
+            model TEXT NOT NULL DEFAULT '',
+            rule_version TEXT NOT NULL,
+            is_simulated INTEGER NOT NULL DEFAULT 0 CHECK (is_simulated IN (0, 1)),
+            message TEXT NOT NULL DEFAULT '',
+            generated_at TEXT NOT NULL,
+            generated_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            PRIMARY KEY (account_key, local_date),
+            FOREIGN KEY (account_key, local_date)
+                REFERENCES lead_tracking_account_comment_runs(account_key, local_date)
+                ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_tracking_account_leads (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            comment_id TEXT NOT NULL,
+            score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100),
+            intent TEXT NOT NULL CHECK (intent IN ('high', 'medium', 'low')),
+            demand_labels TEXT NOT NULL DEFAULT '[]',
+            evidence TEXT NOT NULL DEFAULT '[]',
+            recommended_action TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'pending' CHECK (
+                review_status IN ('pending', 'confirmed', 'dismissed')
+            ),
+            reviewed_by_user_id TEXT NOT NULL DEFAULT '',
+            reviewed_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (account_key, local_date, comment_id),
+            FOREIGN KEY (account_key, local_date)
+                REFERENCES lead_tracking_account_analysis_runs(account_key, local_date)
+                ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_lead_tracking_account_leads_priority
+        ON lead_tracking_account_leads(
+            account_key, local_date, score DESC, review_status, comment_id
+        )
+    """)
+    account_rows = conn.execute(
+        """
+        SELECT account.id, account.project_id, account.platform,
+               account.platform_user_id, project.organization_id
+        FROM project_channel_accounts account
+        JOIN content_projects project ON project.id = account.project_id
+        """,
+    ).fetchall()
+    new_keys_by_legacy: dict[str, set[str]] = {}
+    for row in account_rows:
+        old_key = legacy_lead_account_key(
+            row["platform"], row["platform_user_id"], row["id"],
+        )
+        new_key = lead_account_key(
+            row["organization_id"], row["platform"],
+            row["platform_user_id"], row["id"],
+        )
+        new_keys_by_legacy.setdefault(old_key, set()).add(new_key)
+    for old_key, candidates in new_keys_by_legacy.items():
+        if len(candidates) != 1:
+            continue
+        new_key = next(iter(candidates))
+        if old_key == new_key:
+            continue
+        targets = conn.execute(
+            "SELECT * FROM lead_tracking_account_targets WHERE account_key = ?",
+            (old_key,),
+        ).fetchall()
+        for target in targets:
+            conn.execute(
+                """
+                INSERT INTO lead_tracking_account_targets (
+                    account_key, platform, platform_user_id, item_id,
+                    discovered_at, last_seen_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account_key, item_id) DO NOTHING
+                """,
+                (
+                    new_key, target["platform"], target["platform_user_id"],
+                    target["item_id"], target["discovered_at"],
+                    target["last_seen_at"],
+                ),
+            )
+        runs = conn.execute(
+            """
+            SELECT * FROM lead_tracking_account_comment_runs
+            WHERE account_key = ?
+            """,
+            (old_key,),
+        ).fetchall()
+        for run in runs:
+            local_date = run["local_date"]
+            conn.execute(
+                """
+                INSERT INTO lead_tracking_account_comment_runs (
+                    account_key, local_date, timezone, status, is_simulated,
+                    limited, message, comments_seen, last_synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account_key, local_date) DO NOTHING
+                """,
+                (
+                    new_key, local_date, run["timezone"], run["status"],
+                    run["is_simulated"], run["limited"], run["message"],
+                    run["comments_seen"], run["last_synced_at"],
+                ),
+            )
+            for comment in conn.execute(
+                """
+                SELECT * FROM lead_tracking_account_comments
+                WHERE account_key = ? AND local_date = ?
+                """,
+                (old_key, local_date),
+            ).fetchall():
+                conn.execute(
+                    """
+                    INSERT INTO lead_tracking_account_comments (
+                        account_key, local_date, item_id, comment_id,
+                        comment_user_id, content, create_time, digg_count,
+                        reply_comment_total, top, raw_data
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(account_key, local_date, comment_id) DO NOTHING
+                    """,
+                    (
+                        new_key, local_date, comment["item_id"],
+                        comment["comment_id"], comment["comment_user_id"],
+                        comment["content"], comment["create_time"],
+                        comment["digg_count"], comment["reply_comment_total"],
+                        comment["top"], comment["raw_data"],
+                    ),
+                )
+            analysis = conn.execute(
+                """
+                SELECT * FROM lead_tracking_account_analysis_runs
+                WHERE account_key = ? AND local_date = ?
+                """,
+                (old_key, local_date),
+            ).fetchone()
+            if analysis is not None:
+                conn.execute(
+                    """
+                    INSERT INTO lead_tracking_account_analysis_runs (
+                        account_key, local_date, status, analysis_method, model,
+                        rule_version, is_simulated, message, generated_at,
+                        generated_by_user_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(account_key, local_date) DO NOTHING
+                    """,
+                    (
+                        new_key, local_date, analysis["status"],
+                        analysis["analysis_method"], analysis["model"],
+                        analysis["rule_version"], analysis["is_simulated"],
+                        analysis["message"], analysis["generated_at"],
+                        analysis["generated_by_user_id"],
+                    ),
+                )
+                for lead in conn.execute(
+                    """
+                    SELECT * FROM lead_tracking_account_leads
+                    WHERE account_key = ? AND local_date = ?
+                    """,
+                    (old_key, local_date),
+                ).fetchall():
+                    conn.execute(
+                        """
+                        INSERT INTO lead_tracking_account_leads (
+                            account_key, local_date, comment_id, score, intent,
+                            demand_labels, evidence, recommended_action,
+                            review_status, reviewed_by_user_id, reviewed_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(account_key, local_date, comment_id) DO NOTHING
+                        """,
+                        (
+                            new_key, local_date, lead["comment_id"], lead["score"],
+                            lead["intent"], lead["demand_labels"], lead["evidence"],
+                            lead["recommended_action"], lead["review_status"],
+                            lead["reviewed_by_user_id"], lead["reviewed_at"],
+                        ),
+                    )
+        conn.execute(
+            "DELETE FROM lead_tracking_account_targets WHERE account_key = ?",
+            (old_key,),
+        )
+        conn.execute(
+            "DELETE FROM lead_tracking_account_comment_runs WHERE account_key = ?",
+            (old_key,),
+        )
+    legacy_run_columns = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(lead_tracking_comment_runs)",
+        ).fetchall()
+    }
+    if not legacy_run_columns:
+        return
+    accounts = {
+        (row["project_id"], row["id"]): (
+            lead_account_key(
+                row["organization_id"],
+                row["platform"],
+                row["platform_user_id"],
+                row["id"],
+            ),
+            row["platform"],
+            row["platform_user_id"],
+        )
+        for row in account_rows
+    }
+    legacy_targets = conn.execute(
+        "SELECT * FROM lead_tracking_comment_targets",
+    ).fetchall()
+    for target in legacy_targets:
+        identity = accounts.get((target["project_id"], target["account_id"]))
+        if identity is None:
+            continue
+        conn.execute(
+            """
+            INSERT INTO lead_tracking_account_targets (
+                account_key, platform, platform_user_id, item_id,
+                discovered_at, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_key, item_id) DO UPDATE SET
+                last_seen_at = excluded.last_seen_at
+            """,
+            (
+                identity[0], identity[1], identity[2], target["item_id"],
+                target["discovered_at"], target["last_seen_at"],
+            ),
+        )
+    selected_runs: dict[tuple[str, str], sqlite3.Row] = {}
+    for run in conn.execute(
+        "SELECT * FROM lead_tracking_comment_runs ORDER BY last_synced_at",
+    ).fetchall():
+        identity = accounts.get((run["project_id"], run["account_id"]))
+        if identity is not None:
+            selected_runs[(identity[0], run["local_date"])] = run
+    for (account_key, local_date), run in selected_runs.items():
+        conn.execute(
+            """
+            INSERT INTO lead_tracking_account_comment_runs (
+                account_key, local_date, timezone, status, is_simulated,
+                limited, message, comments_seen, last_synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_key, local_date) DO UPDATE SET
+                timezone = excluded.timezone,
+                status = excluded.status,
+                is_simulated = excluded.is_simulated,
+                limited = excluded.limited,
+                message = excluded.message,
+                comments_seen = excluded.comments_seen,
+                last_synced_at = excluded.last_synced_at
+            """,
+            (
+                account_key, local_date, run["timezone"], run["status"],
+                int(run["is_simulated"]) if "is_simulated" in legacy_run_columns else 0,
+                run["limited"], run["message"], run["comments_seen"],
+                run["last_synced_at"],
+            ),
+        )
+        comments = conn.execute(
+            """
+            SELECT * FROM lead_tracking_comments
+            WHERE project_id = ? AND account_id = ? AND local_date = ?
+            """,
+            (run["project_id"], run["account_id"], local_date),
+        ).fetchall()
+        for comment in comments:
+            conn.execute(
+                """
+                INSERT INTO lead_tracking_account_comments (
+                    account_key, local_date, item_id, comment_id,
+                    comment_user_id, content, create_time, digg_count,
+                    reply_comment_total, top, raw_data
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account_key, local_date, comment_id) DO UPDATE SET
+                    item_id = excluded.item_id,
+                    comment_user_id = excluded.comment_user_id,
+                    content = excluded.content,
+                    create_time = excluded.create_time,
+                    digg_count = excluded.digg_count,
+                    reply_comment_total = excluded.reply_comment_total,
+                    top = excluded.top,
+                    raw_data = excluded.raw_data
+                """,
+                (
+                    account_key, local_date, comment["item_id"],
+                    comment["comment_id"], comment["comment_user_id"],
+                    comment["content"], comment["create_time"],
+                    comment["digg_count"], comment["reply_comment_total"],
+                    comment["top"], comment["raw_data"],
+                ),
+            )
+    analysis_columns = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(lead_tracking_analysis_runs)",
+        ).fetchall()
+    }
+    if analysis_columns:
+        selected_analyses: dict[tuple[str, str], sqlite3.Row] = {}
+        for run in conn.execute(
+            "SELECT * FROM lead_tracking_analysis_runs ORDER BY generated_at",
+        ).fetchall():
+            identity = accounts.get((run["project_id"], run["account_id"]))
+            if identity is not None:
+                selected_analyses[(identity[0], run["local_date"])] = run
+        for (account_key, local_date), run in selected_analyses.items():
+            if (account_key, local_date) not in selected_runs:
+                continue
+            conn.execute(
+                """
+                INSERT INTO lead_tracking_account_analysis_runs (
+                    account_key, local_date, status, analysis_method, model,
+                    rule_version, is_simulated, message, generated_at,
+                    generated_by_user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account_key, local_date) DO UPDATE SET
+                    status = excluded.status,
+                    analysis_method = excluded.analysis_method,
+                    model = excluded.model,
+                    rule_version = excluded.rule_version,
+                    is_simulated = excluded.is_simulated,
+                    message = excluded.message,
+                    generated_at = excluded.generated_at,
+                    generated_by_user_id = excluded.generated_by_user_id
+                """,
+                (
+                    account_key, local_date,
+                    run["status"] if "status" in analysis_columns else "completed",
+                    run["analysis_method"] if "analysis_method" in analysis_columns else "rules",
+                    run["model"] if "model" in analysis_columns else "",
+                    run["rule_version"],
+                    run["is_simulated"] if "is_simulated" in analysis_columns else 0,
+                    run["message"] if "message" in analysis_columns else "",
+                    run["generated_at"], run["generated_by_user_id"],
+                ),
+            )
+            leads = conn.execute(
+                """
+                SELECT * FROM lead_tracking_leads
+                WHERE project_id = ? AND account_id = ? AND local_date = ?
+                """,
+                (run["project_id"], run["account_id"], local_date),
+            ).fetchall()
+            for lead in leads:
+                conn.execute(
+                    """
+                    INSERT INTO lead_tracking_account_leads (
+                        account_key, local_date, comment_id, score, intent,
+                        demand_labels, evidence, recommended_action,
+                        review_status, reviewed_by_user_id, reviewed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(account_key, local_date, comment_id) DO UPDATE SET
+                        score = excluded.score,
+                        intent = excluded.intent,
+                        demand_labels = excluded.demand_labels,
+                        evidence = excluded.evidence,
+                        recommended_action = excluded.recommended_action,
+                        review_status = excluded.review_status,
+                        reviewed_by_user_id = excluded.reviewed_by_user_id,
+                        reviewed_at = excluded.reviewed_at
+                    """,
+                    (
+                        account_key, local_date, lead["comment_id"], lead["score"],
+                        lead["intent"], lead["demand_labels"], lead["evidence"],
+                        lead["recommended_action"], lead["review_status"],
+                        lead["reviewed_by_user_id"], lead["reviewed_at"],
+                    ),
+                )
+    for table in (
+        "lead_tracking_leads",
+        "lead_tracking_analysis_runs",
+        "lead_tracking_comments",
+        "lead_tracking_comment_runs",
+        "lead_tracking_comment_targets",
+    ):
+        conn.execute(f"DROP TABLE IF EXISTS {table}")
+
+
 def _initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS content_projects (
@@ -319,6 +764,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
         f"WHERE avatar_icon NOT IN ({allowed_avatar_icons})",
         tuple(PROJECT_AVATAR_ICONS),
     )
+    ensure_organization_scope(conn, "content_projects", "user_id")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS project_memberships (
             project_id TEXT NOT NULL REFERENCES content_projects(id) ON DELETE CASCADE,
@@ -354,6 +800,22 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             "PRAGMA table_info(project_channel_accounts)",
         ).fetchall()
     ]
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS account_content_simulations (
+            id TEXT NOT NULL,
+            project_id TEXT NOT NULL REFERENCES content_projects(id) ON DELETE CASCADE,
+            account_id TEXT NOT NULL REFERENCES project_channel_accounts(id) ON DELETE CASCADE,
+            created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            payload TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (project_id, account_id, id)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_account_content_simulations_account
+        ON account_content_simulations(project_id, account_id, created_at DESC, id DESC)
+    """)
+    _initialize_account_lead_tracking(conn)
     if "created_by_user_id" not in channel_account_cols:
         conn.execute(
             "ALTER TABLE project_channel_accounts "

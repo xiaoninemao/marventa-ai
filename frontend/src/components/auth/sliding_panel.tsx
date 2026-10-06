@@ -139,6 +139,9 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
               <button type="button" onClick={handleSwitch}>
                 {isLogin ? t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp) : t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
               </button>
+              <button type="button" onClick={handleClose} className="amp-modal-close" aria-label={t("关闭", "Close")}>
+                <InlineIcon name="close" className="h-5 w-5" />
+              </button>
             </div>
 
             <h2 className="amp-form-title">{isLogin ? t("登录账号", "Sign in") : t("注册", "Sign up")}</h2>
@@ -174,14 +177,9 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
                   />
                 </label>
 
-                <div className="amp-login-actions">
-                  <RedesignButton variant="secondary" className="amp-button-cancel" onClick={handleClose}>
-                    {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
-                  </RedesignButton>
-                  <RedesignButton type="submit" disabled={loading} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} className="amp-login-submit">
-                    {loading ? t(CHINESE_PROGRESS.signingIn, ENGLISH_PROGRESS.signingIn) : t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
-                  </RedesignButton>
-                </div>
+                <RedesignButton type="submit" disabled={loading} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} className="amp-login-submit">
+                  {loading ? t(CHINESE_PROGRESS.signingIn, ENGLISH_PROGRESS.signingIn) : t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
+                </RedesignButton>
               </form>
             ) : (
               <form onSubmit={doRegister} className="amp-login-compact-form amp-register-compact-form" noValidate>
@@ -211,14 +209,9 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
                   />
                 </label>
 
-                <div className="amp-login-actions">
-                  <RedesignButton variant="secondary" className="amp-button-cancel" onClick={handleClose}>
-                    {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
-                  </RedesignButton>
-                  <RedesignButton type="submit" disabled={loading} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} className="amp-login-submit">
-                    {loading ? t(CHINESE_PROGRESS.signingUp, ENGLISH_PROGRESS.signingUp) : t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp)}
-                  </RedesignButton>
-                </div>
+                <RedesignButton type="submit" disabled={loading} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")} className="amp-login-submit">
+                  {loading ? t(CHINESE_PROGRESS.signingUp, ENGLISH_PROGRESS.signingUp) : t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp)}
+                </RedesignButton>
               </form>
             )}
 

@@ -33,6 +33,29 @@ class PublicationSchedulerLifespanTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(stopped.is_set())
             self.assertEqual(intervals, [main.PUBLISHING_POLL_SECONDS])
 
+    async def test_lead_tracking_scheduler_has_independent_lifecycle(self):
+        started = asyncio.Event()
+        stopped = asyncio.Event()
+
+        class Scheduler:
+            async def serve(self, stop):
+                started.set()
+                await stop.wait()
+                stopped.set()
+
+        with (
+            patch.object(main, "PUBLISHING_SCHEDULER_ENABLED", False),
+            patch.object(main, "LEAD_TRACKING_SYNC_ENABLED", True),
+            patch.object(main, "LeadTrackingCommentScheduler", Scheduler),
+        ):
+            async with main.lifespan(main.app):
+                await asyncio.wait_for(started.wait(), timeout=1)
+                self.assertTrue(
+                    main.app.state.lead_tracking_scheduler_task
+                    and not main.app.state.lead_tracking_scheduler_task.done(),
+                )
+            self.assertTrue(stopped.is_set())
+
 
 if __name__ == "__main__":
     unittest.main()

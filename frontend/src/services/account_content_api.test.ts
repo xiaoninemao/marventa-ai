@@ -198,3 +198,22 @@ test("platform video IDs are transported as strings rather than lossy numbers", 
     await assert.rejects(fetch_account_content("project", "account", options), /response is invalid/);
   }
 });
+
+test("simulation markers are explicit booleans while old records without the marker remain valid", async (context) => {
+  let simulated: unknown = true;
+  context.mock.method(globalThis, "fetch", async () => Response.json({
+    success: true, data: { ...page, items: [{
+      id: "demo", title: "Demo", content: "Demo content", is_simulated: simulated, visibility: "published",
+      statistics: { likes: 10, comments: 2, views: 100, shares: 3 },
+    }] },
+  }));
+  for (const value of [true, false, undefined]) {
+    simulated = value;
+    const response = await fetch_account_content("project", "account", options);
+    assert.equal(response.data.items[0].is_simulated, value);
+  }
+  for (const value of ["true", 1, null]) {
+    simulated = value;
+    await assert.rejects(fetch_account_content("project", "account", options), /response is invalid/);
+  }
+});

@@ -21,7 +21,11 @@ from app.engines.publishing import (
     channel_oauth,
     storage,
 )
-from app.engines.publishing.project_memberships import ProjectNotFound
+from app.engines.publishing.models import AccountContentPost, AccountContentStatistics
+from app.engines.publishing.project_memberships import (
+    ProjectNotFound,
+    ProjectPermissionDenied,
+)
 
 
 class AccountContentTests(unittest.IsolatedAsyncioTestCase):
@@ -142,12 +146,13 @@ class AccountContentTests(unittest.IsolatedAsyncioTestCase):
             "page", "page_size", "limited", "message",
         })
         self.assertEqual(set(page["items"][0]), {
-            "id", "title", "content", "cover_url", "image_urls", "video_url", "platform_video_id",
+            "id", "is_simulated", "title", "content", "cover_url", "image_urls", "video_url", "platform_video_id",
             "share_url", "published_at", "media_type",
             "visibility", "statistics", "plan_id",
         })
         self.assertEqual(set(page["items"][0]["statistics"]), {"likes", "comments", "views", "shares"})
         self.assertNotIn("favorites", page["items"][0]["statistics"])
+        self.assertFalse(page["items"][0]["is_simulated"])
         self.assertEqual(page["next_cursor"], "5")
         self.assert_safe(page)
 
@@ -572,6 +577,90 @@ class AccountContentTests(unittest.IsolatedAsyncioTestCase):
             result = self.client.get(self.path + "/player", params={"video_id": video_id}, headers=self.headers())
         self.assertEqual(result.status_code, 502)
         self.assert_safe(result.json())
+
+    def prepare_simulation(self, post_id="demo-1"):
+        self.update_account(platform_user_id="local-test-demo", credential_blob="", scopes="[]")
+        post = AccountContentPost(
+            id=post_id, is_simulated=True, title="【模拟平台作品】Example", content="Persisted demo body",
+            media_type="image_text", visibility="published",
+            image_urls=["http://127.0.0.1:8765/media/project-materials/demo.png"],
+            statistics=AccountContentStatistics(views=100, likes=10, comments=2, shares=3),
+        )
+        return account_content.save_account_content_simulation(self.owner["id"], self.project.id, "account-1", post)
+
+    async def test_persisted_platform_simulation_reloads_without_any_provider_request(self):
+        saved = self.prepare_simulation()
+        for _ in range(2):
+            result, requests = await self.read(source="platform")
+            self.assertEqual(result.status, "ready")
+            self.assertEqual(result.source, "platform")
+            self.assertEqual(result.items, [saved])
+            self.assertEqual(requests, [])
+            self.assertIn("simulation", result.message)
+        response = self.client.get(self.path, headers=self.headers())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["data"]["items"][0]["is_simulated"])
+        local, requests = await self.read(source="marventa")
+        self.assertEqual(local.items, [])
+        self.assertEqual(requests, [])
+
+    async def test_simulation_never_overrides_real_accounts_or_provider_failure(self):
+        saved = self.prepare_simulation()
+        self.update_account(platform_user_id="open-1", credential_blob=self.blob, scopes='["video.list"]')
+        with self.assertRaisesRegex(ValueError, "synthetic account"):
+            account_content.save_account_content_simulation(self.owner["id"], self.project.id, "account-1", saved)
+        result, requests = await self.read(self.response(list=[{"item_id": "real-post", "title": "Real"}]))
+        self.assertEqual([post.id for post in result.items], ["real-post"])
+        self.assertFalse(result.items[0].is_simulated)
+        self.assertEqual(len(requests), 1)
+        with self.assertRaises(account_content.AccountContentProviderError):
+            await self.read(handler=lambda request: httpx.Response(503))
+        self.update_account(credential_blob="", scopes="[]")
+        result, requests = await self.read()
+        self.assertEqual(result.status, "authorization_required")
+        self.assertEqual(result.items, [])
+        self.assertEqual(requests, [])
+
+    async def test_simulation_seeding_and_reading_enforce_project_permissions(self):
+        saved = self.prepare_simulation()
+        with self.assertRaises(ProjectNotFound):
+            account_content.save_account_content_simulation(self.outsider["id"], self.project.id, "account-1", saved)
+        with self.assertRaises(ProjectNotFound):
+            await account_content.get_account_content(self.owner["id"], self.other.id, "account-1")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("INSERT INTO project_memberships VALUES (?, ?, 'member', '2026-01-01')",
+                         (self.project.id, self.member["id"]))
+        with self.assertRaises(ProjectPermissionDenied):
+            account_content.save_account_content_simulation(self.member["id"], self.project.id, "account-1", saved)
+        result = await account_content.get_account_content(self.member["id"], self.project.id, "account-1")
+        self.assertEqual(result.items, [saved])
+        with self.assertRaises(ValueError):
+            account_content.save_account_content_simulation(
+                self.owner["id"], self.project.id, "account-1", saved.model_copy(update={"is_simulated": False}),
+            )
+        with self.assertRaises(ValueError):
+            account_content.save_account_content_simulation(
+                self.owner["id"], self.project.id, "account-1", saved.model_copy(update={"share_url": "https://example.com"}),
+            )
+
+    async def test_simulation_pagination_and_corrupt_payload_are_explicit(self):
+        self.prepare_simulation("demo-1")
+        self.prepare_simulation("demo-2")
+        first, requests = await self.read(count=1)
+        self.assertTrue(first.has_more)
+        self.assertEqual(first.next_cursor, "1")
+        self.assertEqual(requests, [])
+        second, requests = await self.read(count=1, cursor=first.next_cursor, page=2)
+        self.assertFalse(second.has_more)
+        self.assertNotEqual(first.items[0].id, second.items[0].id)
+        self.assertEqual(requests, [])
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE account_content_simulations SET payload='not-json'")
+        with self.assertRaises(account_content.AccountContentProviderError):
+            await self.read()
+        response = self.client.get(self.path, headers=self.headers())
+        self.assertEqual(response.status_code, 502)
+        self.assert_safe(response.json())
 
     async def test_local_history_paginates_beyond_four_pages_without_truncation(self):
         with sqlite3.connect(self.db_path) as conn:

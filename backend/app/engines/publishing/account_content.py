@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -23,7 +24,11 @@ from app.engines.publishing.models import (
     AccountContentStatistics,
 )
 from app.engines.publishing.project_channel_accounts import account_content_connection
-from app.engines.publishing.project_memberships import ProjectNotFound
+from app.engines.publishing.project_memberships import (
+    ProjectNotFound,
+    ProjectPermissionDenied,
+)
+from app.engines.publishing.publication_plans import _project_access
 from app.media_storage import media_url
 
 # Verified older official contract. Eligibility does not establish current app API availability.
@@ -99,6 +104,7 @@ def validate_pagination(source: str, cursor: str, count: int, page: int) -> int:
 
 _ACCOUNT_SELECT = """
     SELECT account.*, project.title AS project_title,
+           project.organization_id AS organization_id,
            COALESCE(NULLIF(creator.nickname, ''), creator.username, '') AS creator_name,
            COALESCE(creator.avatar_url, '') AS creator_avatar_url
     FROM project_channel_accounts account
@@ -363,7 +369,8 @@ def _local_posts(
     with account_content_connection(user_id, project_id) as (conn, _):
         rows = conn.execute("""
             SELECT publication.id, publication.copy_title, publication.copy_text, publication.name,
-                   publication.media_mode, execution.published_at
+                   publication.media_mode, execution.published_at,
+                   execution.platform_post_id, execution.submission_started
             FROM project_publications publication
             LEFT JOIN publication_executions execution ON execution.plan_id = publication.id
             WHERE publication.project_id = ? AND publication.channel_account_id = ?
@@ -397,7 +404,76 @@ def _local_posts(
             cover_url=images[0] if images else "", image_urls=images, published_at=_utc(row["published_at"]),
             video_url=videos_by_plan.get(row["id"], "") if row["media_mode"] == "video" else "",
             media_type=row["media_mode"], visibility="accepted",
+            is_simulated=row["platform_post_id"] == "SIMULATED-ONLY-NOT-A-PLATFORM-POST"
+            and row["submission_started"] == 0,
         ))
+    return items, str(offset + len(items)), len(rows) > count
+
+
+def _simulation_account(row: dict | sqlite3.Row) -> bool:
+    return (
+        isinstance(row["platform_user_id"], str)
+        and row["platform_user_id"].startswith("local-test-")
+        and not row["credential_blob"]
+    )
+
+
+def save_account_content_simulation(
+    user_id: str, project_id: str, account_id: str, post: AccountContentPost,
+) -> AccountContentPost:
+    """Admin seed operation, intentionally not exposed as a public API."""
+    if not post.id or not post.is_simulated or post.plan_id or post.share_url or post.platform_video_id or post.video_url:
+        raise ValueError("Simulation must be explicit and cannot reference real platform or publication IDs")
+    if any(value is not None and value < 0 for value in post.statistics.model_dump().values()):
+        raise ValueError("Simulation statistics must be nonnegative")
+    with account_content_connection(user_id, project_id) as (conn, _), conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if _project_access(conn, user_id, project_id)["role"] not in {"owner", "admin"}:
+            raise ProjectPermissionDenied("Only project managers can create account content simulations")
+        row = conn.execute("""
+            SELECT platform_user_id, credential_blob FROM project_channel_accounts
+            WHERE id = ? AND project_id = ?
+        """, (account_id, project_id)).fetchone()
+        if row is None:
+            raise ProjectNotFound("Channel account not found")
+        if not _simulation_account(row):
+            raise ValueError("Simulations require a synthetic account without platform credentials")
+        conn.execute("""
+            INSERT INTO account_content_simulations
+                (id, project_id, account_id, created_by_user_id, payload, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (post.id, project_id, account_id, user_id, post.model_dump_json(),
+              datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")))
+    return post
+
+
+def _simulation_posts(
+    user_id: str, project_id: str, account_id: str, offset: int, count: int,
+) -> tuple[list[AccountContentPost], str, bool] | None:
+    with account_content_connection(user_id, project_id) as (conn, _):
+        exists = conn.execute("""
+            SELECT 1 FROM account_content_simulations WHERE project_id = ? AND account_id = ? LIMIT 1
+        """, (project_id, account_id)).fetchone()
+        if exists is None:
+            return None
+        rows = conn.execute("""
+            SELECT id, payload FROM account_content_simulations
+            WHERE project_id = ? AND account_id = ?
+            ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+        """, (project_id, account_id, count + 1, offset)).fetchall()
+    items = []
+    try:
+        for row in rows[:count]:
+            post = AccountContentPost.model_validate_json(row["payload"])
+            if (
+                post.id != row["id"] or not post.is_simulated
+                or post.plan_id or post.share_url or post.platform_video_id or post.video_url
+                or any(value is not None and value < 0 for value in post.statistics.model_dump().values())
+            ):
+                raise ValueError("Invalid stored simulation")
+            items.append(post)
+    except ValueError as exc:
+        raise AccountContentProviderError(PROVIDER_ERROR) from exc
     return items, str(offset + len(items)), len(rows) > count
 
 
@@ -417,12 +493,23 @@ async def get_account_content(
         result.status = "ready"
         result.message = "Through-Marventa accepted publication records; public visibility and share URLs are not verified"
         items, next_cursor, has_more = _local_posts(user_id, project_id, account_id, offset, count, base_url)
+    elif _simulation_account(row) and (demo := _simulation_posts(
+        user_id, project_id, account_id, offset, count,
+    )) is not None:
+        result.status = "ready"
+        result.message = "Stored simulation only; no live platform read or publication took place"
+        items, next_cursor, has_more = demo
     elif result.status != "ready":
         return result
     else:
         items, next_cursor, has_more = await _platform_page(
             token, row["platform_user_id"], offset, count, client,
         )
+        # Only authenticated provider-success results establish ownership-safe
+        # comment tracking targets. Local and simulated records never reach here.
+        from app.engines.publishing.lead_tracking import register_comment_targets
+
+        register_comment_targets(project_id, account_id, [item.id for item in items])
     result.items = items
     result.has_more = has_more
     result.limited = source == "platform" and has_more and page == MAX_PAGES

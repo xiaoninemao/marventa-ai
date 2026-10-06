@@ -40,8 +40,29 @@ test("read-only content previews have close X, unknown metrics and retained publ
     ["Views", "Likes", "Comments", "Shares"]);
   assert.match(html, /not confirmed public visibility/);
   assert.match(html, /href="\/publishing\/plan"/);
+  const link = html.match(/<a[^>]+href="\/publishing\/plan"[\s\S]*?<\/a>/)?.[0];
+  assert.ok(link);
+  assert.match(link, /class="h-\[18px\] w-\[18px\] shrink-0"/);
 });
 
+test("persisted simulations are labeled as demo data instead of claiming platform acceptance", () => {
+  const simulated = { ...post, is_simulated: true };
+  for (const component of [
+    createElement(AccountContentCard, { post: simulated, onOpen: () => {} }),
+    createElement(AccountContentPreview, { post: simulated, onClose: () => {} }),
+  ]) {
+    const html = renderToStaticMarkup(createElement(I18nProvider, null, component));
+    assert.match(html, /Demo data/);
+    assert.doesNotMatch(html, /Accepted by platform|This records platform acceptance/);
+  }
+  const preview = renderToStaticMarkup(createElement(I18nProvider, null,
+    createElement(AccountContentPreview, {
+      post: { ...simulated, platform_video_id: "123", share_url: "https://www.douyin.com/video/123" },
+      account: { id: "account", project_id: "project" }, onClose: () => {},
+    }),
+  ));
+  assert.doesNotMatch(preview, /View on platform|Play video|<iframe/);
+});
 test("content previews preserve zero and unknown values for the remaining four metrics", () => {
   for (const [value, rendered] of [[128, "128"], [0, "0"], [null, "—"]] as const) {
     const html = renderToStaticMarkup(createElement(I18nProvider, null,
@@ -212,8 +233,9 @@ test("account content uses a thumbnail-and-text panel rather than a video-only i
 
 test("account content heading has no refresh action while failed requests remain retryable", () => {
   const workspace = readFileSync(new URL("../../app/account_content/page.tsx", import.meta.url), "utf8");
-  const header = workspace.match(/<header className="amp-account-content-heading">([\s\S]*?)<\/header>/)?.[1];
+  const header = workspace.match(/<header className="amp-projects-header">([\s\S]*?)<\/header>/)?.[1];
   assert.ok(header);
+  assert.match(header, /<h1 className="amp-module-title">/);
   assert.doesNotMatch(header, /GuardedButton|ACTIONS\.refresh|name="refresh"/);
   assert.match(workspace, /onClick=\{\(\) => setRefresh\(\(value\) => value \+ 1\)\}/);
 });
@@ -230,7 +252,7 @@ test("account content requires channel selection and clears account and paginati
 
 test("content sources use the shared selector and reset pagination on change", () => {
   const workspace = readFileSync(new URL("../../app/account_content/page.tsx", import.meta.url), "utf8");
-  assert.match(workspace, /<EnterpriseSelect value=\{source\}/);
+  assert.match(workspace, /<EnterpriseSelect value=\{source \|\| "platform"\}/);
   assert.match(workspace, /ariaLabel=\{t\("内容来源", "Content source"\)\}/);
   assert.match(workspace, /setSource\(value\); resetPages\(\)/);
   assert.doesNotMatch(workspace, /role="group" aria-label=\{t\("内容来源"/);

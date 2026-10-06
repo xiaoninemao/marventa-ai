@@ -44,7 +44,7 @@ export default function AccountContentPreview({ post, account, onClose }: {
       {post && <div className="amp-account-content-preview-body">
         {post.media_type === "video" && post.video_url
           ? <AccountContentVideo key={post.video_url} url={post.video_url} cover={post.cover_url} />
-          : post.media_type === "video" && post.platform_video_id && account
+          : !post.is_simulated && post.media_type === "video" && post.platform_video_id && account
             ? <AccountContentPlatformVideo key={`${account.project_id}:${account.id}:${post.id}:${post.platform_video_id}`}
               projectId={account.project_id} accountId={account.id} videoId={post.platform_video_id}
               cover={post.cover_url} title={post.title || t("无标题", "Untitled content")} />
@@ -58,19 +58,21 @@ export default function AccountContentPreview({ post, account, onClose }: {
             <dd>{value === null ? "—" : value.toLocaleString(locale)}</dd>
           </div>
         ))}</dl>
-        {post.visibility !== "published" && <ContentVisibility value={post.visibility} />}
+        {(post.is_simulated || post.visibility !== "published") && <ContentVisibility value={post.visibility} simulated={post.is_simulated} />}
         <h3 className="amp-account-content-preview-title">{post.title || t("无标题", "Untitled content")}</h3>
         {post.content && <p>{post.content}</p>}
         {post.published_at && <time>{new Date(post.published_at).toLocaleString(locale)}</time>}
-        {post.visibility === "accepted" && <p className="amp-account-content-explanation">
+        {post.is_simulated ? <p className="amp-account-content-explanation">
+          {t("这是持久化模拟数据，未从平台真实读取，也未真实发布。", "This is stored demo data, not retrieved from the platform or actually published.")}
+        </p> : post.visibility === "accepted" && <p className="amp-account-content-explanation">
           {t("这是平台受理记录，不代表内容已公开展示。", "This records platform acceptance, not confirmed public visibility.")}
         </p>}
         <div className="amp-account-content-preview-links">
-          {post.share_url && <a href={post.share_url} target="_blank" rel="noopener noreferrer" className="amp-button amp-button-primary">
-            <InlineIcon name="share" />{t("在平台查看", "View on platform")}
+          {!post.is_simulated && post.share_url && <a href={post.share_url} target="_blank" rel="noopener noreferrer" className="amp-button amp-button-primary">
+            <InlineIcon name="share" className="h-[18px] w-[18px] shrink-0" />{t("在平台查看", "View on platform")}
           </a>}
           {post.plan_id && <Link href={`/publishing/${encodeURIComponent(post.plan_id)}`} className="amp-button amp-button-secondary">
-            <InlineIcon name="send" />{t("查看发布记录", "View publication")}
+            <InlineIcon name="send" className="h-[18px] w-[18px] shrink-0" />{t("查看发布记录", "View publication")}
           </Link>}
         </div>
       </div>}

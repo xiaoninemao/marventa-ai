@@ -43,6 +43,7 @@ export async function fetch_account_content(
     || body.data.account.id !== accountId || body.data.account.project_id !== projectId
     || body.data.source !== options.source || body.data.page !== options.page
     || body.data.items.some((post) => !post.id || typeof post.title !== "string" || typeof post.content !== "string"
+      || (post.is_simulated !== undefined && typeof post.is_simulated !== "boolean")
       || !visibility.has(post.visibility)
       || (post.video_url !== undefined && typeof post.video_url !== "string")
       || (post.platform_video_id !== undefined && (typeof post.platform_video_id !== "string"

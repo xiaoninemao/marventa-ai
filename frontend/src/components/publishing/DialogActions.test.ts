@@ -103,6 +103,28 @@ test("settings switches dismissal controls when explicit Save is available", () 
   assert.match(attribute(confirmation, "onCancel"), /settingsDialog\.current\?\.showModal\(\)/);
 });
 
+test("published visibility guidance belongs to settings rather than the content workspace", () => {
+  const file = source("../../app/publishing/[planId]/page.tsx");
+  const dialog = find(file, "dialog", "ref", "{settingsDialog}");
+  const notices = elements(file).filter((node) =>
+    opening(node).tagName.getText() === "p" && /t\(publishedNotice\.zh, publishedNotice\.en\)/.test(node.getText()));
+  assert.equal(notices.length, 1);
+  assert.ok(elements(dialog).includes(notices[0]));
+  assert.equal(attribute(notices[0], "role"), '"status"');
+  assert.equal(attribute(notices[0], "className"), '"amp-publication-settings-notice"');
+  const list = source("../../app/publishing/page.tsx");
+  assert.doesNotMatch(list.getText(), /publicationPublishedNotice|publishedNotice/);
+  assert.match(list.getText(), /\{plan\.outcome_unknown && <strong/);
+});
+
+test("publication cards use fluid tracks rather than leaving fixed-width grid space empty", () => {
+  const css = readFileSync(new URL("../../styles/projects.css", import.meta.url), "utf8");
+  const grid = css.match(/\.amp-redesign \.amp-publication-brief-grid \{([^}]+)\}/)?.[1];
+  assert.ok(grid);
+  assert.match(grid, /repeat\(auto-fill, minmax\(min\(100%, 260px\), 1fr\)\)/);
+  assert.doesNotMatch(grid, /minmax\(0, 280px\)/);
+});
+
 test("time selection cancels without committing and reopens from the stored value", () => {
   const file = source("./PublicationSchedulePicker.tsx");
   const dialog = find(file, "div", "role", '"dialog"');

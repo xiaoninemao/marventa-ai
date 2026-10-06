@@ -102,7 +102,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <span className="block break-words text-xs leading-[18px] text-slate-600">{toast.message}</span>
             </span>
             <button type="button"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:text-slate-700"
               aria-label={success
                 ? t("关闭成功提示", "Dismiss success message")
                 : warning || info

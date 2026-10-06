@@ -272,9 +272,6 @@ export default function PublicationSettingsPage() {
             </GuardedButton>
           </div>
         </header>
-        {publishedNotice && <p role="status" className="amp-publication-settings-notice">
-          {t(publishedNotice.zh, publishedNotice.en)}
-        </p>}
         {plan.status === "publishing" && <p role="status" className="amp-publication-settings-notice">
           {t("正在发布，发布设置、媒体和文案暂时不可修改。", "Publishing is in progress. Publication settings, media and copy are read-only.")}
         </p>}
@@ -311,6 +308,9 @@ export default function PublicationSettingsPage() {
             : plan.status === "publishing" ? t("发布中的计划仅供查看。", "Publishing plans are read-only.")
               : plan.status === "scheduled" ? t("已计划的内容和设置已锁定，取消定时发布后才能修改。", "Scheduled content and settings are locked. Cancel the scheduled publication to edit.")
                 : t("仅创建者和项目管理员可以修改计划。", "Only the creator and project managers can edit this plan.")}</p>}
+          {publishedNotice && <p role="status" className="amp-publication-settings-notice">
+            {t(publishedNotice.zh, publishedNotice.en)}
+          </p>}
           <label>
             <span>{t("发布渠道", "Channel")}</span>
             <EnterpriseSelect value={form.platform} options={channelOptions} className="mt-2 w-full"

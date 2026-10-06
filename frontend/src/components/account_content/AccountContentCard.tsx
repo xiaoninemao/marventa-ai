@@ -5,8 +5,9 @@ import { useI18n } from "@/contexts/i18n_context";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import type { AccountContentPost } from "@/types/account_content";
 
-export function ContentVisibility({ value }: { value: AccountContentPost["visibility"] }) {
+export function ContentVisibility({ value, simulated = false }: { value: AccountContentPost["visibility"]; simulated?: boolean }) {
   const { t } = useI18n();
+  if (simulated) return <span className="amp-account-content-status is-simulated">{t("模拟数据", "Demo data")}</span>;
   const labels = {
     published: t("已发布", "Published"), reviewing: t("审核中", "In review"),
     not_public: t("不公开", "Not public"), unknown: t("状态未知", "Unknown status"),
@@ -40,7 +41,7 @@ export default function AccountContentCard({ post, onOpen }: {
         </span>
         <span className="amp-account-content-caption">
           <strong title={title}>{title}</strong>
-          <span><ContentVisibility value={post.visibility} />
+          <span><ContentVisibility value={post.visibility} simulated={post.is_simulated} />
             {date && !Number.isNaN(date.getTime()) && <time dateTime={post.published_at}>{date.toLocaleDateString(locale)}</time>}
           </span>
         </span>
