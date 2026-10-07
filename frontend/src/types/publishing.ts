@@ -1,5 +1,13 @@
 import type { ContentCard } from "@/types/content_generator";
 
+export interface BrandProfile {
+  tone: string;
+  audience: string;
+  value_proposition: string;
+  visual_style: string;
+  prohibited_terms: string[];
+}
+
 export interface ContentProject {
   id: string;
   user_id: string;
@@ -16,6 +24,7 @@ export interface ContentProject {
   role: "owner" | "admin" | "member";
   avatar_color: string;
   avatar_icon: string;
+  brand_profile: BrandProfile;
   members: ProjectMember[];
   member_count: number;
   created_at: string;

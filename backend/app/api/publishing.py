@@ -766,6 +766,7 @@ async def edit_project(
             notes=body.notes,
             avatar_color=body.avatar_color,
             avatar_icon=body.avatar_icon,
+            brand_profile=body.brand_profile,
         )
     except ProjectNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

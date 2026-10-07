@@ -1,8 +1,8 @@
 "use client";
 
-import { GuardedButton, GuardedInput, useBlockedInteraction } from "@/components/redesign/GuardedControls";
+import { GuardedButton, GuardedInput, GuardedTextarea, useBlockedInteraction } from "@/components/redesign/GuardedControls";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
@@ -35,8 +35,9 @@ import {
   update_project_material,
   update_project_material_set,
   update_project_member_role,
+  update_content_project,
 } from "@/services/api_client";
-import type { ContentProject, ProjectChannelAccount, ProjectMaterial, ProjectMember } from "@/types/publishing";
+import type { BrandProfile, ContentProject, ProjectChannelAccount, ProjectMaterial, ProjectMember } from "@/types/publishing";
 import type { HistoryRecord } from "@/types/market_insight";
 import type { CaseItem } from "@/types/case_library";
 import type { SessionRecord } from "@/types/content_generator";
@@ -113,6 +114,31 @@ function formatDate(value: string, locale: string) {
   });
 }
 
+function brandProfileDraft(
+  tone: string,
+  audience: string,
+  valueProposition: string,
+  visualStyle: string,
+  prohibitedTerms: string,
+): BrandProfile {
+  return {
+    tone: tone.trim(),
+    audience: audience.trim(),
+    value_proposition: valueProposition.trim(),
+    visual_style: visualStyle.trim(),
+    prohibited_terms: [...new Set(
+      prohibitedTerms
+        .split(/[\n,，]/)
+        .map((term) => term.trim())
+        .filter(Boolean),
+    )],
+  };
+}
+
+function serializeBrandProfile(profile: BrandProfile) {
+  return JSON.stringify(profile);
+}
+
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
@@ -135,7 +161,17 @@ export default function ProjectDetailPage() {
   const [channelSearch, setChannelSearch] = useState("");
   const [channelSortOrder, setChannelSortOrder] = useState<ChannelSortOrder>("desc");
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"materials" | "assets" | "channels" | "members">("assets");
+  const [tab, setTab] = useState<"materials" | "assets" | "channels" | "members" | "guidelines">("assets");
+  const [brandTone, setBrandTone] = useState("");
+  const [brandAudience, setBrandAudience] = useState("");
+  const [brandValue, setBrandValue] = useState("");
+  const [brandVisualStyle, setBrandVisualStyle] = useState("");
+  const [brandProhibitedTerms, setBrandProhibitedTerms] = useState("");
+  const [brandSaveStatus, setBrandSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
+  const brandDraftRef = useRef<BrandProfile>(brandProfileDraft("", "", "", "", ""));
+  const brandLastSavedRef = useRef("");
+  const brandSavingRef = useRef(false);
+  const brandSaveQueuedRef = useRef(false);
   const [assetType, setAssetType] = useState<AssetType>("all");
   const [assetSort, setAssetSort] = useState<"newest" | "oldest">("newest");
   const [materialSetSearch, setMaterialSetSearch] = useState("");
@@ -164,6 +200,19 @@ export default function ProjectDetailPage() {
     ? materialImages : materialUploadMode === "video"
       ? materialVideo ? [materialVideo] : []
       : copyMode === "document" ? materialDocuments : [];
+  const brandDraft = useMemo(() => brandProfileDraft(
+    brandTone,
+    brandAudience,
+    brandValue,
+    brandVisualStyle,
+    brandProhibitedTerms,
+  ), [
+    brandAudience,
+    brandProhibitedTerms,
+    brandTone,
+    brandValue,
+    brandVisualStyle,
+  ]);
 
   useEffect(() => {
     if (!materialFilesExpanded) return;
@@ -261,6 +310,15 @@ export default function ProjectDetailPage() {
       ]) => {
         if (cancelled) return;
         setProject(projectResponse.data);
+        setBrandTone(projectResponse.data.brand_profile?.tone || "");
+        setBrandAudience(projectResponse.data.brand_profile?.audience || "");
+        setBrandValue(projectResponse.data.brand_profile?.value_proposition || "");
+        setBrandVisualStyle(projectResponse.data.brand_profile?.visual_style || "");
+        setBrandProhibitedTerms(
+          (projectResponse.data.brand_profile?.prohibited_terms || []).join("\n"),
+        );
+        brandLastSavedRef.current = serializeBrandProfile(projectResponse.data.brand_profile);
+        setBrandSaveStatus("saved");
         setProjectMaterials(materialsResponse.data || []);
         setChannelAccounts(accountsResponse.data || []);
         setMembers(membersResponse.data || []);
@@ -845,6 +903,65 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const persistBrandGuidelines = useCallback(async () => {
+    if (!project || (project.role !== "owner" && project.role !== "admin")) return;
+    if (brandSavingRef.current) {
+      brandSaveQueuedRef.current = true;
+      return;
+    }
+    brandSavingRef.current = true;
+    setBrandSaveStatus("saving");
+    try {
+      do {
+        brandSaveQueuedRef.current = false;
+        const draft = brandDraftRef.current;
+        const serializedDraft = serializeBrandProfile(draft);
+        if (serializedDraft === brandLastSavedRef.current) continue;
+        const response = await update_content_project(project.id, {
+          brand_profile: draft,
+        });
+        brandLastSavedRef.current = serializeBrandProfile(response.data.brand_profile);
+        setProject(response.data);
+        setQuickProjects((current) => current.map((item) => (
+          item.id === response.data.id ? response.data : item
+        )));
+        if (serializeBrandProfile(brandDraftRef.current) !== brandLastSavedRef.current) {
+          brandSaveQueuedRef.current = true;
+        }
+      } while (brandSaveQueuedRef.current);
+      setBrandSaveStatus("saved");
+    } catch (error) {
+      brandSaveQueuedRef.current = false;
+      setBrandSaveStatus("error");
+      showError(localizeErrorMessage(
+        error instanceof Error ? error.message : "Could not update project",
+        locale,
+      ));
+    } finally {
+      brandSavingRef.current = false;
+    }
+  }, [locale, project, showError]);
+
+  useEffect(() => {
+    brandDraftRef.current = brandDraft;
+  }, [brandDraft]);
+
+  useEffect(() => {
+    if (!project || (project.role !== "owner" && project.role !== "admin")) {
+      return;
+    }
+    const serializedDraft = serializeBrandProfile(brandDraft);
+    if (!brandLastSavedRef.current || serializedDraft === brandLastSavedRef.current) {
+      if (!brandSavingRef.current) setBrandSaveStatus("saved");
+      return;
+    }
+    setBrandSaveStatus("pending");
+    const timer = window.setTimeout(() => {
+      void persistBrandGuidelines();
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [brandDraft, persistBrandGuidelines, project]);
+
   if (authLoading || loading || !project) {
     return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
@@ -945,6 +1062,16 @@ export default function ProjectDetailPage() {
               onClick={openAccountDialog}>
               {t(CHINESE_ACTIONS.add, ENGLISH_ACTIONS.add)}
             </button>
+          ) : tab === "guidelines" && canManageMembers ? (
+            <span className="amp-project-brand-save-status" data-status={brandSaveStatus} role="status">
+              {brandSaveStatus === "saving"
+                ? t("正在自动保存", "Saving automatically")
+                : brandSaveStatus === "pending"
+                  ? t("等待自动保存", "Waiting to save")
+                  : brandSaveStatus === "error"
+                    ? t("自动保存失败", "Autosave failed")
+                    : t("已自动保存", "Saved automatically")}
+            </span>
           ) : null}
         </header>
 
@@ -954,6 +1081,7 @@ export default function ProjectDetailPage() {
             onClick={() => setTab("materials")}>{t("素材", "Materials")}</button>
           <button type="button" role="tab" aria-selected={tab === "members"} onClick={() => setTab("members")}>{t("成员", "Members")}</button>
           <button type="button" role="tab" aria-selected={tab === "channels"} onClick={() => setTab("channels")}>{t("集成", "Integrations")}</button>
+          <button type="button" role="tab" aria-selected={tab === "guidelines"} onClick={() => setTab("guidelines")}>{t("规范", "Guidelines")}</button>
         </div>}
 
         {tab === "materials" ? (
@@ -1340,6 +1468,77 @@ export default function ProjectDetailPage() {
                   </article>
                 );
               })}
+            </div>
+          </section>
+        ) : tab === "guidelines" ? (
+          <section className="amp-project-guidelines" aria-label={t("品牌与创作规范", "Brand and creative guidelines")}>
+            <div className="amp-project-brand-settings">
+              {!canManageMembers && (
+                <p className="amp-project-guidelines-notice">
+                  {t("你可以查看规范，但只有项目所有者或管理员可以修改。", "You can view these guidelines, but only project owners and administrators can edit them.")}
+                </p>
+              )}
+              <div className="amp-project-brand-settings-grid">
+                <label>
+                  <span>{t("品牌语气", "Brand voice")}</span>
+                  <GuardedTextarea value={brandTone} maxLength={1000} rows={3}
+                    disabled={!canManageMembers}
+                    blockedReason={!canManageMembers
+                      ? t("仅项目所有者或管理员可以修改品牌规范。", "Only project owners or administrators can edit brand guidelines.")
+                      : t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                    onChange={(event) => setBrandTone(event.target.value)}
+                    placeholder={t("例如：专业、克制、清晰，不使用夸张口号", "For example: expert, measured, clear, without exaggerated slogans")}
+                    className="amp-workspace-control" />
+                </label>
+                <label>
+                  <span>{t("目标受众", "Target audience")}</span>
+                  <GuardedTextarea value={brandAudience} maxLength={2000} rows={3}
+                    disabled={!canManageMembers}
+                    blockedReason={!canManageMembers
+                      ? t("仅项目所有者或管理员可以修改品牌规范。", "Only project owners or administrators can edit brand guidelines.")
+                      : t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                    onChange={(event) => setBrandAudience(event.target.value)}
+                    placeholder={t("描述核心人群、需求与认知阶段", "Describe the primary audience, needs, and awareness stage")}
+                    className="amp-workspace-control" />
+                </label>
+                <label>
+                  <span>{t("核心价值", "Value proposition")}</span>
+                  <GuardedTextarea value={brandValue} maxLength={2000} rows={3}
+                    disabled={!canManageMembers}
+                    blockedReason={!canManageMembers
+                      ? t("仅项目所有者或管理员可以修改品牌规范。", "Only project owners or administrators can edit brand guidelines.")
+                      : t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                    onChange={(event) => setBrandValue(event.target.value)}
+                    placeholder={t("说明必须准确传达的产品价值与差异", "State the product value and differentiation that must remain accurate")}
+                    className="amp-workspace-control" />
+                </label>
+                <label>
+                  <span>{t("视觉规范", "Visual direction")}</span>
+                  <GuardedTextarea value={brandVisualStyle} maxLength={2000} rows={3}
+                    disabled={!canManageMembers}
+                    blockedReason={!canManageMembers
+                      ? t("仅项目所有者或管理员可以修改品牌规范。", "Only project owners or administrators can edit brand guidelines.")
+                      : t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                    onChange={(event) => setBrandVisualStyle(event.target.value)}
+                    placeholder={t("记录 Logo、字体、配色、构图和避免事项", "Record logo, typography, color, composition, and visual exclusions")}
+                    className="amp-workspace-control" />
+                </label>
+              </div>
+              <label className="amp-project-brand-terms">
+                <span>{t("禁用词", "Prohibited terms")}</span>
+                <GuardedTextarea value={brandProhibitedTerms} maxLength={5000} rows={3}
+                  disabled={!canManageMembers}
+                  blockedReason={!canManageMembers
+                    ? t("仅项目所有者或管理员可以修改品牌规范。", "Only project owners or administrators can edit brand guidelines.")
+                    : t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                  onChange={(event) => setBrandProhibitedTerms(event.target.value)}
+                  placeholder={t("每行一个；命中后质量检查会阻止生成作品", "One per line; matches block work generation")}
+                  className="amp-workspace-control" />
+                <small>{t(
+                  "支持换行或逗号分隔，保存时会自动去重。",
+                  "Separate terms with line breaks or commas. Duplicates are removed when saved.",
+                )}</small>
+              </label>
             </div>
           </section>
         ) : (

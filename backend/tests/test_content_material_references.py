@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -23,11 +24,14 @@ from app.engines.content_generator.models import (
     ChatMessage,
     ChatReference,
     ContentCard,
+    QualityIssue,
+    QualityReport,
     SessionResponse,
 )
 from app.engines.portfolio import storage as portfolio_storage
 from app.engines.publishing import project_materials
 from app.engines.publishing import storage as publishing_storage
+from app.engines.publishing.models import BrandProfile
 from tests import test_material_copy as material_tests
 
 
@@ -142,6 +146,28 @@ class ContentMaterialReferenceTests(unittest.TestCase):
         self.send([self.copy.id])
         self.assertIn("Real product copy", self.chat.call_args.kwargs["reference_context"])
 
+    def test_project_brand_profile_is_persisted_and_added_to_generation_context(self):
+        response = self.client.patch(
+            f"/api/v1/publishing/projects/{self.project.id}",
+            headers=self.headers(),
+            json={
+                "brand_profile": {
+                    "tone": "Measured and specific",
+                    "audience": "Operations leaders",
+                    "value_proposition": "Reduce repetitive campaign work",
+                    "visual_style": "Use navy and restrained diagrams",
+                    "prohibited_terms": ["guaranteed"],
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        profile = response.json()["data"]["brand_profile"]
+        self.assertEqual(profile["tone"], "Measured and specific")
+        context = self.context([])
+        self.assertIn("Project brand guidelines", context)
+        self.assertIn("Operations leaders", context)
+        self.assertIn('"guaranteed"', context)
+
     def test_multimodal_disabled_keeps_images_metadata_only(self):
         with patch.object(
             material_references,
@@ -152,6 +178,173 @@ class ContentMaterialReferenceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertNotIn("image_inputs", self.chat.call_args.kwargs)
         self.assertIn("content_inspected", self.chat.call_args.kwargs["reference_context"])
+
+    def test_audio_transcript_cache_avoids_reprocessing_video(self):
+        material = project_materials.get_project_material(
+            self.owner["id"], self.project.id, self.video["id"],
+        )
+        cached = json.dumps({
+            "material_id": material.id,
+            "status": "completed",
+            "text": "Cached speech",
+            "segments": [],
+        })
+        with (
+            patch.object(
+                material_references,
+                "get_cached_material_transcript",
+                return_value=cached,
+            ),
+            patch.object(material_references, "materialize_media") as materialize,
+        ):
+            result = material_references._transcribe_video_audio(
+                material,
+                self.owner["id"],
+            )
+        self.assertEqual(result, cached)
+        materialize.assert_not_called()
+
+    def test_audio_context_is_bounded_to_authorized_video_references(self):
+        transcript = json.dumps({
+            "material_id": self.video["id"],
+            "status": "completed",
+            "text": "Spoken launch message",
+            "segments": [{"start": 0.0, "end": 1.2, "text": "Spoken launch message"}],
+        })
+        with (
+            patch.object(material_references, "CONTENT_STUDIO_TRANSCRIPTION_ENABLED", True),
+            patch.object(
+                material_references,
+                "_transcribe_video_audio",
+                return_value=transcript,
+            ) as transcribe,
+        ):
+            context = material_references.build_material_audio_context(
+                [self.image["id"], self.video["id"]],
+                self.project.id,
+                self.owner["id"],
+            )
+        self.assertIn("untrusted source data", context)
+        self.assertIn("Spoken launch message", context)
+        transcribe.assert_called_once()
+
+    def test_audio_transcription_extracts_timestamped_segments_and_caches_them(self):
+        material = project_materials.get_project_material(
+            self.owner["id"], self.project.id, self.video["id"],
+        )
+        transcription = MagicMock()
+        transcription.audio.transcriptions.create.return_value = SimpleNamespace(
+            text="Opening hook",
+            segments=[{"start": 0.0, "end": 1.5, "text": "Opening hook"}],
+        )
+        provider = MagicMock()
+        provider.client.return_value = transcription
+
+        def run(command, **_kwargs):
+            if "-select_streams" in command:
+                return SimpleNamespace(stdout="0\n")
+            with open(command[-1], "wb") as handle:
+                handle.write(b"audio")
+            return SimpleNamespace(stdout="")
+
+        with (
+            patch.object(material_references, "CONTENT_STUDIO_TRANSCRIPTION_MODEL", "speech-model"),
+            patch.object(
+                material_references,
+                "get_cached_material_transcript",
+                return_value="",
+            ),
+            patch.object(
+                material_references,
+                "materialize_media",
+                return_value=(os.path.join(self.media_root, self.video["object_key"]), False),
+            ),
+            patch.object(material_references.shutil, "which", return_value="/usr/bin/tool"),
+            patch.object(material_references.subprocess, "run", side_effect=run),
+            patch.object(material_references, "get_ai_provider", return_value=provider),
+            patch.object(material_references, "save_material_transcript") as save,
+        ):
+            payload = material_references._transcribe_video_audio(
+                material,
+                self.owner["id"],
+            )
+        parsed = json.loads(payload)
+        self.assertEqual(parsed["text"], "Opening hook")
+        self.assertEqual(parsed["segments"][0]["end"], 1.5)
+        self.assertEqual(
+            transcription.audio.transcriptions.create.call_args.kwargs["model"],
+            "speech-model",
+        )
+        self.assertEqual(save.call_args.args[-1], payload)
+
+    def test_quality_check_uses_project_brand_profile_and_returns_report(self):
+        publishing_storage.update_project(
+            self.owner["id"],
+            self.project.id,
+            brand_profile=BrandProfile(
+                tone="Measured",
+                prohibited_terms=["guaranteed"],
+            ),
+        )
+        card = ContentCard(
+            id="copy",
+            card_type="copy",
+            title="Copy",
+            preview="Preview",
+            content="Body",
+            tips=[],
+        )
+        storage.update_session(self.creation.id, cards=[card], status="completed")
+        report = QualityReport(
+            ready=False,
+            summary="Remove the prohibited term.",
+            issues=[QualityIssue(
+                category="brand",
+                severity="blocking",
+                card_id="copy",
+                evidence="Configured prohibited term: guaranteed",
+                suggestion="Remove it.",
+            )],
+            checked_at="2026-10-07T00:00:00+00:00",
+        )
+        with patch.object(api, "evaluate_content_quality", return_value=report) as evaluate:
+            response = self.client.post(
+                self.path + "/quality-check",
+                headers=self.headers(),
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json()["data"]["ready"])
+        self.assertEqual(
+            evaluate.call_args.args[1]["prohibited_terms"],
+            ["guaranteed"],
+        )
+
+    def test_prohibited_term_blocks_work_generation_without_ai_call(self):
+        publishing_storage.update_project(
+            self.owner["id"],
+            self.project.id,
+            brand_profile=BrandProfile(prohibited_terms=["guaranteed"]),
+        )
+        storage.update_session(
+            self.creation.id,
+            cards=[ContentCard(
+                id="copy",
+                card_type="copy",
+                title="Copy",
+                preview="Preview",
+                content="Guaranteed results",
+                tips=[],
+            )],
+            status="completed",
+        )
+        with patch.object(api, "generate_document") as generate:
+            response = self.client.post(
+                self.path + "/generate_document",
+                headers=self.headers(),
+            )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn("prohibited term", response.json()["detail"])
+        generate.assert_not_called()
 
     def test_multimodal_enabled_sends_images_and_video_keyframes(self):
         frames = [

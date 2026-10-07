@@ -1,5 +1,5 @@
 import { apiError } from "@/i18n/errors";
-import type { SessionListResponse, SessionDetailResponse, ChatResponse, GenerateResponse, VersionListResponse, VersionRestoreResponse, CreationPresenceResponse } from "@/types/content_generator";
+import type { SessionListResponse, SessionDetailResponse, ChatResponse, GenerateResponse, VersionListResponse, VersionRestoreResponse, CreationPresenceResponse, QualityReport } from "@/types/content_generator";
 import { API_BASE, auth_headers, response_error } from "@/services/api_core";
 
 // ── Content Generator API ──
@@ -139,6 +139,23 @@ export async function modify_card(
   if (!res.ok) {
     const err = await res.json();
     throw apiError(err.detail || "Modify card failed");
+  }
+
+  return res.json();
+}
+
+export async function check_content_quality(session_id: string): Promise<{
+  success: boolean;
+  message: string;
+  data: QualityReport;
+}> {
+  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/quality-check`, {
+    method: "POST",
+    headers: auth_headers(),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw apiError(err.detail || "Content quality check failed");
   }
   return res.json();
 }

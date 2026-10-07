@@ -12,7 +12,7 @@ from app.config import DB_PATH
 from app.database import connect_database
 from app.engines.content_generator.models import ContentCard
 from app.engines.content_generator.storage import get_session
-from app.engines.publishing.models import ContentProject
+from app.engines.publishing.models import BrandProfile, ContentProject
 from app.engines.publishing.project_memberships import (
     ProjectNotFound,
     attach_project_members,
@@ -264,8 +264,11 @@ def update_project(
     notes: str | None = None,
     avatar_color: str | None = None,
     avatar_icon: str | None = None,
+    brand_profile: BrandProfile | None = None,
 ) -> ContentProject:
-    if title is None and notes is None and avatar_color is None and avatar_icon is None:
+    if all(value is None for value in (
+        title, notes, avatar_color, avatar_icon, brand_profile,
+    )):
         raise ValueError("At least one project field is required")
     _schema_initializer()
     with closing(_connection_factory()) as conn, conn:
@@ -301,6 +304,9 @@ def update_project(
                 raise ValueError("Unsupported project avatar icon")
             updates.append("avatar_icon = ?")
             values.append(normalized_icon)
+        if brand_profile is not None:
+            updates.append("brand_profile = ?")
+            values.append(_json(brand_profile.model_dump()))
         updates.append("updated_at = ?")
         values.append(_clock())
         values.append(project_id)
@@ -400,5 +406,6 @@ def _row_to_project(row: sqlite3.Row) -> ContentProject:
         role=row["role"] if "role" in row.keys() else "owner",
         avatar_color=row["avatar_color"] or "#bfdbfe",
         avatar_icon=row["avatar_icon"] or "💡",
+        brand_profile=BrandProfile(**_load_json(row["brand_profile"], {})),
         created_at=row["created_at"], updated_at=row["updated_at"],
     )

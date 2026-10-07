@@ -28,6 +28,21 @@ class ContentCard(BaseModel):
     tips: list[str] = []
 
 
+class QualityIssue(BaseModel):
+    category: Literal["brand", "platform", "repetition", "factuality", "compliance"]
+    severity: Literal["warning", "blocking"]
+    card_id: str = ""
+    evidence: str = Field(min_length=1, max_length=500)
+    suggestion: str = Field(min_length=1, max_length=1000)
+
+
+class QualityReport(BaseModel):
+    ready: bool
+    summary: str = Field(min_length=1, max_length=1000)
+    issues: list[QualityIssue] = Field(default_factory=list, max_length=50)
+    checked_at: str
+
+
 class CreationActivity(BaseModel):
     id: str
     activity_type: Literal["cards_generated", "card_modified", "work_generation_started"]

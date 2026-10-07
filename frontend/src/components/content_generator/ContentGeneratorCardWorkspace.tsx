@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useI18n } from "@/contexts/i18n_context";
 import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS } from "@/i18n/interaction_copy";
 import { GuardedButton } from "@/components/redesign/GuardedControls";
-import type { ContentCard, SessionRecord } from "@/types/content_generator";
+import type { ContentCard, QualityReport, SessionRecord } from "@/types/content_generator";
 
 type ContentGeneratorCardWorkspaceProps = {
   session: SessionRecord | null;
@@ -12,10 +12,13 @@ type ContentGeneratorCardWorkspaceProps = {
   disabled: boolean;
   blockedReason: string;
   generating_document: boolean;
+  checking_quality: boolean;
+  quality_report: QualityReport | null;
   active_card_index: number;
   flipped_ids: Set<string>;
   on_active_card_change: (index: number) => void;
   on_generate_document: () => void;
+  on_quality_check: () => void;
   render_card: (card: ContentCard, is_active: boolean, flipped: boolean) => ReactNode;
   render_detail: (card: ContentCard) => ReactNode;
 };
@@ -26,10 +29,13 @@ export default function ContentGeneratorCardWorkspace({
   disabled,
   blockedReason,
   generating_document,
+  checking_quality,
+  quality_report,
   active_card_index,
   flipped_ids,
   on_active_card_change,
   on_generate_document,
+  on_quality_check,
   render_card,
   render_detail,
 }: ContentGeneratorCardWorkspaceProps) {
@@ -54,9 +60,23 @@ export default function ContentGeneratorCardWorkspace({
           </div>
           <div className="flex items-center gap-2">
             <GuardedButton
+              onClick={on_quality_check}
+              disabled={disabled || checking_quality}
+              blockedReason={checking_quality ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : blockedReason}
+              className="amp-button amp-button-secondary shrink-0"
+            >
+              {checking_quality
+                ? t("检查中", "Checking")
+                : t("质量检查", "Quality check")}
+            </GuardedButton>
+            <GuardedButton
               onClick={on_generate_document}
-              disabled={disabled || generating_document}
-              blockedReason={generating_document ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : blockedReason}
+              disabled={disabled || generating_document || quality_report?.ready === false}
+              blockedReason={generating_document
+                ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.")
+                : quality_report?.ready === false
+                  ? t("请先处理质量检查中的阻止项。", "Resolve blocking quality findings first.")
+                  : blockedReason}
               className="amp-button amp-button-primary shrink-0"
             >
               {generating_document
@@ -65,6 +85,44 @@ export default function ContentGeneratorCardWorkspace({
             </GuardedButton>
           </div>
         </div>
+
+        {quality_report && (
+          <section
+            className={`amp-content-quality ${quality_report.ready ? "amp-content-quality-ready" : "amp-content-quality-blocking"}`}
+            aria-live="polite"
+          >
+            <div className="amp-content-quality-summary">
+              <strong>
+                {quality_report.ready
+                  ? t("可继续交付", "Ready to continue")
+                  : t("需要先处理", "Action required")}
+              </strong>
+              <span>{quality_report.summary}</span>
+              <small>
+                {t("{count} 个检查项", "{count} findings", {
+                  count: quality_report.issues.length.toLocaleString(locale),
+                })}
+              </small>
+            </div>
+            {quality_report.issues.length > 0 && (
+              <ul>
+                {quality_report.issues.map((issue, index) => (
+                  <li key={`${issue.category}-${issue.card_id}-${index}`}>
+                    <span data-severity={issue.severity}>
+                      {issue.severity === "blocking"
+                        ? t("阻止发布", "Blocking")
+                        : t("需注意", "Review")}
+                    </span>
+                    <div>
+                      <strong>{issue.evidence}</strong>
+                      <p>{issue.suggestion}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
         <div className="relative w-full max-w-3xl h-[28rem] flex items-center justify-center overflow-visible">
           <button

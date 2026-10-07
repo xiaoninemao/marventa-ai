@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
@@ -10,15 +9,17 @@ import { localizeErrorMessage } from "@/i18n/errors";
 import type { Locale, Translate } from "@/i18n/locale";
 import {
   fetch_content_projects,
+  fetch_publication_plans,
   fetch_sessions,
 } from "@/services/api_client";
-import type { ContentProject } from "@/types/publishing";
+import type { ContentProject, PublicationPlan } from "@/types/publishing";
 import InlineIcon, { type InlineIconName } from "@/components/redesign/InlineIcon";
 import RedesignBadge from "@/components/redesign/RedesignBadge";
 import RedesignCard from "@/components/redesign/RedesignCard";
 import RedesignIconBox from "@/components/redesign/RedesignIconBox";
 import { ENGLISH_ACTIONS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import RedesignMetricCard from "@/components/redesign/RedesignMetricCard";
+import DashboardPublishingCalendar from "@/components/dashboard/DashboardPublishingCalendar";
 
 const metricCards = [
   { key: "activeProjects", label: "进行中的项目", labelEn: "Active projects", icon: "folder" as InlineIconName, path: "/projects" },
@@ -78,7 +79,8 @@ const quickActions = [
   { label: "案例库", labelEn: "Case Library", path: "/case_library", icon: "case" as InlineIconName },
   { label: "作品集", labelEn: "Portfolio", path: "/portfolio", icon: "briefcase" as InlineIconName },
   { label: "发布管理", labelEn: "Publishing", path: "/publishing", icon: "send" as InlineIconName },
-  { label: "设置", labelEn: "Settings", path: "/settings", icon: "settings" as InlineIconName },
+  { label: "账号内容", labelEn: "Account Content", path: "/account_content", icon: "content" as InlineIconName },
+  { label: "线索追踪", labelEn: "Lead Tracking", path: "/lead_tracking", icon: "target" as InlineIconName },
 ];
 
 export default function ModuleListing() {
@@ -88,12 +90,14 @@ export default function ModuleListing() {
   const displayName = user?.nickname || user?.username || t("用户", "User");
   const [dashboardMetrics, setDashboardMetrics] = useState(zeroDashboardMetrics);
   const [recentProjectData, setRecentProjects] = useState<ContentProject[]>([]);
+  const [publicationPlans, setPublicationPlans] = useState<PublicationPlan[]>([]);
   const recentProjects = recentProjectData.map((project) => toRecentProject(project, locale, t));
 
   useEffect(() => {
     if (!user) {
       setDashboardMetrics(zeroDashboardMetrics);
       setRecentProjects([]);
+      setPublicationPlans([]);
       return;
     }
 
@@ -101,12 +105,13 @@ export default function ModuleListing() {
 
     async function loadDashboardMetrics() {
       try {
-        const [sessionsRes, projectsRes] = await Promise.all([
+        const [sessionsRes, projectsRes, publicationsRes] = await Promise.all([
           fetch_sessions(),
           fetch_content_projects(),
+          fetch_publication_plans(),
         ]);
 
-        if (!sessionsRes.success || !projectsRes.success) {
+        if (!sessionsRes.success || !projectsRes.success || !publicationsRes.success) {
           throw new Error(t("工作台数据加载失败", "Could not load dashboard data"));
         }
         const sessions = sessionsRes.data;
@@ -120,6 +125,7 @@ export default function ModuleListing() {
             generatedContent: String(generatedContent),
           });
           setRecentProjects(projects.slice(0, 5));
+          setPublicationPlans(publicationsRes.data || []);
         }
       } catch (error) {
         if (!cancelled) {
@@ -183,32 +189,36 @@ export default function ModuleListing() {
                   <h2>{t("用 AI 激发营销创意，加速品牌增长", "Turn ideas into content. Build your brand with AI.")}</h2>
                   <p>{t("智能洞察 · 案例参考 · 内容生成 · 作品与发布管理", "Market insight · Case studies · Content creation · Portfolio and publishing management")}</p>
                 </div>
-                <div className="amp-dashboard-intro-art">
-                  <Image src="/assets/illustrations/dashboard-intro-art.webp" alt="" fill unoptimized loading="eager"
-                    sizes="(max-width: 768px) 100vw, 50vw" />
-                </div>
+                <DashboardPublishingCalendar plans={publicationPlans} />
               </RedesignCard>
-              <RedesignCard className="amp-dashboard-panel flex min-h-[356px] flex-col">
+              <RedesignCard className="amp-dashboard-panel amp-dashboard-recent flex flex-col">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-base font-semibold text-slate-950">{t("最近项目", "Recent projects")}</h2>
                   <Link href="/projects" className="text-sm font-bold text-blue-600">
                     {t(CHINESE_ACTIONS.viewAll, ENGLISH_ACTIONS.viewAll)}
                   </Link>
                 </div>
-                <div className={`grid flex-1 gap-2 ${recentProjects.length > 0 ? "content-start" : ""}`}>
+                <div
+                  className={`grid flex-1 gap-2 ${recentProjects.length > 0 ? "content-start" : ""}`}
+                  style={recentProjects.length > 0 ? {
+                    gridTemplateRows: `repeat(${recentProjects.length}, minmax(0, 1fr))`,
+                  } : undefined}
+                >
                   {recentProjects.length > 0 ? (
                     recentProjects.map((project) => (
-                      <Link href={`/projects/${encodeURIComponent(project.id)}`} key={project.id} className="flex items-center gap-4 border-b border-slate-100 py-3 last:border-b-0">
-                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[10px] text-xl"
+                      <Link href={`/projects/${encodeURIComponent(project.id)}`} key={project.id} className="amp-dashboard-recent-row">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] text-lg"
                           style={{ backgroundColor: project.avatarColor }} aria-hidden="true">
                           {project.avatarEmoji}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-900">{project.title}</p>
-                          <RedesignBadge tone="cyan" className="mt-1">
-                            {project.tag}
-                          </RedesignBadge>
-                          <span className="mt-1 block text-xs font-semibold text-slate-400">{project.time}</span>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <p className="min-w-0 truncate text-sm font-semibold text-slate-900">{project.title}</p>
+                            <RedesignBadge tone="cyan" className="shrink-0">
+                              {project.tag}
+                            </RedesignBadge>
+                          </div>
+                          <span className="mt-0.5 block text-xs font-semibold text-slate-400">{project.time}</span>
                         </div>
                         <InlineIcon name="chevronRight" className="h-5 w-5 shrink-0 text-slate-300" />
                       </Link>

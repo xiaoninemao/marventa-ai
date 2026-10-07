@@ -20,6 +20,21 @@ export interface ContentCard {
   tips: string[];
 }
 
+export interface QualityIssue {
+  category: "brand" | "platform" | "repetition" | "factuality" | "compliance";
+  severity: "warning" | "blocking";
+  card_id: string;
+  evidence: string;
+  suggestion: string;
+}
+
+export interface QualityReport {
+  ready: boolean;
+  summary: string;
+  issues: QualityIssue[];
+  checked_at: string;
+}
+
 export interface CreationActivity {
   id: string;
   activity_type: "cards_generated" | "card_modified" | "work_generation_started";

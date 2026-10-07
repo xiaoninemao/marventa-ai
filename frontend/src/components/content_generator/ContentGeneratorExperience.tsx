@@ -2,12 +2,13 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ChatMessage, ContentCard, ContentVersion, CreationActivity, SessionRecord } from "@/types/content_generator";
+import type { ChatMessage, ContentCard, ContentVersion, CreationActivity, QualityReport, SessionRecord } from "@/types/content_generator";
 import {
   create_session, fetch_sessions, fetch_session,
   send_chat_message, regenerate_latest_reply, rewrite_latest_reply,
   generate_cards, delete_session, rename_session,
   modify_card, generate_document,
+  check_content_quality,
   fetch_content_projects, fetch_versions, restore_version,
 } from "@/services/api_client";
 import type { ContentProject } from "@/types/publishing";
@@ -471,6 +472,8 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   const [show_modify_modal, set_show_modify_modal] = useState(false);
   const [modify_target_index, set_modify_target_index] = useState(0);
   const [generating_doc, set_generating_doc] = useState(false);
+  const [checking_quality, set_checking_quality] = useState(false);
+  const [quality_report, set_quality_report] = useState<QualityReport | null>(null);
   const [selected_chips, set_selected_chips] = useState<string[]>([]);
   const [show_chip_popover, set_show_chip_popover] = useState(false);
   const [version_refresh_key, set_version_refresh_key] = useState(0);
@@ -593,6 +596,10 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
     set_modifying(false);
     set_modify_input("");
   }, [active_card_index]);
+
+  useEffect(() => {
+    set_quality_report(null);
+  }, [session?.id, session?.cards]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -717,6 +724,27 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
       set_generating_doc(false);
     }
   }, [can_manage_session, session, generating_doc, sending, operationReason, showWarning, t, show_failure, show_success, show_warning]);
+
+  const handle_quality_check = useCallback(async () => {
+    if (!session || checking_quality || sending || session.status === "generating" || !session.cards.length) {
+      showWarning(t("请先生成内容卡片并等待当前操作完成。", "Generate content cards and wait for the current operation to finish."));
+      return;
+    }
+    set_checking_quality(true);
+    try {
+      const response = await check_content_quality(session.id);
+      set_quality_report(response.data);
+      if (response.data.ready && response.data.issues.length === 0) {
+        show_success({ zh: "质量检查通过", en: "Quality check passed" });
+      } else if (!response.data.ready) {
+        show_warning({ zh: "发现发布前必须处理的问题", en: "Blocking issues must be resolved before publishing" });
+      }
+    } catch {
+      show_failure({ zh: "质量检查失败，请重试", en: "Quality check failed. Please try again." });
+    } finally {
+      set_checking_quality(false);
+    }
+  }, [checking_quality, sending, session, showWarning, show_failure, show_success, show_warning, t]);
 
   // ── Reset: clear everything ──
 
@@ -1920,10 +1948,13 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
           disabled={sending || is_generating || !can_manage_session}
           blockedReason={operationReason}
           generating_document={generating_doc}
+          checking_quality={checking_quality}
+          quality_report={quality_report}
           active_card_index={active_card_index}
           flipped_ids={flipped_ids}
           on_active_card_change={set_active_card_index}
           on_generate_document={handle_generate_document}
+          on_quality_check={handle_quality_check}
           render_card={(card, card_is_active, flipped) => (
             <FlipCard3D
               card={card}

@@ -14,9 +14,18 @@ from app.engines.content_generator.storage import (
     append_activity, create_activity, replace_latest_user_exchange,
     save_next_version, get_versions, get_version,
 )
-from app.engines.content_generator.ai_analyzer import chat, generate_async, build_reference_context, modify_card, generate_document
+from app.engines.content_generator.ai_analyzer import (
+    build_reference_context,
+    chat,
+    evaluate_content_quality,
+    find_prohibited_term_issues,
+    generate_async,
+    generate_document,
+    modify_card,
+)
 from app.engines.content_generator.presence import get_presence, release_presence
 from app.engines.content_generator.material_references import (
+    build_material_audio_context,
     build_material_visual_inputs,
     latest_material_reference_ids,
 )
@@ -113,6 +122,23 @@ def _preference_prefix(keys: list[str]) -> str:
     return f"Selected preferences: {', '.join(labels)}\n\n" if labels else ""
 
 
+def _project_has_brand_guidelines(project_id: str, user_id: str) -> bool:
+    if not project_id:
+        return False
+    from app.engines.publishing.projects import get_project
+    project = get_project(project_id, user_id)
+    if not project:
+        return False
+    profile = project.brand_profile
+    return any((
+        profile.tone,
+        profile.audience,
+        profile.value_proposition,
+        profile.visual_style,
+        profile.prohibited_terms,
+    ))
+
+
 def _generate_document_job(session_id: str, user_id: str, work_id: str) -> None:
     job_key = (user_id, session_id)
     try:
@@ -123,7 +149,12 @@ def _generate_document_job(session_id: str, user_id: str, work_id: str) -> None:
             session.insight_ids, session.case_ids, user_id,
             material_ids=session.material_ids, project_id=session.project_id,
             material_priority_ids=latest_material_reference_ids(session.messages),
-        ) if session.insight_ids or session.case_ids or session.material_ids else ""
+        ) if (
+            session.insight_ids
+            or session.case_ids
+            or session.material_ids
+            or _project_has_brand_guidelines(session.project_id, user_id)
+        ) else ""
         content = generate_document(session.cards, reference_context=ref_ctx)
         update_script(work_id, content=content, status="completed")
     except Exception:
@@ -280,6 +311,17 @@ async def send_chat_message(
         )
     except (LookupError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        audio_context = await asyncio.to_thread(
+            build_material_audio_context,
+            req.material_ids,
+            session.project_id,
+            current_user["id"],
+        )
+    except (LookupError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _ai_http_exception(exc) from exc
     sent_message = ChatMessage(
         role="user",
         content=_preference_prefix(req.preference_keys) + message_text,
@@ -316,6 +358,8 @@ async def send_chat_message(
         material_ids=accepted.material_ids, project_id=accepted.project_id,
         material_priority_ids=req.material_ids,
     )
+    if audio_context:
+        ref_ctx = f"{ref_ctx}\n\n{audio_context}" if ref_ctx else audio_context
     msg_dicts = [
         {"role": message.role, "content": message.content}
         for message in accepted.messages
@@ -372,13 +416,27 @@ async def _replace_latest_reply(
             reference.id for reference in latest_user.references if reference.kind == "material"
         ],
     )
+    material_reference_ids = [
+        reference.id
+        for reference in latest_user.references
+        if reference.kind == "material"
+    ]
+    try:
+        audio_context = await asyncio.to_thread(
+            build_material_audio_context,
+            material_reference_ids,
+            session.project_id,
+            user_id,
+        )
+    except (LookupError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _ai_http_exception(exc) from exc
+    if audio_context:
+        ref_ctx = f"{ref_ctx}\n\n{audio_context}" if ref_ctx else audio_context
     try:
         image_inputs = build_material_visual_inputs(
-            [
-                reference.id
-                for reference in latest_user.references
-                if reference.kind == "material"
-            ],
+            material_reference_ids,
             session.project_id,
             user_id,
         )
@@ -457,7 +515,12 @@ async def modify_session_card(
         session.insight_ids, session.case_ids, current_user["id"],
         material_ids=session.material_ids, project_id=session.project_id,
         material_priority_ids=latest_material_reference_ids(session.messages),
-    ) if session.insight_ids or session.case_ids or session.material_ids else ""
+    ) if (
+        session.insight_ids
+        or session.case_ids
+        or session.material_ids
+        or _project_has_brand_guidelines(session.project_id, current_user["id"])
+    ) else ""
     try:
         modified = await asyncio.to_thread(
             modify_card, card, req.instruction, msg_dicts, reference_context=ref_ctx,
@@ -491,6 +554,39 @@ async def modify_session_card(
         "version": saved_version.model_dump(),
         "session": refreshed.model_dump(),
     })
+
+
+@router.post("/sessions/{session_id}/quality-check")
+async def check_session_quality(
+    session_id: str,
+    current_user=Depends(get_current_user),
+):
+    session = _get_manageable_session(session_id, current_user)
+    if not session.cards:
+        raise HTTPException(status_code=400, detail="Creation session has no cards")
+    from app.engines.publishing.projects import get_project
+    project = get_project(session.project_id, current_user["id"])
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    reference_context = build_reference_context(
+        session.insight_ids,
+        session.case_ids,
+        current_user["id"],
+        material_ids=session.material_ids,
+        project_id=session.project_id,
+        material_priority_ids=latest_material_reference_ids(session.messages),
+    )
+    try:
+        report = await asyncio.to_thread(
+            evaluate_content_quality,
+            session.cards,
+            project.brand_profile.model_dump(),
+            reference_context,
+            session.preference_keys,
+        )
+    except Exception as exc:
+        raise _ai_http_exception(exc) from exc
+    return success_response("Content quality checked", report.model_dump())
 
 
 @router.get("/sessions/{session_id}/versions")
@@ -533,6 +629,16 @@ async def generate_session_document(
     session = _get_manageable_session(session_id, current_user)
     if not session.cards:
         raise HTTPException(status_code=400, detail="No cards to generate document from")
+    from app.engines.publishing.projects import get_project
+    project = get_project(session.project_id, current_user["id"])
+    if project and find_prohibited_term_issues(
+        session.cards,
+        project.brand_profile.model_dump(),
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Content contains a configured prohibited term. Run quality check and revise it before generating the work.",
+        )
 
     job_key = (current_user["id"], session_id)
     work_id = _document_jobs.get(job_key)

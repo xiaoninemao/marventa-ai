@@ -20,6 +20,24 @@ class ProjectMember(BaseModel):
     joined_at: str
 
 
+class BrandProfile(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    tone: str = Field(default="", max_length=1000)
+    audience: str = Field(default="", max_length=2000)
+    value_proposition: str = Field(default="", max_length=2000)
+    visual_style: str = Field(default="", max_length=2000)
+    prohibited_terms: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("prohibited_terms")
+    @classmethod
+    def normalize_prohibited_terms(cls, value: list[str]) -> list[str]:
+        normalized = [term.strip() for term in value if term.strip()]
+        if any(len(term) > 100 for term in normalized):
+            raise ValueError("Each prohibited term must be at most 100 characters")
+        return list(dict.fromkeys(normalized))
+
+
 class ContentProject(BaseModel):
     id: str
     user_id: str
@@ -36,6 +54,7 @@ class ContentProject(BaseModel):
     role: str = "owner"
     avatar_color: str = "#bfdbfe"
     avatar_icon: str = "💡"
+    brand_profile: BrandProfile = Field(default_factory=BrandProfile)
     members: list[ProjectMember] = []
     member_count: int = 0
     created_at: str
@@ -405,7 +424,10 @@ class ManualProjectRequest(BaseModel):
 
 
 class UpdateProjectRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
     title: str | None = None
     notes: str | None = None
     avatar_color: str | None = None
     avatar_icon: str | None = None
+    brand_profile: BrandProfile | None = None

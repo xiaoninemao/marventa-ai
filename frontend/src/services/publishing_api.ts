@@ -1,5 +1,5 @@
 import { apiError } from "@/i18n/errors";
-import type { ContentProject, ItemResponse, ListResponse, ProjectChannelAccount, ProjectMaterial, ProjectMember, PublicationPlan, PublicationContent } from "@/types/publishing";
+import type { BrandProfile, ContentProject, ItemResponse, ListResponse, ProjectChannelAccount, ProjectMaterial, ProjectMember, PublicationPlan, PublicationContent } from "@/types/publishing";
 import { API_BASE, auth_headers, response_error } from "@/services/api_core";
 
 // Project APIs retain their existing URL namespace.
@@ -52,6 +52,7 @@ export async function update_content_project(
     notes?: string;
     avatar_color?: string;
     avatar_icon?: string;
+    brand_profile?: BrandProfile;
   },
 ): Promise<ItemResponse<ContentProject>> {
   const res = await fetch(`${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(project_id)}`, {

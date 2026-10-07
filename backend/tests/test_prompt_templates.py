@@ -243,6 +243,40 @@ class EnglishMasterPromptTests(unittest.TestCase):
             "image_text", "xiaohongshu", "kuaishou", "weibo", "bilibili", "wechat_mp", "shipinhao",
         ]).isascii())
 
+    def test_quality_review_enforces_configured_prohibited_terms(self):
+        client = MagicMock()
+        client.chat.completions.create.return_value = completion(json.dumps({
+            "summary": "Review completed.",
+            "issues": [],
+        }))
+        cards = [
+            ContentCard(
+                id="copy",
+                card_type="copy",
+                title="Post copy",
+                preview="A concise preview",
+                content="This campaign offers guaranteed results.",
+                tips=[],
+            ),
+        ]
+        provider = SimpleNamespace(model="quality-model")
+        with (
+            patch.object(content_ai, "_get_client", return_value=client),
+            patch.object(content_ai, "get_ai_provider", return_value=provider),
+        ):
+            report = content_ai.evaluate_content_quality(
+                cards,
+                {"prohibited_terms": ["guaranteed"]},
+                preference_keys=["image_text"],
+            )
+        self.assertFalse(report.ready)
+        self.assertEqual(report.issues[0].severity, "blocking")
+        self.assertEqual(report.issues[0].card_id, "copy")
+        self.assertIn("guaranteed", report.issues[0].evidence)
+        sent = client.chat.completions.create.call_args.kwargs["messages"]
+        self.assertTrue(sent[0]["content"].startswith(MASTER_SYSTEM_PROMPT))
+        self.assertIn('"image_text"', sent[1]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

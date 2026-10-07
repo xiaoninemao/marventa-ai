@@ -283,6 +283,47 @@ def get_project_material(user_id: str, project_id: str, material_id: str) -> Pro
         return _row_to_material(row)
 
 
+def get_cached_material_transcript(
+    user_id: str,
+    project_id: str,
+    material_id: str,
+    model: str,
+) -> str:
+    _schema_initializer()
+    with closing(_connection_factory()) as conn:
+        project_material_access(conn, user_id, project_id)
+        row = conn.execute(
+            "SELECT ai_transcript, ai_transcript_model FROM project_materials "
+            "WHERE id = ? AND project_id = ? AND node_type = 'file'",
+            (material_id, project_id),
+        ).fetchone()
+        if row is None:
+            raise LookupError("Project material not found")
+        if row["ai_transcript_model"] != model:
+            return ""
+        return row["ai_transcript"] or ""
+
+
+def save_material_transcript(
+    user_id: str,
+    project_id: str,
+    material_id: str,
+    model: str,
+    transcript: str,
+) -> None:
+    _schema_initializer()
+    with closing(_connection_factory()) as conn, conn:
+        project_material_access(conn, user_id, project_id)
+        cursor = conn.execute(
+            "UPDATE project_materials SET ai_transcript = ?, "
+            "ai_transcript_model = ? "
+            "WHERE id = ? AND project_id = ? AND node_type = 'file'",
+            (transcript, model, material_id, project_id),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError("Project material not found")
+
+
 def update_project_material_set(
     user_id: str,
     project_id: str,

@@ -1657,12 +1657,13 @@
 }
 
 .amp-redesign .amp-app-content-home {
-  padding: 0 28px 32px;
+  padding: 0 clamp(20px, 2vw, 32px) 32px;
 }
 
 .amp-redesign .amp-app-content-home > .amp-redesign {
   margin-inline: auto;
-  max-width: 1440px;
+  max-width: 1680px;
+  width: 100%;
 }
 
 .amp-redesign .amp-dashboard-content {
@@ -1737,7 +1738,7 @@
 .amp-redesign .amp-dashboard-quick-links {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(5, minmax(min-content, 1fr));
+  grid-template-columns: repeat(6, minmax(min-content, 1fr));
 }
 
 .amp-redesign .amp-dashboard-metric-link {
@@ -1774,7 +1775,7 @@
 }
 
 .amp-redesign .amp-card.amp-dashboard-intro {
-  background: linear-gradient(90deg, #3a41ea 0%, #4640e8 25%, #5043e8 50%, #5e45e7 75%, #684ae7 100%);
+  background: #4f46e5;
   color: #ffffff;
   display: flex;
   flex-direction: column;
@@ -1782,23 +1783,11 @@
 }
 
 .amp-redesign .amp-dashboard-intro-copy {
-  padding: clamp(24px, 3vw, 40px);
-}
-
-.amp-redesign .amp-dashboard-intro-art {
-  aspect-ratio: 1064 / 724;
-  flex: none;
-  margin-top: auto;
-  position: relative;
-}
-
-.amp-redesign .amp-dashboard-intro-art > img {
-  object-fit: contain;
-  object-position: center;
+  padding: clamp(22px, 2.5vw, 32px) clamp(24px, 3vw, 40px) 14px;
 }
 
 .amp-redesign .amp-dashboard-intro h2 {
-  font-size: clamp(24px, 2.4vw, 32px);
+  font-size: clamp(22px, 2.2vw, 28px);
   font-weight: 600;
   line-height: 1.45;
   text-wrap: balance;
@@ -1808,7 +1797,166 @@
   color: rgb(255 255 255 / 85%);
   font-size: 14px;
   line-height: 1.9;
-  margin-top: 16px;
+  margin-top: 10px;
+}
+
+.amp-redesign .amp-dashboard-calendar {
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid rgb(255 255 255 / 42%);
+  border-radius: 14px;
+  box-shadow: 0 16px 36px rgb(24 22 92 / 24%);
+  color: #344054;
+  margin: auto clamp(18px, 2.5vw, 30px) clamp(16px, 2vw, 24px);
+  padding: 14px 16px 16px;
+}
+
+.amp-redesign .amp-dashboard-recent-row {
+  align-items: center;
+  border-bottom: 1px solid #f2f4f7;
+  display: flex;
+  gap: 12px;
+  padding-block: 8px;
+}
+
+.amp-redesign .amp-dashboard-recent {
+  width: 100%;
+}
+
+.amp-redesign .amp-dashboard-recent-row:last-child {
+  border-bottom: 0;
+}
+
+.amp-redesign .amp-dashboard-recent-row:hover {
+  transform: none;
+}
+
+.amp-redesign .amp-dashboard-recent-row .amp-badge {
+  font-size: 11px;
+  min-height: 20px;
+  padding-inline: 8px;
+}
+
+.amp-redesign .amp-dashboard-calendar-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.amp-redesign .amp-dashboard-calendar-header > div {
+  display: grid;
+  gap: 1px;
+}
+
+.amp-redesign .amp-dashboard-calendar-header span {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.amp-redesign .amp-dashboard-calendar-header strong {
+  color: #1d2939;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.amp-redesign .amp-dashboard-calendar-header nav {
+  display: flex;
+  gap: 4px;
+}
+
+.amp-redesign .amp-dashboard-calendar-header button {
+  align-items: center;
+  border-radius: 7px;
+  color: #667085;
+  display: flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.amp-redesign .amp-dashboard-calendar-header button:first-child svg {
+  transform: rotate(180deg);
+}
+
+.amp-redesign .amp-dashboard-calendar-header button:hover {
+  background: #f2f4f7;
+  color: #344054;
+  transform: none;
+}
+
+.amp-redesign .amp-dashboard-calendar-header svg {
+  height: 15px;
+  width: 15px;
+}
+
+.amp-redesign .amp-dashboard-calendar-weekdays,
+.amp-redesign .amp-dashboard-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.amp-redesign .amp-dashboard-calendar-weekdays {
+  border-bottom: 1px solid #eaecf0;
+  color: #98a2b3;
+  font-size: 10px;
+  font-weight: 650;
+  margin-bottom: 5px;
+  padding-bottom: 7px;
+  text-align: center;
+}
+
+.amp-redesign .amp-dashboard-calendar-grid > span,
+.amp-redesign .amp-dashboard-calendar-grid > a {
+  align-items: center;
+  border-radius: 7px;
+  color: #475467;
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  height: 30px;
+  min-height: 30px;
+  justify-content: center;
+  margin: 1px;
+  position: relative;
+  text-decoration: none;
+}
+
+.amp-redesign .amp-dashboard-calendar-grid .is-outside {
+  color: #c5cad3;
+}
+
+.amp-redesign .amp-dashboard-calendar-grid .is-today {
+  box-shadow: 0 0 0 1px #6172f3 inset;
+  color: #3538cd;
+}
+
+.amp-redesign .amp-dashboard-calendar-grid .has-plans {
+  background: #eef4ff;
+  color: #3538cd;
+}
+
+.amp-redesign .amp-dashboard-calendar-grid a.has-plans:hover {
+  background: #dbe7ff;
+  transform: none;
+}
+
+.amp-redesign .amp-dashboard-calendar-grid small {
+  align-items: center;
+  background: #444ce7;
+  border: 1px solid #ffffff;
+  border-radius: 999px;
+  color: #ffffff;
+  display: flex;
+  font-size: 8px;
+  font-weight: 700;
+  height: 15px;
+  justify-content: center;
+  min-width: 15px;
+  padding-inline: 3px;
+  position: absolute;
+  right: -1px;
+  top: -2px;
 }
 
 @media (max-width: 1000px) {

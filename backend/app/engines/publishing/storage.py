@@ -124,6 +124,8 @@ def _create_project_materials_table(conn: sqlite3.Connection) -> None:
             mime_type TEXT NOT NULL,
             file_size INTEGER NOT NULL,
             object_key TEXT NOT NULL,
+            ai_transcript TEXT NOT NULL DEFAULT '',
+            ai_transcript_model TEXT NOT NULL DEFAULT '',
             created_by_user_id TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -745,6 +747,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             final_snapshot TEXT DEFAULT '{}',
             notes TEXT DEFAULT '',
             status TEXT DEFAULT 'active',
+            brand_profile TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -757,6 +760,10 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     if "avatar_icon" not in cols:
         conn.execute(
             "ALTER TABLE content_projects ADD COLUMN avatar_icon TEXT NOT NULL DEFAULT '💡'"
+        )
+    if "brand_profile" not in cols:
+        conn.execute(
+            "ALTER TABLE content_projects ADD COLUMN brand_profile TEXT NOT NULL DEFAULT '{}'"
         )
     allowed_avatar_icons = ",".join("?" for _ in PROJECT_AVATAR_ICONS)
     conn.execute(
@@ -988,6 +995,8 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
         "parent_id": "TEXT NOT NULL DEFAULT ''",
         "node_type": "TEXT NOT NULL DEFAULT 'file'",
         "content_html": "TEXT",
+        "ai_transcript": "TEXT NOT NULL DEFAULT ''",
+        "ai_transcript_model": "TEXT NOT NULL DEFAULT ''",
     }.items():
         if column not in material_cols:
             conn.execute(
