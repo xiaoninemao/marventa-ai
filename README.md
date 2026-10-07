@@ -6,7 +6,7 @@
 
 ### Turn marketing knowledge into work your team can build on.
 
-An open-source workspace for market understanding, creative production, publishing operations, and lead discovery.
+An open-source, all-in-one workspace for market understanding, creative production, publishing operations, and lead discovery.
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -32,6 +32,10 @@ Each project brings together the context needed to understand a market, study ex
 ```text
 Research → Understand → Create → Review → Publish → Learn
 ```
+
+This creates an end-to-end marketing workflow with a memory of its own. Research informs creation, brand guidance shapes review, publication records connect to channel results, and audience response becomes context for the next round of work.
+
+AI supports the parts that benefit from synthesis, comparison, drafting, and classification. People retain control over sources, creative judgment, approvals, channel authorization, and final delivery.
 
 Marventa is designed for teams that want:
 
