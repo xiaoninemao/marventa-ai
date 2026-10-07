@@ -97,7 +97,7 @@ Marventa AI 将这些上下文收拢到以项目为中心的工作区中。
 
 ### 智能创作
 
-- 基于项目洞察、案例和素材引用进行短视频或图文创作对话。
+- 基于项目洞察、案例、文案与可选图片上下文进行短视频或图文创作对话。
 - 生成五类结构化内容卡片，支持单卡修改、版本恢复和活动记录。
 - 生成中英双语长篇报告，并显示同一创作中的在线成员。
 
@@ -380,6 +380,21 @@ JWT_SECRET=replace-with-a-long-random-string
 | `LEAD_TRACKING_AI_*` | 可选的评论线索分析接口 |
 
 每组替代接口都有默认关闭的 `*_OVERRIDE_ENABLED` 开关。关闭时，即使填写了替代值也始终使用 `AI_*`；开启时必须完整填写该功能的 API Key、Base URL 和 Model，缺项会明确报错，不会静默回退。请填写 OpenAI 兼容 API 的基础地址，不要填写完整的 `/chat/completions` 路径。模型必须支持对应功能使用的参数和结构化 JSON 输出；图片分析还需要支持 `image_url` 输入。
+
+智能创作图片上下文默认关闭：
+
+```env
+CONTENT_STUDIO_MULTIMODAL_ENABLED=true
+CONTENT_STUDIO_MULTIMODAL_MAX_IMAGES=5
+CONTENT_STUDIO_MULTIMODAL_MAX_IMAGE_BYTES=5242880
+CONTENT_STUDIO_MULTIMODAL_MAX_TOTAL_BYTES=15728640
+CONTENT_STUDIO_MULTIMODAL_MAX_VIDEOS=1
+CONTENT_STUDIO_MULTIMODAL_MAX_VIDEO_BYTES=104857600
+CONTENT_STUDIO_MULTIMODAL_MAX_VIDEO_SECONDS=300
+CONTENT_STUDIO_MULTIMODAL_VIDEO_FRAMES=4
+```
+
+启用后，本轮引用的 JPEG、PNG、WebP 素材会按限制作为 `image_url` 内容发送给智能创作当前生效的模型。每轮还可选择一个不超过 100 MB、时长不超过 5 分钟的 MP4、MOV、WebM 或 M4V 视频；后端 FFmpeg 会临时抽取 4 张按时间排序的 JPEG 关键帧。原视频与音频不会发送给模型，也不执行音频转写。重新生成和内容卡生成会根据最近一条用户消息的授权素材引用重新构建视觉输入。数据库只保存文本与素材 ID，不保存 base64 图片或关键帧；后端主机需安装 FFmpeg 和 ffprobe。
 
 ### 可选的有界市场研究
 

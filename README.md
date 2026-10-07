@@ -97,7 +97,7 @@ Collect reusable images, videos, and copy into project material sets. Build publ
 
 ### Content Studio
 
-- Develop short-video or image-text concepts through guided conversations grounded in project insights, cases, and material references.
+- Develop short-video or image-text concepts through guided conversations grounded in project insights, cases, copy, and optional image context.
 - Generate five structured content cards, refine individual cards, restore earlier versions, and keep a visible activity history.
 - Produce bilingual long-form reports and collaborate with live viewer presence.
 
@@ -392,6 +392,21 @@ JWT_SECRET=replace-with-a-long-random-string
 | `LEAD_TRACKING_AI_*` | Optional provider for comment lead qualification |
 
 Each alternative has an `*_OVERRIDE_ENABLED` switch, which defaults to `false`. A disabled switch always uses `AI_*`, even when alternative values are present. An enabled switch requires its API key, base URL, and model; incomplete alternatives fail explicitly and never fall back silently. Use an OpenAI-compatible API base URL rather than the full `/chat/completions` path. Models must support the request parameters and structured JSON used by the selected feature. Image analysis additionally requires `image_url` input support.
+
+Content Studio image context is opt-in:
+
+```env
+CONTENT_STUDIO_MULTIMODAL_ENABLED=true
+CONTENT_STUDIO_MULTIMODAL_MAX_IMAGES=5
+CONTENT_STUDIO_MULTIMODAL_MAX_IMAGE_BYTES=5242880
+CONTENT_STUDIO_MULTIMODAL_MAX_TOTAL_BYTES=15728640
+CONTENT_STUDIO_MULTIMODAL_MAX_VIDEOS=1
+CONTENT_STUDIO_MULTIMODAL_MAX_VIDEO_BYTES=104857600
+CONTENT_STUDIO_MULTIMODAL_MAX_VIDEO_SECONDS=300
+CONTENT_STUDIO_MULTIMODAL_VIDEO_FRAMES=4
+```
+
+When enabled, current-turn JPEG, PNG, and WebP materials are sent as bounded `image_url` content. One MP4, MOV, WebM, or M4V material up to 100 MB and five minutes is converted by backend FFmpeg into four ordered JPEG keyframes; the original video and audio are not sent to the model, and audio is not transcribed. Regeneration and content-card generation rebuild the latest user turn's visual inputs from authorized material references. Stored messages retain text and reference IDs, not base64 images or extracted frames. FFmpeg and ffprobe are required on the backend host.
 
 ### Optional bounded market research
 

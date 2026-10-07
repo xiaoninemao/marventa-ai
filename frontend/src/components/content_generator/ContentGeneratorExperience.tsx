@@ -1857,17 +1857,15 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                 {(!versions_loading || generation_status_error) && (
                   <EmptyStateIcon name={generation_status_error ? "alert" : "history"} />
                 )}
-                <strong>
+                <p className="amp-content-version-empty-title">
                   {generation_status_error
                     ? t("无法加载版本记录", "Could not load version history")
                     : versions_loading
                       ? t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)
                       : t("暂无版本记录", "No version history yet")}
-                </strong>
-                {!versions_loading && (
-                  <p>{generation_status_error
-                    ? t("请稍后重试。", "Please try again later.")
-                    : t("生成内容卡片后，版本会自动记录在这里。", "Versions will appear here after content cards are generated.")}</p>
+                </p>
+                {!versions_loading && generation_status_error && (
+                  <small>{t("请稍后重试。", "Please try again later.")}</small>
                 )}
               </div>
             )}

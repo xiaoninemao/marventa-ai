@@ -2146,6 +2146,12 @@
   margin-right: auto;
 }
 
+.amp-redesign .amp-material-reference-limit {
+  flex: 1 1 180px;
+  line-height: 1.4;
+  min-width: 0;
+}
+
 .amp-redesign .amp-reference-picker-footer > .amp-button,
 .amp-redesign .amp-publication-picker footer > .amp-button,
 .amp-redesign .amp-schedule-picker-footer > .amp-button {
@@ -2292,13 +2298,16 @@
   text-align: center;
 }
 
-.amp-redesign .amp-content-version-empty strong {
-  color: #344054;
-  font-size: 14px;
+.amp-redesign .amp-content-version-empty-title {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
 }
 
-.amp-redesign .amp-content-version-empty p {
+.amp-redesign .amp-content-version-empty small {
   color: #98a2b3;
+  display: block;
   font-size: 11px;
   line-height: 1.55;
   margin-top: 5px;

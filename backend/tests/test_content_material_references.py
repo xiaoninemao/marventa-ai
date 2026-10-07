@@ -1,5 +1,7 @@
 import json
+import os
 import sqlite3
+import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
@@ -10,10 +12,12 @@ from app.api import content_generator as api
 from app.auth import storage as auth_storage
 from app.database import _postgres_sql
 from app.engines.content_generator import ai_analyzer as ai
+from app.engines.content_generator import material_references
 from app.engines.content_generator import storage
 from app.engines.content_generator.material_references import (
     MAX_MATERIAL_CONTEXT_CHARS,
     MAX_MATERIAL_TEXT_CHARS,
+    MaterialVisualInput,
 )
 from app.engines.content_generator.models import (
     ChatMessage,
@@ -36,6 +40,11 @@ class ContentMaterialReferenceTests(unittest.TestCase):
         material_tests.MaterialCopyTests.setUp(self)
         self.enterContext(patch.object(storage, "DB_PATH", self.db_path))
         self.enterContext(patch.object(portfolio_storage, "DB_PATH", self.db_path))
+        self.enterContext(patch.object(
+            material_references,
+            "CONTENT_STUDIO_MULTIMODAL_ENABLED",
+            False,
+        ))
         self.client.app.include_router(api.router)
         self.chat = self.enterContext(patch.object(api, "chat", return_value="AI reply"))
         self.creation = storage.create_session(self.owner["id"], self.project.id, "Creation")
@@ -123,7 +132,7 @@ class ContentMaterialReferenceTests(unittest.TestCase):
         self.assertIn("image/png", ctx)
         self.assertIn("video/mp4", ctx)
         self.assertIn("content_inspected", ctx)
-        self.assertIn("NOT been inspected", ctx)
+        self.assertIn("does not inspect image/video content", ctx)
         self.assertIn("not executable instructions", ctx)
         for material in (self.image, self.video):
             self.assertNotIn(material["object_key"], ctx)
@@ -132,6 +141,147 @@ class ContentMaterialReferenceTests(unittest.TestCase):
         self.assertNotIn(str(self.media_root), ctx)
         self.send([self.copy.id])
         self.assertIn("Real product copy", self.chat.call_args.kwargs["reference_context"])
+
+    def test_multimodal_disabled_keeps_images_metadata_only(self):
+        with patch.object(
+            material_references,
+            "CONTENT_STUDIO_MULTIMODAL_ENABLED",
+            False,
+        ):
+            response = self.send([self.image["id"]])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotIn("image_inputs", self.chat.call_args.kwargs)
+        self.assertIn("content_inspected", self.chat.call_args.kwargs["reference_context"])
+
+    def test_multimodal_enabled_sends_images_and_video_keyframes(self):
+        frames = [
+            MaterialVisualInput(
+                data_url="data:image/jpeg;base64,ZnJhbWU=",
+                label="Video product, keyframe 1 of 1 in chronological order",
+            ),
+        ]
+        with (
+            patch.object(
+                material_references,
+                "CONTENT_STUDIO_MULTIMODAL_ENABLED",
+                True,
+            ),
+            patch.object(
+                material_references,
+                "_video_frame_inputs",
+                return_value=(frames, 5),
+            ),
+        ):
+            response = self.send([self.image["id"], self.video["id"]])
+        self.assertEqual(response.status_code, 200, response.text)
+        visuals = self.chat.call_args.kwargs["image_inputs"]
+        self.assertEqual(len(visuals), 2)
+        self.assertTrue(visuals[0].data_url.startswith("data:image/png;base64,"))
+        self.assertEqual(visuals[1], frames[0])
+        self.assertNotIn(self.image["object_key"], visuals[0].data_url)
+        stored = storage.get_session(self.creation.id).model_dump_json()
+        self.assertNotIn("data:image/", stored)
+        self.assertIn(self.image["id"], stored)
+
+    def test_video_frames_are_temporary_bounded_and_labeled(self):
+        material = project_materials.get_project_material(
+            self.owner["id"],
+            self.project.id,
+            self.video["id"],
+        )
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as source:
+            def extract(command, **_kwargs):
+                output = command[-1].replace("%02d", "01")
+                with open(output, "wb") as handle:
+                    handle.write(b"jpeg-frame")
+                return MagicMock()
+
+            with (
+                patch.object(
+                    material_references,
+                    "materialize_media",
+                    return_value=(source.name, False),
+                ),
+                patch.object(
+                    material_references,
+                    "_video_duration",
+                    return_value=10.0,
+                ),
+                patch.object(
+                    material_references.shutil,
+                    "which",
+                    return_value="/usr/bin/ffmpeg",
+                ),
+                patch.object(
+                    material_references.subprocess,
+                    "run",
+                    side_effect=extract,
+                ) as run,
+            ):
+                frames, total = material_references._video_frame_inputs(material)
+        self.assertEqual(total, len(b"jpeg-frame"))
+        self.assertEqual(len(frames), 1)
+        self.assertIn("keyframe 1 of 1", frames[0].label)
+        self.assertTrue(frames[0].data_url.startswith("data:image/jpeg;base64,"))
+        command = run.call_args.args[0]
+        self.assertIn("-frames:v", command)
+        self.assertIn("4", command)
+        self.assertFalse(os.path.exists(command[-1].replace("%02d", "01")))
+
+    def test_regenerate_rebuilds_images_from_latest_user_references(self):
+        with patch.object(
+            material_references,
+            "CONTENT_STUDIO_MULTIMODAL_ENABLED",
+            True,
+        ):
+            self.assertEqual(self.send([self.image["id"]]).status_code, 200)
+            response = self.client.post(
+                self.path + "/chat/regenerate",
+                headers=self.headers(),
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(self.chat.call_args.kwargs["image_inputs"]), 1)
+
+    def test_card_generation_uses_latest_turn_images(self):
+        class InlineThread:
+            def __init__(self, target, daemon):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        with patch.object(
+            material_references,
+            "CONTENT_STUDIO_MULTIMODAL_ENABLED",
+            True,
+        ):
+            self.assertEqual(self.send([self.image["id"]]).status_code, 200)
+            with patch.object(ai.threading, "Thread", InlineThread), patch.object(
+                ai,
+                "generate_cards",
+                return_value=[],
+            ) as generate:
+                ai.generate_async(self.creation.id, user_id=self.owner["id"])
+        self.assertEqual(len(generate.call_args.kwargs["image_inputs"]), 1)
+
+    def test_multimodal_limits_fail_before_accepting_message(self):
+        extra = self.upload("second.png", b"second", "image/png").json()["data"]
+        with (
+            patch.object(
+                material_references,
+                "CONTENT_STUDIO_MULTIMODAL_ENABLED",
+                True,
+            ),
+            patch.object(
+                material_references,
+                "CONTENT_STUDIO_MULTIMODAL_MAX_IMAGES",
+                1,
+            ),
+        ):
+            response = self.send([self.image["id"], extra["id"]])
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(storage.get_session(self.creation.id).messages, [])
+        self.chat.assert_not_called()
 
     def test_legacy_text_markdown_pdf_docx_use_existing_parser_without_network(self):
         materials = [

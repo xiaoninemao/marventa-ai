@@ -51,7 +51,11 @@ test("material picker keeps the shared footer without instructional header copy"
     open: false, projectId: "project", selectedIds: [], selectedLabels: [],
     onConfirm: () => {}, onClose: () => {},
   }));
-  assertCompactFooter(html);
+  const footer = html.match(/<footer class="amp-reference-picker-footer">([\s\S]*?)<\/footer>/)?.[1];
+  assert.ok(footer);
+  assert.match(footer, /^<span class="amp-material-reference-limit">0 selected · Images 0\/5 · Videos 0\/1<\/span><button/);
+  assert.match(footer, /class="amp-button amp-button-secondary amp-button-cancel"/);
+  assert.match(footer, /class="amp-button amp-button-primary"/);
   assertCommonLayout(html);
   const header = html.match(/<header[^>]*>([\s\S]*?)<\/header>/)?.[1];
   assert.ok(header);

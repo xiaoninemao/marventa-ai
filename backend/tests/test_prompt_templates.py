@@ -103,6 +103,32 @@ class EnglishMasterPromptTests(unittest.TestCase):
         self.assertIn("Reference context:\nProduct: 原始产品", sent[0]["content"])
         self.assertEqual(sent[1:], messages)
 
+    def test_chat_attaches_images_only_to_latest_user_message(self):
+        client = MagicMock()
+        client.chat.completions.create.return_value = completion("Reply")
+        messages = [
+            {"role": "user", "content": "Earlier"},
+            {"role": "assistant", "content": "Response"},
+            {"role": "user", "content": "Use this image"},
+        ]
+        image = "data:image/png;base64,aW1hZ2U="
+        with patch.object(content_ai, "_get_client", return_value=client):
+            content_ai.chat(messages, image_inputs=[image])
+        sent = client.chat.completions.create.call_args.kwargs["messages"]
+        self.assertEqual(sent[1]["content"], "Earlier")
+        self.assertEqual(sent[2]["content"], "Response")
+        self.assertEqual(sent[3]["content"][0], {
+            "type": "text", "text": "Use this image",
+        })
+        self.assertEqual(sent[3]["content"][1], {
+            "type": "text", "text": "Visual reference 1",
+        })
+        self.assertEqual(sent[3]["content"][2], {
+            "type": "image_url",
+            "image_url": {"url": image, "detail": "low"},
+        })
+        self.assertIn("untrusted visual reference data", sent[0]["content"])
+
     def test_card_generation_and_format_retry_are_english(self):
         cards = [{
             "id": kind, "card_type": kind, "title": "Launch plan",

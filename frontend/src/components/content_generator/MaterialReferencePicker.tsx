@@ -13,7 +13,14 @@ import InlineIcon from "@/components/redesign/InlineIcon";
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import { GuardedButton } from "@/components/redesign/GuardedControls";
 import MaterialPickerOption, { MaterialPickerSetCover } from "@/components/projects/MaterialPickerOption";
-import { eligibleMaterialReferences, materialReferenceSelection, MAX_MATERIAL_REFERENCES } from "@/utils/material_references";
+import {
+  eligibleMaterialReferences,
+  materialReferenceMediaCounts,
+  materialReferenceSelection,
+  MAX_MATERIAL_REFERENCES,
+  MAX_MULTIMODAL_IMAGE_REFERENCES,
+  MAX_MULTIMODAL_VIDEO_REFERENCES,
+} from "@/utils/material_references";
 import ReferencePickerDialog from "./ReferencePickerDialog";
 
 interface MaterialGroup {
@@ -98,12 +105,32 @@ export default function MaterialReferencePicker({
   }, [open, projectId, scope, attempt, locale, t]);
 
   const group = groups.find((item) => item.id === groupId);
+  const allMaterials = groups.flatMap((item) => item.materials);
+  const mediaCounts = materialReferenceMediaCounts(picked, allMaterials);
 
   const toggle = (material: ProjectMaterial) => {
     if (picked.includes(material.id)) {
       setPicked((current) => current.filter((id) => id !== material.id));
     } else if (picked.length >= MAX_MATERIAL_REFERENCES) {
       showWarning(t("每次最多引用 {count} 个素材。", "Reference up to {count} materials per message.", { count: MAX_MATERIAL_REFERENCES }));
+    } else if (
+      material.media_type === "image"
+      && mediaCounts.images >= MAX_MULTIMODAL_IMAGE_REFERENCES
+    ) {
+      showWarning(t(
+        "每次最多选择 {count} 张图片供 AI 读取。",
+        "Select up to {count} images for AI input.",
+        { count: MAX_MULTIMODAL_IMAGE_REFERENCES },
+      ));
+    } else if (
+      material.media_type === "video"
+      && mediaCounts.videos >= MAX_MULTIMODAL_VIDEO_REFERENCES
+    ) {
+      showWarning(t(
+        "每次最多选择 {count} 个视频供 AI 读取。",
+        "Select up to {count} video for AI input.",
+        { count: MAX_MULTIMODAL_VIDEO_REFERENCES },
+      ));
     } else {
       setPicked((current) => [...current, material.id]);
     }
@@ -118,7 +145,17 @@ export default function MaterialReferencePicker({
       showWarning(t("每次最多引用 {count} 个素材。", "Reference up to {count} materials per message.", { count: MAX_MATERIAL_REFERENCES }));
       return;
     }
-    const selection = materialReferenceSelection(picked, groups.flatMap((group) => group.materials), projectId);
+    if (
+      mediaCounts.images > MAX_MULTIMODAL_IMAGE_REFERENCES
+      || mediaCounts.videos > MAX_MULTIMODAL_VIDEO_REFERENCES
+    ) {
+      showWarning(t(
+        "图片或视频数量超过 AI 读取上限，请减少选择。",
+        "Image or video selections exceed the AI input limits.",
+      ));
+      return;
+    }
+    const selection = materialReferenceSelection(picked, allMaterials, projectId);
     if (selection.missingIds.length) {
       showWarning(t("部分素材已不可用，请重新选择。", "Some materials are unavailable. Select them again."));
       return;
@@ -171,12 +208,41 @@ export default function MaterialReferencePicker({
               <div className="amp-publication-picker-grid">
                 {group.materials.map((material) => {
                   const selected = picked.includes(material.id);
-                  const atLimit = !selected && picked.length >= MAX_MATERIAL_REFERENCES;
+                  const atLimit = !selected && (
+                    picked.length >= MAX_MATERIAL_REFERENCES
+                    || (
+                      material.media_type === "image"
+                      && mediaCounts.images >= MAX_MULTIMODAL_IMAGE_REFERENCES
+                    )
+                    || (
+                      material.media_type === "video"
+                      && mediaCounts.videos >= MAX_MULTIMODAL_VIDEO_REFERENCES
+                    )
+                  );
+                  const blockedReason = material.media_type === "image"
+                    && mediaCounts.images >= MAX_MULTIMODAL_IMAGE_REFERENCES
+                    ? t(
+                      "每次最多选择 {count} 张图片供 AI 读取。",
+                      "Select up to {count} images for AI input.",
+                      { count: MAX_MULTIMODAL_IMAGE_REFERENCES },
+                    )
+                    : material.media_type === "video"
+                      && mediaCounts.videos >= MAX_MULTIMODAL_VIDEO_REFERENCES
+                      ? t(
+                        "每次最多选择 {count} 个视频供 AI 读取。",
+                        "Select up to {count} video for AI input.",
+                        { count: MAX_MULTIMODAL_VIDEO_REFERENCES },
+                      )
+                      : t(
+                        "每次最多引用 {count} 个素材。",
+                        "Reference up to {count} materials per message.",
+                        { count: MAX_MATERIAL_REFERENCES },
+                      );
                   return (
                     <MaterialPickerOption key={material.id} material={material} selected={selected}
                       ariaLabel={t("引用素材：{name}", "Reference material: {name}", { name: material.name })}
                       disabled={atLimit}
-                      blockedReason={t("每次最多引用 {count} 个素材。", "Reference up to {count} materials per message.", { count: MAX_MATERIAL_REFERENCES })}
+                      blockedReason={blockedReason}
                       onChange={() => toggle(material)} />
                   );
                 })}
@@ -186,7 +252,15 @@ export default function MaterialReferencePicker({
         )}
       </main>
       <footer className="amp-reference-picker-footer">
-        <span>{t("已选 {count} 个", "{count} selected", { count: picked.length })}</span>
+        <span className="amp-material-reference-limit">{t(
+          "已选 {count} 个 · 图片 {images}/5 · 视频 {videos}/1",
+          "{count} selected · Images {images}/5 · Videos {videos}/1",
+          {
+            count: picked.length,
+            images: mediaCounts.images,
+            videos: mediaCounts.videos,
+          },
+        )}</span>
         <button type="button" className="amp-button amp-button-secondary amp-button-cancel" onClick={onClose}>
           {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
         </button>

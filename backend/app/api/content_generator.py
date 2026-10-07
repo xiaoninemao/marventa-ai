@@ -16,7 +16,10 @@ from app.engines.content_generator.storage import (
 )
 from app.engines.content_generator.ai_analyzer import chat, generate_async, build_reference_context, modify_card, generate_document
 from app.engines.content_generator.presence import get_presence, release_presence
-from app.engines.content_generator.material_references import latest_material_reference_ids
+from app.engines.content_generator.material_references import (
+    build_material_visual_inputs,
+    latest_material_reference_ids,
+)
 from app.engines.portfolio.storage import create_script, delete_script, update_script
 from app.shared.response import success_response
 from app.auth.dependencies import get_current_user
@@ -242,7 +245,9 @@ async def send_chat_message(
     IDs are deduplicated and checked against the user's current organization and
     session project. Server-derived captions are preserved with each message;
     cumulative IDs are reauthorized when used. Copy is plaintext source data;
-    image/video references provide metadata only, never vision/OCR/transcription.
+    image/video references provide metadata by default. When multimodal input is
+    enabled, current-turn JPEG/PNG/WebP image references are also sent as bounded
+    image inputs; video content is never sent or inferred.
     Replaying a client_message_id returns the original accepted turn unchanged.
     """
     session = _get_manageable_session(session_id, current_user)
@@ -267,6 +272,14 @@ async def send_chat_message(
             })
 
     references = _validate_sent_context(session, req, current_user["id"])
+    try:
+        image_inputs = build_material_visual_inputs(
+            req.material_ids,
+            session.project_id,
+            current_user["id"],
+        )
+    except (LookupError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     sent_message = ChatMessage(
         role="user",
         content=_preference_prefix(req.preference_keys) + message_text,
@@ -310,7 +323,10 @@ async def send_chat_message(
 
     # Get AI reply
     try:
-        reply_content = await asyncio.to_thread(chat, msg_dicts, reference_context=ref_ctx)
+        chat_kwargs = {"reference_context": ref_ctx}
+        if image_inputs:
+            chat_kwargs["image_inputs"] = image_inputs
+        reply_content = await asyncio.to_thread(chat, msg_dicts, **chat_kwargs)
     except Exception as exc:
         raise _ai_http_exception(exc) from exc
     assistant_msg = ChatMessage(role="assistant", content=reply_content)
@@ -357,7 +373,22 @@ async def _replace_latest_reply(
         ],
     )
     try:
-        reply_content = await asyncio.to_thread(chat, msg_dicts, reference_context=ref_ctx)
+        image_inputs = build_material_visual_inputs(
+            [
+                reference.id
+                for reference in latest_user.references
+                if reference.kind == "material"
+            ],
+            session.project_id,
+            user_id,
+        )
+    except (LookupError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        chat_kwargs = {"reference_context": ref_ctx}
+        if image_inputs:
+            chat_kwargs["image_inputs"] = image_inputs
+        reply_content = await asyncio.to_thread(chat, msg_dicts, **chat_kwargs)
     except Exception as exc:
         raise _ai_http_exception(exc) from exc
 
