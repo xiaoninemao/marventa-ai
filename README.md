@@ -6,7 +6,7 @@
 
 ### Turn marketing knowledge into work your team can build on.
 
-An open-source workspace for market understanding, reusable creative context, content production, publishing, and lead discovery.
+An open-source workspace for market understanding, creative production, publishing operations, and lead discovery.
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -15,76 +15,179 @@ An open-source workspace for market understanding, reusable creative context, co
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg)](backend/requirements.txt)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](frontend/package.json)
 
-[Product](#product) · [Capabilities](#capabilities) · [Quick start](#quick-start) · [Configuration](#configuration)
+[Overview](#overview) · [Workflow](#workflow) · [Capabilities](#capabilities) · [Quick start](#quick-start) · [Configuration](#configuration)
 
 </div>
 
 ---
 
-## Product
+## Overview
 
-Marventa AI keeps the context behind marketing work connected:
+Marketing teams accumulate useful knowledge every day: product documents, customer questions, campaign examples, images, videos, drafts, channel feedback, and publishing records. That knowledge often remains scattered across folders, chat threads, spreadsheets, and individual prompts.
+
+Marventa AI organizes it around projects.
+
+Each project brings together the context needed to understand a market, study examples, create content, review quality, prepare publication, and examine the response. Team members can return to the same sources, versions, decisions, and results as work develops.
 
 ```text
 Research → Understand → Create → Review → Publish → Learn
 ```
 
-Documents become structured market insight. Cases and materials become reusable creative context. Conversations become editable content cards. Publishing plans connect content to authorized accounts, while account content and comment analysis bring performance and potential demand back into the workspace.
+Marventa is designed for teams that want:
 
-The workspace is organized around projects, permissions, durable versions, and explicit data states—not isolated prompts.
+- a shared record of product and market understanding;
+- reusable creative references and materials;
+- structured AI-assisted creation with human review;
+- clear permissions and durable history;
+- self-hosted control over data, providers, and infrastructure.
+
+## Workflow
+
+### 1. Organize the project
+
+Create a project for a product, campaign, account, or content program. Invite collaborators and keep insight, cases, materials, creations, publication plans, and completed reports within the same project boundary.
+
+Project owners and administrators can define brand voice, audience, value proposition, visual direction, and prohibited terms in the Guidelines tab. These settings autosave and guide subsequent Content Studio work.
+
+### 2. Build market understanding
+
+Import Markdown, PDF, DOCX, or repository content. Market Insight turns the source material into structured analysis covering positioning, target audiences, competitors, use cases, strengths, and campaign directions.
+
+Teams that need external evidence can enable bounded public research. The research flow searches public sources, reads eligible pages, stores citations, and records limitations alongside the analysis.
+
+### 3. Learn from examples
+
+Create a case library from images, videos, text, and supported public links. Case analysis extracts hooks, audience fit, content structure, marketing angles, strengths, and reusable lessons.
+
+Favorite the cases that represent a useful pattern and reference them directly during creation.
+
+### 4. Prepare reusable materials
+
+Organize project images, videos, and copy into material sets. Text files and office documents can be imported as editable copy. Media remains available for preview, Content Studio references, and publication plans.
+
+Materials preserve the project original while downstream work keeps a reference to it.
+
+### 5. Create and review
+
+Content Studio uses a guided conversation to clarify the product, audience, format, platform, and creative direction. It can draw context from completed insight, analyzed cases, project copy, brand guidelines, images, and video.
+
+A completed generation produces five coordinated cards:
+
+1. content plan or script;
+2. headline options;
+3. publication copy;
+4. hashtags;
+5. visual direction.
+
+Cards can be edited individually, restored from earlier versions, and turned into a bilingual long-form report. A quality check reviews the complete set before delivery.
+
+### 6. Publish and learn
+
+Build a publication plan from ordered media, saved copy, a connected channel account, and a scheduled time. The homepage calendar shows scheduled dates and links back to Publishing.
+
+Account Content separates platform-readable works from Marventa publication records. Lead Tracking summarizes daily comments at account level and identifies potential demand with evidence and suggested actions.
 
 ## Capabilities
 
 ### Projects and collaboration
 
-- Organize insights, cases, materials, creations, publications, and finished work by project.
-- Manage organization and project roles, invitations, creator attribution, and channel-account access.
-- Define project brand voice, audience, value proposition, visual direction, and prohibited terms.
+- Project-centered organization for every major asset and activity.
+- Organization and project roles with independent access boundaries.
+- Invitations, creator attribution, member management, and project-level administration.
+- Search, filtering, pagination, clear empty states, and explicit operation feedback.
 
 ### Market Insight
 
-- Analyze Markdown, PDF, DOCX, and repository content for positioning, audience, competitors, use cases, and campaign direction.
-- Optionally enrich analysis with bounded public-web research, citations, and explicit limitations.
-- Reuse completed insights directly inside Content Studio.
+- Markdown, PDF, DOCX, and repository input.
+- Structured product, audience, competitor, positioning, and campaign analysis.
+- Optional bounded public research with sources, quotations, and limitations.
+- Editable history and direct reuse inside Content Studio.
 
-### Case Library and materials
+### Case Library
 
-- Collect image, video, text, and supported public-link cases with structured creative analysis.
-- Organize reusable images, videos, and editable copy into project material sets.
-- Reference selected cases and materials without changing the project originals.
+- Image, video, text, and supported public-link cases.
+- Structured analysis of hooks, audience, angles, highlights, and reusable lessons.
+- Favorites and project-scoped references for later creation.
+- Explicit analysis states and retry behavior.
+
+### Materials
+
+- Material sets for images, videos, and editable copy.
+- TXT, Markdown, PDF, and DOCX copy import.
+- Rich-text editing, media preview, creator attribution, and project permissions.
+- Reuse across Content Studio and Publishing.
 
 ### Content Studio
 
-- Create short-video or image-text concepts from project insight, cases, copy, brand guidelines, and optional visual or audio context.
-- Generate five structured cards covering the plan, headlines, copy, hashtags, and visual direction.
-- Modify individual cards, restore versions, collaborate with live presence, and generate bilingual reports.
-- Check brand conflicts, prohibited terms, repetition, unsupported claims, platform fit, and sensitive promotional language before delivery.
+- Guided short-video and image-text creation.
+- Project insight, cases, materials, and brand guidelines as reusable context.
+- Five coordinated content cards with individual editing.
+- Version history, rollback, activity history, and live viewer presence.
+- Bilingual report generation, preview, and PDF export.
+
+### Creative quality
+
+Quality review covers:
+
+- brand consistency;
+- configured prohibited terms;
+- platform and format fit;
+- repeated language across cards;
+- unsupported numerical, comparative, or performance claims;
+- promotional language that may require legal, policy, or subject-matter review.
+
+Model findings remain review guidance. Exact prohibited-term matches are checked by the server and block work generation until the content is revised.
 
 ### Multimodal understanding
 
-- Attach up to five JPEG, PNG, or WebP images and one supported video per turn.
-- Sample ordered video keyframes with FFmpeg instead of sending the original video.
-- Optionally transcribe extracted audio with an OpenAI-compatible transcription model and align timestamped speech with nearby frames.
-- Keep temporary media out of stored conversations; cache authorized transcripts to avoid repeated processing.
+- Up to five JPEG, PNG, or WebP images per turn.
+- One MP4, MOV, WebM, or M4V video per turn.
+- Ordered video keyframes extracted with FFmpeg.
+- Optional timestamped audio transcription through the configured Content Studio provider.
+- Transcript caching tied to the authorized project material.
+- Temporary file cleanup after processing.
+
+The original video is not sent to the model. Stored conversations retain text and material identifiers, not base64 images, audio files, or extracted frames.
 
 ### Publishing
 
-- Build image or video publication plans from project materials, copy, account, and schedule settings.
-- Review scheduled dates in the homepage calendar.
-- Autosave editable content, lock submitted plans, retain failures, and safely cancel or reschedule eligible work.
-- Publish authorized Douyin content through the optional backend scheduler.
+- Image-text and video publication plans.
+- Ordered media, saved copy, account selection, and scheduling.
+- Autosave for editable content.
+- Locked states for scheduled, publishing, and published plans.
+- Explicit failures, cancellation, rescheduling, and durable execution records.
+- Optional official Douyin publication through a backend scheduler.
 
-### Account Content and Lead Tracking
+### Account Content
 
-- Browse platform-readable content separately from records created through Marventa.
-- Review available playback, visibility, galleries, and engagement metrics.
-- Maintain an account-level daily Top 50 comment snapshot across linked projects.
-- Qualify intent with rules or AI, inspect evidence and suggested actions, and confirm or dismiss leads.
+- Platform-readable content and Marventa publication records shown separately.
+- Image galleries, saved videos, official embedded playback, and available metrics.
+- Explicit provider, authorization, visibility, unavailable, and demonstration-data states.
+
+### Lead Tracking
+
+- One account entity across its linked projects within an organization.
+- Daily account-level Top 50 comment snapshots.
+- Stable results shared across project bindings.
+- Rule-based or AI-assisted intent qualification.
+- Evidence, recommended action, confirmation, dismissal, and reset.
 
 ### Portfolio
 
-- Keep completed strategy reports in a dedicated work list.
-- Read, preview, and export complete Chinese and English versions as PDF.
+- Dedicated list for completed strategy reports.
+- Chinese and English report content.
+- Reading view, preview, and PDF export.
+
+## Data and result states
+
+Marventa keeps real platform data, simulated demonstration data, unavailable capabilities, and failures visibly distinct.
+
+- Virtual accounts do not make platform publication requests.
+- Demonstration records retain a visible simulation label.
+- Provider failures remain errors and do not become successful empty results.
+- Enabled provider overrides with incomplete configuration fail explicitly.
+- Platform acceptance and public visibility are shown as separate outcomes.
+- AI quality review and public research preserve their limitations.
 
 ## Permissions
 
@@ -95,11 +198,11 @@ Project access is independent from organization role.
 | View project assets | Yes | Yes | Yes |
 | Manage an insight, case, or creation | — | Own work | All project work |
 | Edit materials and publication plans | — | Own content | Yes |
-| Manage project membership and guidelines | — | — | Yes |
+| Manage project members and guidelines | — | — | Yes |
 
-Publication lifecycle locks continue to apply to creators and project managers.
+Lifecycle locks continue to apply after a publication plan is scheduled or submitted.
 
-## Architecture
+## Self-hosting and architecture
 
 ```text
 Next.js 16 / React 19
@@ -113,9 +216,14 @@ FastAPI / Python 3.11+
           └── Official channel APIs
 ```
 
-Marventa is self-hosted by default. SQLite and local media require no external infrastructure; PostgreSQL and S3-compatible storage are available for production deployments.
+| Layer | Default | Production option |
+| --- | --- | --- |
+| Database | SQLite | PostgreSQL 16+ |
+| Media | Local filesystem | AWS S3, Cloudflare R2, MinIO, or another S3-compatible service |
+| AI | User-configured OpenAI-compatible provider | Product-area provider overrides |
+| Publishing | Disabled scheduler | Authorized official Douyin API |
 
-AI requests send the relevant input to the provider you configure. Review that provider's privacy and retention terms before processing sensitive material.
+AI requests send relevant input to the provider you configure. Review provider privacy and retention terms before processing sensitive material.
 
 ## Quick start
 
@@ -126,7 +234,7 @@ AI requests send the relevant input to the provider you configure. Review that p
 - npm 10+
 - FFmpeg and ffprobe when video understanding is enabled
 
-### Configure
+### Clone and configure
 
 ```bash
 git clone https://github.com/xiaoninemao/Marventa-AI.git
@@ -136,7 +244,7 @@ cp backend/.env.example backend/.env
 cp frontend/.env.local.example frontend/.env.local
 ```
 
-Set a long random `JWT_SECRET` in `backend/.env`. AI credentials are optional at startup but required for AI-powered analysis and creation.
+Set a long random `JWT_SECRET` in `backend/.env`. AI credentials can be added when AI-powered features are needed.
 
 ### Start
 
@@ -153,15 +261,15 @@ Windows PowerShell:
 .\scripts\start-local.ps1
 ```
 
-- Web: [http://localhost:3000](http://localhost:3000)
+- Web application: [http://localhost:3000](http://localhost:3000)
 - API: [http://localhost:8765](http://localhost:8765)
-- API docs: [http://localhost:8765/docs](http://localhost:8765/docs) when `DEBUG=true`
+- API documentation: [http://localhost:8765/docs](http://localhost:8765/docs) when `DEBUG=true`
 
 Stop with `Ctrl+C`, `bash scripts/stop-local.sh`, or `.\scripts\stop-local.ps1`.
 
 ## Configuration
 
-The complete configuration reference lives in [`backend/.env.example`](backend/.env.example).
+The complete environment reference lives in [`backend/.env.example`](backend/.env.example).
 
 ### AI providers
 
@@ -171,32 +279,35 @@ AI_BASE_URL=https://your-provider.example/v1
 AI_MODEL=your-chat-model
 ```
 
-Every AI feature uses `AI_*` unless its product-area override is explicitly enabled.
+Every AI feature uses `AI_*` by default.
 
 | Optional override | Product area |
 | --- | --- |
 | `MARKET_INSIGHT_AI_*` | Document insight and bounded public research |
-| `CASE_LIBRARY_AI_*` | Structured case analysis, including images |
-| `CONTENT_STUDIO_AI_*` | Conversation, cards, edits, reports, and quality checks |
+| `CASE_LIBRARY_AI_*` | Case analysis, including image input |
+| `CONTENT_STUDIO_AI_*` | Conversation, cards, edits, reports, and quality review |
 | `LEAD_TRACKING_AI_*` | Comment lead qualification |
 
-Each override requires its `*_OVERRIDE_ENABLED=true` switch plus a complete API key, base URL, and model. Incomplete enabled overrides fail explicitly; they do not silently use another provider.
+Each override requires `*_OVERRIDE_ENABLED=true` plus a complete API key, base URL, and model. A disabled switch always uses `AI_*`. An enabled incomplete override returns a configuration error.
 
 ### Images, video, and audio
 
 ```env
 CONTENT_STUDIO_MULTIMODAL_ENABLED=true
 CONTENT_STUDIO_MULTIMODAL_MAX_IMAGES=5
+CONTENT_STUDIO_MULTIMODAL_MAX_IMAGE_BYTES=5242880
+CONTENT_STUDIO_MULTIMODAL_MAX_TOTAL_BYTES=15728640
 CONTENT_STUDIO_MULTIMODAL_MAX_VIDEOS=1
 CONTENT_STUDIO_MULTIMODAL_MAX_VIDEO_BYTES=104857600
 CONTENT_STUDIO_MULTIMODAL_MAX_VIDEO_SECONDS=300
+CONTENT_STUDIO_MULTIMODAL_VIDEO_FRAMES=4
 
 CONTENT_STUDIO_TRANSCRIPTION_ENABLED=false
 CONTENT_STUDIO_TRANSCRIPTION_MODEL=
 CONTENT_STUDIO_TRANSCRIPTION_MAX_AUDIO_BYTES=26214400
 ```
 
-The backend validates media limits, extracts bounded keyframes, and deletes temporary files. Audio transcription is independently opt-in and requires an explicit transcription model.
+The backend validates media limits before provider calls. FFmpeg extracts bounded JPEG keyframes and a temporary mono audio track when transcription is enabled. Temporary files are deleted after processing.
 
 ### Bounded public research
 
@@ -206,9 +317,11 @@ INSIGHT_SEARCH_PROVIDER=tavily
 TAVILY_API_KEY=your-search-provider-key
 ```
 
-Research is bounded by request, page, context, token, and time budgets. The reader permits public HTTP(S) only, rejects local/private network destinations, treats retrieved pages as untrusted evidence, and preserves citations and limitations. A completed research run means the bounded evidence workflow completed; it does not prove every claim is correct.
+Public research has fixed search, page, redirect, context, token, and time budgets. The reader accepts public HTTP(S) on standard ports, validates redirects and resolved addresses, rejects private-network destinations, and treats retrieved text as untrusted evidence.
 
-### Channel accounts and scheduled publishing
+Sources and quote matches improve traceability. They do not establish factual correctness, completeness, competitor identity, or source independence. Review the resulting claims before use.
+
+### Channel authorization
 
 ```env
 DOUYIN_CHANNEL_CLIENT_KEY=
@@ -219,38 +332,49 @@ XIAOHONGSHU_CHANNEL_APP_ID=
 XIAOHONGSHU_CHANNEL_APP_SECRET=
 CHANNEL_CREDENTIAL_ENCRYPTION_KEY=
 FRONTEND_BASE_URL=https://app.example.com
+```
 
+Channel tokens are encrypted at rest and are never returned to the browser.
+
+Douyin publication requires the officially approved `video.create.bind` capability and matching account authorization. Platform acceptance does not confirm public visibility; moderation and account visibility rules still apply.
+
+Xiaohongshu currently exposes account information but no verified public server-side note-publishing contract. Publication remains disabled until an approved official specification is available. Marventa does not use unofficial signing or cookie automation.
+
+### Scheduler
+
+```env
 PUBLISHING_SCHEDULER_ENABLED=false
 PUBLISHING_POLL_SECONDS=10
 ```
 
-- Tokens are encrypted at rest and never returned to the browser.
-- Douyin publishing requires the officially approved `video.create.bind` capability and matching account authorization.
-- Platform acceptance is not proof of public visibility; moderation still applies.
-- The scheduler is disabled by default so an upgrade cannot publish stored plans unexpectedly.
-- Xiaohongshu currently exposes account information but no verified public server-side note-publishing contract. Publishing remains disabled until an approved official specification is available; Marventa does not use unofficial signing or cookie automation.
+The scheduler runs in the backend process and does not depend on an open browser tab. It is disabled by default. Review stored plans before enabling it.
 
-### Storage and database
+Database claims and heartbeats prevent concurrent workers from publishing the same plan. Interrupted or uncertain requests remain explicit; verify the platform account before retrying a request with an unknown outcome.
 
-SQLite and local media are the defaults:
+### Database and media storage
+
+SQLite and local media are the development defaults:
 
 ```env
 DATABASE_URL=
 MEDIA_STORAGE_BACKEND=local
 ```
 
-Production can use PostgreSQL 16+ and a private S3-compatible bucket:
+Production deployments can use PostgreSQL 16+ and a private S3-compatible bucket:
 
 ```env
 DATABASE_URL=postgresql://user:password@database.example.com:5432/marventa
 
 MEDIA_STORAGE_BACKEND=s3
 MEDIA_S3_BUCKET=marventa-media
+MEDIA_S3_PREFIX=production
 MEDIA_S3_REGION=auto
 MEDIA_S3_ENDPOINT_URL=
 MEDIA_S3_ACCESS_KEY_ID=
 MEDIA_S3_SECRET_ACCESS_KEY=
 ```
+
+Use a unique prefix when installations share a bucket. Keep the bucket private and serve media through short-lived presigned URLs.
 
 Migration utilities:
 
@@ -260,18 +384,27 @@ cd backend
 .venv/bin/python scripts/migrate_media_to_object_storage.py --help
 ```
 
-Back up the database and media before migration, stop writes during database transfer, validate the destination, and keep the source backup until recovery has been tested.
+Back up the database and media together. Stop writes during database transfer, validate the destination, and keep the source backup until recovery has been tested.
+
+## Operations
+
+- Back up database records and referenced media as one recovery set.
+- Rotate JWT, channel, storage, and provider credentials through deployment secrets.
+- Monitor scheduler failures and provider authorization expiry.
+- Verify platform state before retrying an uncertain publication request.
+- Keep FFmpeg available on workers that process video or audio.
+- Review AI provider usage, privacy terms, quotas, and retention policies.
 
 ## Development
 
-Backend tests:
+Backend:
 
 ```bash
 cd backend
 .venv/bin/python -m pytest
 ```
 
-Frontend checks:
+Frontend:
 
 ```bash
 cd frontend
@@ -287,10 +420,10 @@ PostgreSQL integration tests require `TEST_POSTGRES_DATABASE_URL`.
 
 - Replace all example secrets before deployment.
 - Use HTTPS for public deployments.
-- Keep object-storage buckets private unless public delivery is intentional.
 - Grant only required channel scopes.
-- Back up the database and media together.
-- Treat model, search, and platform providers as external processors.
+- Keep object-storage buckets private unless public delivery is intentional.
+- Apply database and media retention policies appropriate to the organization.
+- Treat model, search, and channel providers as external data processors.
 
 Report vulnerabilities through [GitHub Security Advisories](https://github.com/xiaoninemao/Marventa-AI/security/advisories/new), not public issues.
 
