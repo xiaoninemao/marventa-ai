@@ -1,8 +1,9 @@
-const SKELETON_CARDS = Array.from({ length: 5 });
+import { useI18n } from "@/contexts/i18n_context";
 
 export default function ContentGeneratorSkeleton() {
+  const { t } = useI18n();
   return (
-    <section className="amp-content-generation-skeleton" aria-busy="true" aria-label="Generating content">
+    <section className="amp-content-generation-skeleton" aria-busy="true" aria-label={t("Agent 正在工作", "Agent working")}>
       <header>
         <div>
           <span className="amp-content-skeleton-line w-36" />
@@ -11,20 +12,7 @@ export default function ContentGeneratorSkeleton() {
         <span className="amp-content-skeleton-action" />
       </header>
 
-      <div className="amp-content-skeleton-carousel">
-        {SKELETON_CARDS.map((_, index) => (
-          <div key={index} className="amp-content-skeleton-card">
-            <span />
-            <i />
-            <i />
-            <i />
-          </div>
-        ))}
-      </div>
-
-      <div className="amp-content-skeleton-dots" aria-hidden="true">
-        {SKELETON_CARDS.map((_, index) => <i key={index} />)}
-      </div>
+      <div className="amp-agent-work-skeleton-canvas" aria-hidden="true" />
 
       <div className="amp-content-detail-skeleton">
         <span />

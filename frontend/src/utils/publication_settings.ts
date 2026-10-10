@@ -19,6 +19,7 @@ export interface PublicationSettingsValues {
   scheduledFor: string;
   mediaMode: PublicationPlan["media_mode"];
   contentCount: number;
+  imageCount: number;
   videoCount: number;
 }
 
@@ -36,6 +37,7 @@ export function publicationSettingsIssue(
   if (!date || !time) return "missing-schedule";
   if (!publicationScheduleReady(values.scheduledFor, now)) return "invalid-schedule";
   if (values.mediaMode === "video" && (!values.contentCount || values.videoCount !== 1)) return "invalid-video";
+  if (values.mediaMode === "image_text" && !values.imageCount) return "missing-content";
   if (!values.contentCount) return "missing-content";
   return null;
 }

@@ -41,6 +41,7 @@ import type { BrandProfile, ContentProject, ProjectChannelAccount, ProjectMateri
 import type { HistoryRecord } from "@/types/market_insight";
 import type { CaseItem } from "@/types/case_library";
 import type { SessionRecord } from "@/types/content_generator";
+import type { PortfolioScript } from "@/types/portfolio";
 import InlineIcon, { type InlineIconName } from "@/components/redesign/InlineIcon";
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
@@ -151,9 +152,7 @@ export default function ProjectDetailPage() {
   const [projectInsights, setProjectInsights] = useState<HistoryRecord[]>([]);
   const [projectCases, setProjectCases] = useState<CaseItem[]>([]);
   const [projectSessions, setProjectSessions] = useState<SessionRecord[]>([]);
-  const [projectScripts, setProjectScripts] = useState<Array<{
-    id: string; title: string; content: string; updated_at: string;
-  }>>([]);
+  const [projectScripts, setProjectScripts] = useState<PortfolioScript[]>([]);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [channelAccounts, setChannelAccounts] = useState<ProjectChannelAccount[]>([]);
   const [projectMaterials, setProjectMaterials] = useState<ProjectMaterial[]>([]);
@@ -456,7 +455,7 @@ export default function ProjectDetailPage() {
       id: `content-${session.id}`,
       type: "content",
       title: session.title || t("未命名创作", "Untitled creation"),
-      detail: session.cards[0]?.preview || t("智能创作", "Content Studio"),
+      detail: session.deliverables?.at(-1)?.publication_copy || t("智能创作", "Content Studio"),
       icon: "edit",
       timestamp: session.updated_at || session.created_at,
       href: `/content_generator/${encodeURIComponent(session.id)}`,
@@ -464,7 +463,7 @@ export default function ProjectDetailPage() {
     items.push(...projectScripts.map<ProjectAsset>((script) => ({
       id: `portfolio-${script.id}`,
       type: "portfolio",
-      title: script.title,
+      title: script.name || t("未命名作品", "Untitled work"),
       detail: script.content.slice(0, 120) || t("作品", "Portfolio"),
       icon: "briefcase",
       timestamp: script.updated_at,
@@ -1214,6 +1213,11 @@ export default function ProjectDetailPage() {
                       )}
                     </div>
                   ) : null;
+                  const collectionSummary = material.node_type === "collection"
+                    ? t("图片 {images} · 视频 {videos} · 文案 {copy}", "{images} images · {videos} videos · {copy} copy items", {
+                        images: material.image_count, videos: material.video_count, copy: material.document_count,
+                      })
+                    : "";
                   return (
                     <article key={material.id}
                       className={`amp-project-material-card is-${material.node_type === "collection" ? "collection" : material.media_type}`}>
@@ -1253,9 +1257,7 @@ export default function ProjectDetailPage() {
                         {material.node_type === "collection" && (
                           <div className="amp-material-collection-meta">
                             <span>{t("{count} 个素材", "{count} materials", { count: material.material_count })}</span>
-                            <span>{t("图片 {images} · 视频 {videos} · 文案 {copy}", "{images} images · {videos} videos · {copy} copy items", {
-                              images: material.image_count, videos: material.video_count, copy: material.document_count,
-                            })}</span>
+                            <span title={collectionSummary}>{collectionSummary}</span>
                           </div>
                         )}
                       </div>
@@ -1365,7 +1367,7 @@ export default function ProjectDetailPage() {
                 ]}
                 onChange={setChannelPlatformFilter}
                 ariaLabel={t("筛选应用", "Filter applications")}
-                className="w-36"
+                className="w-44 shrink-0"
               />
               <EnterpriseSelect
                 value={channelSortOrder}
@@ -2203,7 +2205,7 @@ export default function ProjectDetailPage() {
                   </a>
                 </div>
                 <div className="amp-project-channel-account-actions">
-                  <button type="button" className="amp-button amp-button-secondary"
+                  <button type="button" className="amp-button amp-button-secondary amp-button-back"
                     onClick={() => {
                       setDeviceAuthorization(null);
                       setDeviceQrCode("");

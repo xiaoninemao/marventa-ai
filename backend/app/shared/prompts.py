@@ -16,12 +16,6 @@ OUTPUT_LANGUAGE_INSTRUCTION = (
     "keep JSON field names, identifiers, and canonical platform values unchanged."
 )
 
-EDIT_LANGUAGE_INSTRUCTION = (
-    OUTPUT_LANGUAGE_INSTRUCTION
-    + "\nWhen editing existing content, preserve its language unless the user requests a "
-    "language change. Do not translate unchanged content merely to apply the default."
-)
-
 BILINGUAL_REPORT_INSTRUCTION = (
     "Always produce complete, semantically matching Chinese and English versions. "
     "This bilingual report contract takes precedence over single-language preferences. "
@@ -29,19 +23,18 @@ BILINGUAL_REPORT_INSTRUCTION = (
     "Keep JSON field names, identifiers, and canonical platform values unchanged."
 )
 
-
 def build_system_prompt(
     task_instructions: str,
     *,
-    language_mode: Literal["default", "edit", "bilingual_report"] = "default",
+    language_mode: Literal["default", "bilingual_report", "model"] = "default",
     output_locale: Literal["zh-CN", "en"] | None = None,
 ) -> str:
     if language_mode == "default":
         language_instruction = OUTPUT_LANGUAGE_INSTRUCTION
-    elif language_mode == "edit":
-        language_instruction = EDIT_LANGUAGE_INSTRUCTION
     elif language_mode == "bilingual_report":
         language_instruction = BILINGUAL_REPORT_INSTRUCTION
+    elif language_mode == "model":
+        language_instruction = ""
     else:
         raise ValueError(f"Unsupported prompt language mode: {language_mode}")
     if output_locale is not None:
@@ -55,4 +48,7 @@ def build_system_prompt(
                 "Keep JSON field names, identifiers, original product and brand names, "
                 "and canonical platform values unchanged."
             )
-    return "\n\n".join((MASTER_SYSTEM_PROMPT, task_instructions.strip(), language_instruction))
+    return "\n\n".join(
+        part for part in (MASTER_SYSTEM_PROMPT, task_instructions.strip(), language_instruction)
+        if part
+    )

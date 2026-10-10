@@ -12,8 +12,9 @@ import InlineIcon from "@/components/redesign/InlineIcon";
 import { GuardedButton } from "@/components/redesign/GuardedControls";
 import EnterpriseSelect, { type EnterpriseSelectOption } from "@/components/redesign/EnterpriseSelect";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
-import PublicationContentPanel from "@/components/publishing/PublicationContentPanel";
+import PublicationWorkPreview from "@/components/publishing/PublicationWorkPreview";
 import PublicationSchedulePicker from "@/components/publishing/PublicationSchedulePicker";
+import PublicationWorkDialog from "@/components/publishing/PublicationWorkDialog";
 import PublishingProjectSidebar from "@/components/publishing/PublishingProjectSidebar";
 import {
   fetch_content_projects, fetch_publication_plan, fetch_project_channel_accounts,
@@ -54,7 +55,7 @@ export default function PublicationSettingsPage() {
   const [accounts, setAccounts] = useState<ProjectChannelAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [contentBusy, setContentBusy] = useState(false);
+  const [workDialogOpen, setWorkDialogOpen] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
@@ -98,9 +99,8 @@ export default function PublicationSettingsPage() {
   const editable = canEdit;
   const settingsEditable = editable;
   const busyReason = cancelling ? t("正在取消发布，请稍候。", "Publication is being cancelled. Please wait.")
-    : saving ? t("发布设置正在保存，请稍候。", "Publication settings are being saved. Please wait.")
-      : t("媒体或文案正在保存，请稍候。", "Media or copy is being saved. Please wait.");
-  const settingsReason = saving || contentBusy || cancelling ? busyReason
+    : t("发布设置正在保存，请稍候。", "Publication settings are being saved. Please wait.");
+  const settingsReason = saving || cancelling ? busyReason
     : plan?.status === "published" ? t("已发布的计划仅供查看，不能修改设置。", "Published plans are read-only; settings cannot change.")
       : plan?.status === "publishing" ? t("正在发布，不能修改设置。", "Publishing is in progress; settings cannot change.")
         : plan?.status === "scheduled" ? t("计划已锁定，请先取消定时发布再修改。", "Scheduled plans are locked. Cancel the scheduled publication before editing.")
@@ -117,6 +117,7 @@ export default function PublicationSettingsPage() {
       scheduledFor: currentForm.scheduled_for,
       mediaMode: currentPlan.media_mode,
       contentCount: currentPlan.content_count,
+      imageCount: currentPlan.image_count,
       videoCount: currentPlan.video_count,
     });
     if (!issue) return "";
@@ -128,7 +129,7 @@ export default function PublicationSettingsPage() {
       "unavailable-account": unavailableAccountReason,
       "missing-schedule": t("请选择发布日期和时间。", "Select a publication date and time."),
       "invalid-schedule": t("请选择明天或之后的有效发布日期和时间。", "Select a valid publication date tomorrow or later and a time."),
-      "missing-content": t("请先添加发布媒体或文案。", "Add publication media or copy first."),
+      "missing-content": t("请先选择包含图片的作品。", "Select a work with images first."),
       "invalid-video": t("视频发布需要且只能有一个视频。", "Video publishing requires exactly one video."),
     };
     return reasons[issue];
@@ -156,7 +157,7 @@ export default function PublicationSettingsPage() {
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!plan || !form || !settingsEditable || saving || contentBusy || cancelling) {
+    if (!plan || !form || !settingsEditable || saving || cancelling) {
       showError(settingsReason); return;
     }
     const validationReason = settingsValidationReason(plan, form);
@@ -190,8 +191,8 @@ export default function PublicationSettingsPage() {
 
   const cancelPlan = async () => {
     if (!plan || !canManage || !publicationHasScheduledRelease(plan.status, plan.scheduled_for)
-      || saving || contentBusy || cancelling) {
-      showError(saving || contentBusy || cancelling || !canManage ? settingsReason
+      || saving || cancelling) {
+      showError(saving || cancelling || !canManage ? settingsReason
         : t("此计划当前没有可取消的定时发布。", "This plan has no scheduled publication to cancel.")); return;
     }
     setCancelling(true);
@@ -241,13 +242,13 @@ export default function PublicationSettingsPage() {
     ...(form.channel_account_id && !channelAccounts.some((account) => account.id === form.channel_account_id)
       ? [{ value: form.channel_account_id, label: t("原账号已不可用，请重新选择", "Previous account unavailable; select again"), disabled: true, disabledReason: unavailableAccountReason }] : []),
   ];
-  const saveReason = saving || contentBusy || cancelling || !settingsEditable ? settingsReason
+  const saveReason = saving || cancelling || !settingsEditable ? settingsReason
     : settingsValidationReason(plan, form);
 
   return (
-    <div className="amp-project-detail-layout">
+    <div className="amp-project-detail-layout amp-portfolio-detail-layout">
       <PublishingProjectSidebar projects={projects} selectedProjectId={plan.project_id} />
-      <main className={`amp-project-detail-main amp-publication-editor-main${publicationReadOnly(plan.status) ? " is-publication-readonly" : ""}`}>
+      <main className={`amp-project-detail-main amp-publication-work-main${publicationReadOnly(plan.status) ? " is-publication-readonly" : ""}`}>
         <header className="amp-project-detail-header">
           <div className="amp-project-detail-title">
             <Link href={`/publishing?project=${encodeURIComponent(plan.project_id)}`}
@@ -266,7 +267,11 @@ export default function PublicationSettingsPage() {
             </div>
           </div>
           <div className="amp-publication-header-actions">
-            <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary" disabled={contentBusy || saving || cancelling}
+            <GuardedButton type="button" className="amp-button amp-button-secondary"
+              disabled={!canEdit || saving || cancelling} blockedReason={settingsReason} onClick={() => setWorkDialogOpen(true)}>
+              {t("选择作品", "Select work")}
+            </GuardedButton>
+            <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary" disabled={saving || cancelling}
               onClick={() => { setForm(formFromPlan(plan)); settingsDialog.current?.showModal(); }}>
               <InlineIcon name="settings" className="h-4 w-4" />{t("发布设置", "Publication settings")}
             </GuardedButton>
@@ -283,14 +288,16 @@ export default function PublicationSettingsPage() {
             "Publication outcome unknown: the platform may already have published this post. You must verify on the platform before scheduling again to avoid duplicates.")}</strong></p>}
         </div>}
         <div className="amp-publication-workspace">
-        <PublicationContentPanel key={plan.id} plan={plan} editable={editable} disabled={saving || cancelling}
-          onBusyChange={setContentBusy}
-          onChanged={async () => {
-            const response = await fetch_publication_plan(plan.id);
-            const refreshed = response.data;
-            setPlan(refreshed);
-          }} />
+        {plan.content_count === 0 ? <div className="amp-publication-content-empty">
+          <InlineIcon name="briefcase" />
+          <p>{t("计划已创建，请选择要发布的作品", "Plan created. Select a work to publish.")}</p>
+        </div> : <PublicationWorkPreview key={`${plan.id}:${plan.portfolio_id}:${plan.updated_at}`} plan={plan} />}
         </div>
+        <PublicationWorkDialog open={workDialogOpen} plan={plan} onClose={() => setWorkDialogOpen(false)}
+          onSelected={updated => {
+            setPlan(updated); setForm(formFromPlan(updated));
+            showSuccess(t("作品已选择，请在发布设置中安排发布", "Work selected. Configure publication settings to schedule it."));
+          }} />
         <dialog ref={settingsDialog} aria-labelledby="publication-plan-heading"
           className="amp-material-preview-dialog amp-publication-settings-dialog m-auto w-[calc(100%_-_32px)] max-w-lg bg-white backdrop:bg-slate-950/40"
           onCancel={(event) => { if (saving) { event.preventDefault(); showError(busyReason); } }}>
@@ -315,9 +322,9 @@ export default function PublicationSettingsPage() {
             <span>{t("发布渠道", "Channel")}</span>
             <EnterpriseSelect value={form.platform} options={channelOptions} className="mt-2 w-full"
               placeholder={t("选择渠道", "Select channel")}
-              disabled={!settingsEditable || saving || contentBusy || cancelling} disabledReason={settingsReason} ariaLabel={t("选择发布渠道", "Select publication channel")}
+              disabled={!settingsEditable || saving || cancelling} disabledReason={settingsReason} ariaLabel={t("选择发布渠道", "Select publication channel")}
               onChange={(value) => {
-                if (!settingsEditable || saving || contentBusy || cancelling) { showError(settingsReason); return; }
+                if (!settingsEditable || saving || cancelling) { showError(settingsReason); return; }
                 if (value === "xiaohongshu") { showError(unsupportedReason); return; }
                 setForm({
                 ...form,
@@ -334,8 +341,8 @@ export default function PublicationSettingsPage() {
             </div>
             <EnterpriseSelect value={form.channel_account_id} options={accountOptions} className="mt-2 w-full"
               placeholder={t("待选择", "Not selected")}
-              disabled={!settingsEditable || saving || contentBusy || cancelling || form.platform !== "douyin" || !channelAccounts.length}
-              disabledReason={!settingsEditable || saving || contentBusy || cancelling ? settingsReason
+              disabled={!settingsEditable || saving || cancelling || form.platform !== "douyin" || !channelAccounts.length}
+              disabledReason={!settingsEditable || saving || cancelling ? settingsReason
                 : !form.platform ? selectChannelReason
                   : form.platform !== "douyin" ? unsupportedReason
                     : noAccountReason}
@@ -355,12 +362,12 @@ export default function PublicationSettingsPage() {
             <div className="amp-publication-schedule-fields">
               <label>
                 <span>{t("日期", "Date")}</span>
-                <PublicationSchedulePicker kind="date" value={scheduledDate} disabled={!settingsEditable || saving || contentBusy || cancelling} blockedReason={settingsReason}
+                <PublicationSchedulePicker kind="date" value={scheduledDate} disabled={!settingsEditable || saving || cancelling} blockedReason={settingsReason}
                   onChange={(value) => setForm({ ...form, scheduled_for: publicationScheduleInput(value, scheduledTime) })} />
               </label>
               <label>
                 <span>{t("时间", "Time")}</span>
-                <PublicationSchedulePicker kind="time" value={scheduledTime} disabled={!settingsEditable || saving || contentBusy || cancelling} blockedReason={settingsReason}
+                <PublicationSchedulePicker kind="time" value={scheduledTime} disabled={!settingsEditable || saving || cancelling} blockedReason={settingsReason}
                   onChange={(value) => setForm({ ...form, scheduled_for: publicationScheduleInput(scheduledDate, value) })} />
               </label>
             </div>
@@ -374,7 +381,7 @@ export default function PublicationSettingsPage() {
             {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
           </GuardedButton>}
           {canManage && publicationHasScheduledRelease(plan.status, plan.scheduled_for) && <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary"
-            disabled={saving || contentBusy || cancelling}
+            disabled={saving || cancelling}
             onClick={() => { settingsDialog.current?.close(); setConfirmCancel(true); }}>
             {t("取消定时发布", "Cancel scheduled publication")}
           </GuardedButton>}

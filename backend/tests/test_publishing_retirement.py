@@ -13,7 +13,7 @@ from app.auth import storage as auth_storage
 from app.auth.security import create_access_token
 from app.engines.content_generator import storage as content_storage
 from app.engines.content_generator.ai_analyzer import build_reference_context
-from app.engines.content_generator.models import ContentCard
+from app.engines.content_generator.models import AgentTurnResult
 from app.engines.publishing import models as publishing_models
 from app.engines.publishing import project_memberships, projects, storage
 
@@ -142,15 +142,11 @@ class PublishingRetirementTests(unittest.TestCase):
         expected_project_methods = {
             "/publications": {"get", "post"},
             "/publications/{plan_id}": {"get", "patch", "delete"},
-            "/publications/{plan_id}/copy": {"get", "patch"},
-            "/publications/{plan_id}/contents": {"get", "post"},
-            "/publications/{plan_id}/contents/from-materials": {"post"},
-            "/publications/{plan_id}/contents/order": {"patch"},
-            "/publications/{plan_id}/contents/{content_id}/content": {"get"},
-            "/publications/{plan_id}/contents/{content_id}": {"delete"},
+            "/publications/{plan_id}/work": {"put"},
+            "/publications/{plan_id}/copy": {"get"},
+            "/publications/{plan_id}/contents": {"get"},
             "/projects": {"get"},
             "/projects/manual": {"post"},
-            "/projects/from_session": {"post"},
             "/projects/{project_id}": {"get", "patch", "delete"},
             "/projects/{project_id}/members": {"get", "post"},
             "/projects/{project_id}/members/{member_user_id}": {"patch", "delete"},
@@ -168,6 +164,14 @@ class PublishingRetirementTests(unittest.TestCase):
         }
         for path, methods in expected_project_methods.items():
             self.assertEqual(set(paths["/api/v1/publishing" + path]), methods)
+        for path in (
+            "/publications/{plan_id}/schedule-work",
+            "/publications/{plan_id}/contents/from-materials",
+            "/publications/{plan_id}/contents/order",
+            "/publications/{plan_id}/contents/{content_id}/content",
+            "/publications/{plan_id}/contents/{content_id}",
+        ):
+            self.assertNotIn("/api/v1/publishing" + path, paths)
         self.assertNotIn("/api/v1/publishing/projects/{project_id}/media", paths)
         self.assertNotIn("/api/v1/publishing/projects/{project_id}/media/{media_id}", paths)
         models = schema["components"]["schemas"]
@@ -186,6 +190,7 @@ class PublishingRetirementTests(unittest.TestCase):
             "StartLoginRequest", "InspectLoginRequest", "SaveLoginRequest",
             "ManualAccountImportRequest", "UpdateSocialAccountRequest",
             "UpsertAccountMemoryRequest",
+            "PublicationWorkSchedule", "PublicationContentsFromMaterials", "PublicationContentOrder",
         ):
             self.assertNotIn(name, models)
             self.assertFalse(hasattr(publishing_models, name))
@@ -201,7 +206,7 @@ class PublishingRetirementTests(unittest.TestCase):
     def test_legacy_project_storage_exports_remain_compatible(self):
         for name in (
             "PROJECT_AVATAR_COLORS", "PROJECT_AVATAR_ICONS", "ProjectNameExists",
-            "create_manual_project", "create_project_from_session",
+            "create_manual_project",
             "delete_project", "get_project", "list_projects",
             "update_project",
         ):
@@ -259,10 +264,10 @@ class PublishingRetirementTests(unittest.TestCase):
         session = content_storage.create_session(self.user["id"], self.project.id, "Canvas")
         path = f"/api/v1/content_generator/sessions/{session.id}/chat"
 
-        def draft_reply(messages, *, reference_context):
+        def draft_reply(messages, **kwargs):
             self.assertEqual(messages, [{"role": "user", "content": "Create a draft"}])
-            self.assertEqual(reference_context, "")
-            return "Draft reply"
+            self.assertEqual(kwargs["reference_context"], "")
+            return AgentTurnResult(intent="explore", reply="Draft reply")
 
         response = self.client.post(path, headers=self.headers, json={
             "message": "Create a draft",
@@ -270,23 +275,22 @@ class PublishingRetirementTests(unittest.TestCase):
             "account_name": self.account.account_name,
         })
         self.assertEqual(response.status_code, 422)
-        with patch.object(content_generator, "chat", side_effect=draft_reply) as chat:
+        with patch.object(
+            content_generator,
+            "run_creation_agent",
+            side_effect=draft_reply,
+        ) as agent:
             response = self.client.post(
                 path, headers=self.headers, json={"message": "Create a draft"},
             )
         self.assertEqual(response.status_code, 200)
-        chat.assert_called_once()
+        agent.assert_called_once()
         self.assertNotIn("account_memory_ids", response.json()["data"]["session"])
-        card = ContentCard(
-            id="draft", card_type="copy", title="Draft", preview="Preview", content="Draft body",
-        )
-        content_storage.update_session(session.id, cards=[card])
         response = self.client.post(
             "/api/v1/publishing/projects/from_session", headers=self.headers,
             json={"source_session_id": session.id, "title": "Saved draft"},
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["data"]["cards_snapshot"][0]["content"], "Draft body")
+        self.assertEqual(response.status_code, 405)
         self.assertEqual(self.legacy_rows(), before)
 
     def test_content_reference_context_keeps_insights_and_cases(self):

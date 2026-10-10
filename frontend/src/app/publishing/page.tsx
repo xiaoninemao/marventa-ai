@@ -47,7 +47,9 @@ function PublishingOverview() {
   const { user, loading: authLoading } = useAuth();
   const { t, locale } = useI18n();
   const { showError, showSuccess } = useToast();
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const createDialog = useRef<HTMLDialogElement>(null);
+  const [formProjectId, setFormProjectId] = useState("");
+  const [planName, setPlanName] = useState("");
   const renameDialogRef = useRef<HTMLDialogElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [projects, setProjects] = useState<ContentProject[]>([]);
@@ -62,19 +64,7 @@ function PublishingOverview() {
   const [renamingPlan, setRenamingPlan] = useState<PublicationPlan | null>(null);
   const [renameName, setRenameName] = useState("");
   const selectedProjectId = searchParams.get("project") || "";
-  const [formProjectId, setFormProjectId] = useState(selectedProjectId);
-  const [planName, setPlanName] = useState("");
-  const hasFormProject = projects.some((project) => project.id === formProjectId);
   const busyReason = t("发布计划操作正在处理中，请稍候。", "A publication-plan operation is in progress. Please wait.");
-  const missingProjectReason = !projects.length
-    ? t("请先创建项目。", "Create a project first.")
-    : t("请选择有效的所属项目。", "Select an available project.");
-  const projectReason = saving ? busyReason : loading ? t("项目正在加载，请稍候。", "Projects are loading. Please wait.")
-    : !projects.length ? t("请先创建项目，再创建发布计划。", "Create a project before creating a publication plan.")
-      : t("计划所属项目已固定为当前项目。", "The plan's project is fixed to the current project.");
-  const createReason = saving ? busyReason : loading ? projectReason : !hasFormProject
-    ? missingProjectReason
-    : t("请输入发布计划名称。", "Enter a publication plan name.");
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
@@ -130,40 +120,26 @@ function PublishingOverview() {
 
   const openCreateDialog = () => {
     if (saving) { showError(busyReason); return; }
-    const projectId = projects.find((project) => project.id === selectedProjectId)?.id
-      || projects[0]?.id || "";
-    setFormProjectId(projectId);
+    setFormProjectId(projects.some(project => project.id === selectedProjectId) ? selectedProjectId : projects[0]?.id || "");
     setPlanName("");
-    dialogRef.current?.showModal();
+    createDialog.current?.showModal();
   };
 
   const createPlan = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (saving || loading) { showError(saving ? busyReason : projectReason); return; }
-    if (!hasFormProject) {
-      showError(missingProjectReason);
-      return;
-    }
-    if (!planName.trim()) {
-      showError(t("发布计划名称不能为空", "Publication plan name is required"));
+    if (saving || loading || !projects.some(project => project.id === formProjectId) || !planName.trim()) {
+      showError(saving || loading ? busyReason : t("请选择项目并填写计划名称", "Select a project and enter a plan name."));
       return;
     }
     setSaving(true);
     try {
-      const response = await create_publication_plan({
-        project_id: formProjectId,
-        name: planName.trim(),
-      });
-      if (!selectedProjectId || selectedProjectId === response.data.project_id) {
-        setPlans((current) => [response.data, ...current]);
-      }
-      dialogRef.current?.close();
-      showSuccess(t("发布计划已创建", "Publication plan created"));
+      const response = await create_publication_plan({ project_id: formProjectId, name: planName.trim() });
+      if (!response.success) throw new Error(response.message);
+      if (!selectedProjectId || selectedProjectId === response.data.project_id) setPlans(current => [response.data, ...current]);
+      createDialog.current?.close();
+      showSuccess(t("发布计划已创建，请选择作品", "Plan created. Select a work to publish."));
     } catch (error) {
-      showError(localizeErrorMessage(
-        error instanceof Error ? error.message : "Could not create publication plan",
-        locale,
-      ));
+      showError(localizeErrorMessage(error instanceof Error ? error.message : "Could not create publication plan", locale));
     } finally {
       setSaving(false);
     }
@@ -392,12 +368,9 @@ function PublishingOverview() {
                       </div>
                       <div>
                         <dt>{t("发布内容", "Content")}</dt>
-                        <dd className={!plan.content_count ? "is-pending" : ""}>
-                          {plan.content_count ? [
-                            plan.image_count ? t("图片 {count}", "{count} images", { count: plan.image_count }) : "",
-                            plan.video_count ? t("视频 {count}", "{count} videos", { count: plan.video_count }) : "",
-                            plan.document_count ? t("文案 {count}", "{count} copy", { count: plan.document_count }) : "",
-                          ].filter(Boolean).join(" · ") : t("待添加", "Not added")}
+                        <dd className={`amp-publication-brief-work${!plan.portfolio_title ? " is-pending" : ""}`}
+                          title={plan.portfolio_title || undefined}>
+                          {plan.portfolio_title || t("待选择", "Not selected")}
                         </dd>
                       </div>
                       <div>
@@ -484,54 +457,32 @@ function PublishingOverview() {
         )}
       </main>
 
-      <dialog ref={dialogRef} aria-labelledby="create-publication-title"
-        className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-lg bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => { if (saving) { event.preventDefault(); showError(busyReason); } }}>
-        <form onSubmit={(event) => void createPlan(event)}
-          className="amp-publication-form">
-          <h2 id="create-publication-title" className="text-lg font-semibold">
-            {t("创建计划", "Create plan")}
-          </h2>
-          <label>
-            <span>{t("项目", "Project")}</span>
+      <dialog ref={createDialog} aria-labelledby="create-publication-title"
+        className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
+        onCancel={event => { if (saving) { event.preventDefault(); showError(busyReason); } }}>
+        <form className="amp-publication-form" onSubmit={event => void createPlan(event)}>
+          <h2 id="create-publication-title" className="text-xl font-semibold">{t("创建计划", "Create plan")}</h2>
+          <label><span>{t("所属项目", "Project")}</span>
             <EnterpriseSelect value={formProjectId}
-              options={projects.map((project) => ({
-                value: project.id,
-                label: project.title,
-              }))}
-              onChange={setFormProjectId}
-              ariaLabel={t("选择项目", "Select project")}
-              placeholder={loading
-                ? t("正在加载项目...", "Loading projects...")
-                : projects.length ? t("请选择项目", "Select a project") : t("暂无可用项目", "No projects available")}
-              disabled={saving || loading || projects.length === 0
-                || projects.some((project) => project.id === selectedProjectId)}
-              disabledReason={projectReason}
+              options={projects.map(project => ({ value: project.id, label: project.title }))}
+              onChange={setFormProjectId} ariaLabel={t("选择项目", "Select project")}
+              disabled={saving || loading || !projects.length} disabledReason={saving ? busyReason : t("请先创建项目", "Create a project first.")}
               className="mt-2 w-full" />
           </label>
-          {!loading && projects.length === 0 && (
-            <p className="text-sm text-slate-500">
-              {t("请先创建项目，再安排发布。", "Create a project before preparing a publication.")}
-              {" "}<Link href="/projects" className="text-blue-600 hover:underline"
-                onClick={() => dialogRef.current?.close()}>{t(CHINESE_ACTIONS.open, ENGLISH_ACTIONS.open)}</Link>
-            </p>
-          )}
-          <label>
-            <span>{t("名称", "Name")}</span>
-            <GuardedInput blockedReason={busyReason} value={planName} maxLength={120} required
-              placeholder={t("请输入发布计划名称", "Enter a publication plan name")}
-              onInvalid={(event) => { event.preventDefault(); showError(t("请输入发布计划名称。", "Enter a publication plan name.")); }}
-              onChange={(event) => setPlanName(event.target.value)}
-              disabled={saving} className="amp-workspace-control mt-2 w-full" />
+          <label><span>{t("计划名称", "Plan name")}</span>
+            <GuardedInput value={planName} onChange={event => setPlanName(event.target.value)} maxLength={120}
+              disabled={saving} blockedReason={busyReason} className="amp-workspace-control mt-2 w-full"
+              placeholder={t("请输入计划名称", "Enter a plan name")} />
           </label>
           <div className="amp-project-channel-account-actions">
-            <GuardedButton blockedReason={busyReason} type="button" className="amp-button amp-button-secondary amp-button-cancel"
-              disabled={saving} onClick={() => dialogRef.current?.close()}>
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+              disabled={saving} blockedReason={busyReason} onClick={() => createDialog.current?.close()}>
               {t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
             </GuardedButton>
-            <GuardedButton blockedReason={createReason} type="submit" className="amp-button amp-button-primary"
-              disabled={saving || loading || !hasFormProject || !planName.trim()}>
-              {saving ? t(CHINESE_PROGRESS.creating, ENGLISH_PROGRESS.creating) : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+            <GuardedButton type="submit" className="amp-button amp-button-primary"
+              disabled={saving || loading || !projects.some(project => project.id === formProjectId) || !planName.trim()}
+              blockedReason={saving || loading ? busyReason : t("请选择项目并填写计划名称", "Select a project and enter a plan name.")}>
+              {saving ? t("创建中", "Creating") : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
             </GuardedButton>
           </div>
         </form>

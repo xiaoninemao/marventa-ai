@@ -10,9 +10,9 @@ from app.ai_provider import (
     AIProviderArea,
     AIProviderConfigurationError,
     get_ai_provider,
+    get_content_image_provider,
 )
 from app.engines.case_library import ai_analyzer
-from app.engines.content_generator import ai_analyzer as content_ai
 from app.engines.market_insight import ai_analyzer as insight_ai
 from app.engines.publishing import lead_analysis
 
@@ -51,6 +51,35 @@ class AIProviderConfigurationTests(unittest.TestCase):
         self.assertEqual(config["AI_API_KEY"], "unified-key")
         self.assertEqual(config["AI_BASE_URL"], "https://unified.example/v1")
         self.assertEqual(config["AI_MODEL"], "unified-model")
+
+    def test_reserved_seedream_and_seedance_configuration_is_empty_by_default(self):
+        config = self.load_config({})
+        example = (Path(__file__).resolve().parents[1] / ".env.example").read_text()
+        for provider in ("SEEDREAM", "SEEDANCE"):
+            for field in ("API_KEY", "BASE_URL", "MODEL"):
+                key = f"CONTENT_STUDIO_{provider}_{field}"
+                with self.subTest(key=key):
+                    self.assertEqual(config[key], "")
+                    self.assertIn(f"{key}=\n", example)
+        self.assertFalse(config["CONTENT_STUDIO_IMAGE_GENERATION_ENABLED"])
+
+    def test_reserved_vendor_credentials_are_read_without_enabling_or_overriding_generation(self):
+        environment = {
+            f"CONTENT_STUDIO_{provider}_{field}": f" {provider.lower()}-{field.lower()} "
+            for provider in ("SEEDREAM", "SEEDANCE")
+            for field in ("API_KEY", "BASE_URL", "MODEL")
+        }
+        environment.update({
+            "CONTENT_STUDIO_IMAGE_API_KEY": "existing-key",
+            "CONTENT_STUDIO_IMAGE_BASE_URL": "https://existing.example/v1",
+            "CONTENT_STUDIO_IMAGE_MODEL": "existing-model",
+        })
+        config = self.load_config(environment)
+        for key, value in environment.items():
+            with self.subTest(key=key):
+                self.assertEqual(config[key], value.strip())
+        self.assertFalse(config["CONTENT_STUDIO_IMAGE_GENERATION_ENABLED"])
+        self.assertFalse(config["CONTENT_STUDIO_AI_OVERRIDE_ENABLED"])
 
     def test_legacy_case_ai_names_feed_unified_provider_only(self):
         config = self.load_config({
@@ -144,6 +173,30 @@ class AIProviderConfigurationTests(unittest.TestCase):
         ):
             get_ai_provider("lead_tracking")
 
+    def test_content_image_tool_uses_its_own_explicit_provider(self):
+        with patch.multiple(
+            runtime_config,
+            CONTENT_STUDIO_IMAGE_GENERATION_ENABLED=True,
+            CONTENT_STUDIO_IMAGE_API_KEY="image-key",
+            CONTENT_STUDIO_IMAGE_BASE_URL="https://images.example/v1",
+            CONTENT_STUDIO_IMAGE_MODEL="image-model",
+        ):
+            provider = get_content_image_provider()
+        self.assertEqual(provider.api_key, "image-key")
+        self.assertEqual(provider.base_url, "https://images.example/v1")
+        self.assertEqual(provider.model, "image-model")
+
+    def test_content_image_tool_never_silently_uses_chat_provider(self):
+        with patch.object(
+            runtime_config,
+            "CONTENT_STUDIO_IMAGE_GENERATION_ENABLED",
+            False,
+        ), self.assertRaisesRegex(
+            AIProviderConfigurationError,
+            "image generation is not enabled",
+        ):
+            get_content_image_provider()
+
 
 class CaseAnalysisProviderTests(unittest.TestCase):
     def setUp(self):
@@ -192,15 +245,9 @@ class CapabilityRoutingTests(unittest.TestCase):
         provider.client.return_value = MagicMock()
         return provider
 
-    def test_all_content_studio_actions_share_one_provider(self):
-        provider = self.provider()
-        with patch.object(content_ai, "get_ai_provider", return_value=provider) as resolve:
-            content_ai._get_client()
-            content_ai._get_modify_client()
-        self.assertEqual(
-            [call.args for call in resolve.call_args_list],
-            [("content_studio",), ("content_studio",)],
-        )
+    def test_content_studio_provider_is_shared_with_the_agent(self):
+        from app.engines.content_generator import creation_agent
+        self.assertIs(creation_agent.get_ai_provider, get_ai_provider)
 
     def test_market_analysis_and_research_share_one_provider(self):
         provider = self.provider()

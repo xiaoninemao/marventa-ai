@@ -26,6 +26,7 @@ from app.config import (
 )
 from app.engines.case_library.import_tasks import init_import_tasks_db
 from app.engines.case_library.storage import init_db as init_case_library_db
+from app.engines.content_generator.agent_jobs import AgentJobWorker
 from app.engines.content_generator.storage import init_db as init_content_generator_db
 from app.engines.market_insight.storage import init_db as init_market_insight_db
 from app.engines.portfolio.storage import init_db as init_portfolio_db
@@ -42,6 +43,12 @@ async def lifespan(_app: FastAPI):
     stops: list[asyncio.Event] = []
     _app.state.publication_scheduler_task = None
     _app.state.lead_tracking_scheduler_task = None
+    init_content_generator_db()
+    agent_stop = asyncio.Event()
+    stops.append(agent_stop)
+    agent_task = asyncio.create_task(AgentJobWorker().serve(agent_stop))
+    tasks.append(agent_task)
+    _app.state.agent_worker_task = agent_task
     if not PUBLISHING_SCHEDULER_ENABLED:
         logging.getLogger(__name__).info("Publication scheduler disabled; set PUBLISHING_SCHEDULER_ENABLED=true to enable")
     else:
@@ -67,7 +74,7 @@ async def lifespan(_app: FastAPI):
     def report_failure(finished: asyncio.Task[None]) -> None:
         if not finished.cancelled() and finished.exception() is not None:
             logging.getLogger(__name__).error(
-                "Publication scheduler stopped unexpectedly (%s)", type(finished.exception()).__name__,
+                "Background worker stopped unexpectedly (%s)", type(finished.exception()).__name__,
             )
 
     for task in tasks:
@@ -86,6 +93,7 @@ async def lifespan(_app: FastAPI):
                     await task
         _app.state.publication_scheduler_task = None
         _app.state.lead_tracking_scheduler_task = None
+        _app.state.agent_worker_task = None
 
 
 app = FastAPI(
@@ -134,8 +142,10 @@ app.include_router(notifications_router)
 async def root():
     scheduler = getattr(app.state, "publication_scheduler_task", None)
     lead_scheduler = getattr(app.state, "lead_tracking_scheduler_task", None)
+    agent_worker = getattr(app.state, "agent_worker_task", None)
     return {
         "app": APP_NAME, "status": "running",
+        "agent_worker_running": agent_worker is not None and not agent_worker.done(),
         "publishing_scheduler_enabled": PUBLISHING_SCHEDULER_ENABLED,
         "publishing_scheduler_running": scheduler is not None and not scheduler.done(),
         "lead_tracking_sync_enabled": LEAD_TRACKING_SYNC_ENABLED,

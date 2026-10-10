@@ -136,7 +136,7 @@ export default function SlidingPanel({ mode, open, onClose, onSwitch }: Props) {
             <div className="amp-slide-topline">
               <LanguageSwitcher variant="minimal" />
               <span>{isLogin ? t("没有账号？", "New here?") : t("已有账号？", "Have an account?")}</span>
-              <button type="button" onClick={handleSwitch}>
+              <button type="button" className="amp-text-action amp-text-action-primary" onClick={handleSwitch}>
                 {isLogin ? t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp) : t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
               </button>
               <button type="button" onClick={handleClose} className="amp-modal-close" aria-label={t("关闭", "Close")}>

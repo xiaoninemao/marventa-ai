@@ -6,7 +6,7 @@ const now = new Date(2026, 9, 4, 12);
 const valid: PublicationSettingsValues = {
   platform: "douyin", accountId: "account",
   accounts: [{ id: "account", platform: "douyin" }],
-  scheduledFor: "2026-10-05T10:30", mediaMode: "image_text", contentCount: 1, videoCount: 0,
+  scheduledFor: "2026-10-05T10:30", mediaMode: "image_text", contentCount: 1, imageCount: 1, videoCount: 0,
 };
 const issue = (changes: Partial<PublicationSettingsValues>) => publicationSettingsIssue({ ...valid, ...changes }, now);
 
@@ -39,8 +39,9 @@ test("complete but invalid or nonfuture schedules have specific validation feedb
   }
 });
 
-test("content validation preserves image/copy and exactly-one-video requirements", () => {
+test("content validation requires media even when copy exists", () => {
   assert.equal(issue({ contentCount: 0 }), "missing-content");
+  assert.equal(issue({ contentCount: 1, imageCount: 0 }), "missing-content");
   assert.equal(issue({ mediaMode: "video", contentCount: 0, videoCount: 0 }), "invalid-video");
   assert.equal(issue({ mediaMode: "video", contentCount: 2, videoCount: 2 }), "invalid-video");
   assert.equal(issue({ mediaMode: "video", videoCount: 0 }), "invalid-video");

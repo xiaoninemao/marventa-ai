@@ -31,6 +31,29 @@ class PlatformPublisherTests(unittest.IsolatedAsyncioTestCase):
             assets=(PublicationAsset("clip.mp4", "video", "video/mp4", "test/clip.mp4"),),
         )
 
+    async def test_media_only_requests_omit_text_instead_of_sending_empty_or_generated_copy(self):
+        import json
+
+        for mode in ("video", "image_text"):
+            bodies = []
+
+            async def transport(request, recorded=bodies):
+                if request.url.path.endswith("/upload_video/"):
+                    return self.response({"video": {"video_id": "video-upload"}})
+                if request.url.path.endswith("/upload_image/"):
+                    return self.response({"image": {"image_id": "image-upload"}})
+                recorded.append(json.loads(await request.aread()))
+                return self.response({"item_id": "media-only-post"})
+
+            asset = self.job.assets[0] if mode == "video" else PublicationAsset("image.png", "image", "image/png", "test/image.png")
+            with patch.object(platform_publisher, "read_media_bytes", return_value=b"media"):
+                async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+                    await PlatformPublisher(client=client).publish(
+                        replace(self.job, media_mode=mode, title="", content="", tags=(), assets=(asset,)), lambda: None,
+                    )
+            self.assertNotIn("text", bodies[0])
+            self.assertIn("video_id" if mode == "video" else "image_list", bodies[0])
+
     async def test_virtual_expired_and_invalid_accounts_fail_before_any_http_request(self):
         requests = []
 

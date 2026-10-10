@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
@@ -15,7 +16,9 @@ import RedesignInput from "@/components/redesign/RedesignInput";
 import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
 import Pagination from "@/components/redesign/Pagination";
 import PortfolioProjectSidebar from "@/components/portfolio/PortfolioProjectSidebar";
+import PortfolioEmptyPreview from "@/components/portfolio/PortfolioEmptyPreview";
 import {
+  create_portfolio_work,
   delete_script,
   fetch_content_projects,
   fetch_scripts,
@@ -23,28 +26,10 @@ import {
 } from "@/services/api_client";
 import type { PortfolioScript } from "@/types/portfolio";
 import type { ContentProject } from "@/types/publishing";
-import { parsePortfolioReport } from "@/utils/portfolio_report";
 import { DEFAULT_PAGE_SIZE_OPTIONS, usePagination } from "@/utils/pagination";
+import { portfolioWorkStatus, type PortfolioWorkStatus } from "@/utils/portfolio_status";
 
-const PENDING_DOCUMENTS_STORAGE_KEY = "amp-content-generator-pending-documents-v1";
-type WorkStatusFilter = "all" | PortfolioScript["status"];
-
-function readPendingDocumentSessions(): string[] {
-  try {
-    const raw = window.localStorage.getItem(PENDING_DOCUMENTS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) as string[] : [];
-  } catch {
-    return [];
-  }
-}
-
-function writePendingDocumentSessions(sessionIds: string[]) {
-  if (sessionIds.length > 0) {
-    window.localStorage.setItem(PENDING_DOCUMENTS_STORAGE_KEY, JSON.stringify(sessionIds));
-  } else {
-    window.localStorage.removeItem(PENDING_DOCUMENTS_STORAGE_KEY);
-  }
-}
+type WorkStatusFilter = "all" | PortfolioWorkStatus;
 
 function PortfolioOverview() {
   const router = useRouter();
@@ -54,11 +39,17 @@ function PortfolioOverview() {
   const { showError, showSuccess } = useToast();
   const menuRef = useRef<HTMLDivElement>(null);
   const renameDialogRef = useRef<HTMLDialogElement>(null);
+  const createDialogRef = useRef<HTMLDialogElement>(null);
+  const [newKind, setNewKind] = useState<"image" | "video" | "">("");
+  const [newProjectId, setNewProjectId] = useState("");
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
   const [projects, setProjects] = useState<ContentProject[]>([]);
   const [scripts, setScripts] = useState<PortfolioScript[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<WorkStatusFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | "image" | "video">("all");
   const [sort, setSort] = useState<"latest" | "oldest" | "name">("latest");
   const [menuScriptId, setMenuScriptId] = useState<string | null>(null);
   const [renamingScript, setRenamingScript] = useState<PortfolioScript | null>(null);
@@ -108,69 +99,26 @@ function PortfolioOverview() {
     return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
   }, [menuScriptId]);
 
-  useEffect(() => {
-    if (!user || (
-      readPendingDocumentSessions().length === 0
-      && !scripts.some((script) => script.status === "generating")
-    )) return;
-    let pollCount = 0;
-    const timer = window.setInterval(async () => {
-      try {
-        const response = await fetch_scripts(selectedProjectId);
-        setScripts(response.data);
-        const pending = readPendingDocumentSessions();
-        const completed = pending.filter((sessionId) => response.data.some((script) => (
-          script.source_session_id === sessionId && script.status === "completed"
-        )));
-        const failed = pending.filter((sessionId) => response.data.some((script) => (
-          script.source_session_id === sessionId && script.status === "failed"
-        )));
-        const finished = new Set([...completed, ...failed]);
-        const remaining = pending.filter((sessionId) => !finished.has(sessionId));
-        if (remaining.length !== pending.length) {
-          writePendingDocumentSessions(remaining);
-          if (completed.length > 0) {
-            showSuccess(t("作品已生成并保存到作品集", "Your work is ready and saved to Portfolio."));
-          }
-          if (failed.length > 0) {
-            showError(t("作品生成失败，请返回智能创作重试", "Work generation failed. Return to Content Studio to retry."));
-          }
-        }
-        if (remaining.length === 0 && !response.data.some((script) => script.status === "generating")) {
-          window.clearInterval(timer);
-        }
-      } catch (error) {
-        window.clearInterval(timer);
-        showError(localizeErrorMessage(
-          error instanceof Error ? error.message : "Could not refresh portfolio",
-          locale,
-        ));
-      }
-      pollCount += 1;
-      if (pollCount >= 40) window.clearInterval(timer);
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [locale, scripts, selectedProjectId, showError, showSuccess, t, user]);
-
   const visibleScripts = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase(locale);
     const filtered = scripts.filter((script) => {
-      if (status !== "all" && script.status !== status) return false;
+      if (typeFilter !== "all" && script.media_kind !== typeFilter) return false;
+      if (status !== "all" && portfolioWorkStatus(script) !== status) return false;
       if (!normalizedQuery) return true;
-      const report = parsePortfolioReport(script.title, script.content, script.updated_at, t, locale);
-      return [script.title, script.project_title, report.summary]
+      return [script.name, script.title, script.project_title, script.content]
         .join(" ")
         .toLocaleLowerCase(locale)
         .includes(normalizedQuery);
     });
     return [...filtered].sort((left, right) => {
-      if (sort === "name") return left.title.localeCompare(right.title, locale);
+      if (sort === "name") return (left.name || "").localeCompare(right.name || "", locale);
       const difference = new Date(left.updated_at).getTime() - new Date(right.updated_at).getTime();
       return sort === "oldest" ? difference : -difference;
     });
-  }, [locale, query, scripts, sort, status, t]);
-  const paginationResetKey = JSON.stringify([query, status, sort, selectedProjectId, locale]);
+  }, [locale, query, scripts, sort, status, typeFilter]);
+  const paginationResetKey = JSON.stringify([query, status, typeFilter, sort, selectedProjectId, locale]);
   const pagination = usePagination(visibleScripts, paginationResetKey, 12);
+  const hasActiveFilters = Boolean(query.trim()) || status !== "all" || typeFilter !== "all";
 
   useEffect(() => {
     setMenuScriptId(null);
@@ -193,21 +141,21 @@ function PortfolioOverview() {
     if (renaming || deleting || !canManage(script)) { showError(renaming || deleting ? busyReason : permissionReason); return; }
     setMenuScriptId(null);
     setRenamingScript(script);
-    setRenameName(script.title);
+    setRenameName(script.name);
     renameDialogRef.current?.showModal();
   };
 
   const renameScript = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!renamingScript || renameLocked) { showError(renameReason); return; }
-    const title = renameName.trim();
-    if (!title) {
+    const name = renameName.trim();
+    if (!name) {
       showError(t("作品名称不能为空", "Work name is required"));
       return;
     }
     setRenaming(true);
     try {
-      const response = await update_script(renamingScript.id, { title });
+      const response = await update_script(renamingScript.id, { name });
       setScripts((current) => current.map((script) => (
         script.id === renamingScript.id
           ? { ...response.data, project_title: script.project_title, project_role: script.project_role }
@@ -243,6 +191,29 @@ function PortfolioOverview() {
     }
   };
 
+  const createReason = creating ? t("正在创建作品，请稍候", "Work is being created. Please wait.")
+    : !projects.some(project => project.id === newProjectId) ? t("请选择所属项目", "Select a project first.")
+      : !newKind ? t("请选择作品类型", "Select a work type first.") : t("请输入作品名称", "Enter a work name.");
+  const createWork = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (creating || !newKind || !newName.trim() || !projects.some(project => project.id === newProjectId)) {
+      showError(createReason);
+      return;
+    }
+    setCreating(true);
+    try {
+      const response = await create_portfolio_work({ name: newName.trim(), project_id: newProjectId, media_kind: newKind });
+      if (!response.success) throw new Error(response.message);
+      createDialogRef.current?.close();
+      showSuccess(t("作品已创建", "Work created"));
+      router.push(`/portfolio/${encodeURIComponent(response.data.id)}`);
+    } catch (error) {
+      showError(localizeErrorMessage(error instanceof Error ? error.message : "Could not create portfolio work", locale));
+    } finally {
+      setCreating(false);
+    }
+  };
+
   if (authLoading || !user) {
     return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
   }
@@ -258,6 +229,18 @@ function PortfolioOverview() {
               ? t("查看当前项目中的作品。", "View work in the selected project.")
               : t("汇总当前组织所有可访问项目中的作品。", "Work across all accessible projects in this organization.")}</p>
           </div>
+          <GuardedButton type="button" className="amp-button amp-button-primary"
+            disabled={loading || !projects.length || renaming || deleting || creating}
+            blockedReason={loading ? t("项目加载中，请稍候", "Projects are loading. Please wait.")
+              : !projects.length ? t("请先创建项目", "Create a project first.") : busyReason}
+            onClick={() => {
+              setNewKind("");
+              setNewName("");
+              setNewProjectId(projects.some(project => project.id === selectedProjectId) ? selectedProjectId : "");
+              createDialogRef.current?.showModal();
+            }}>
+            {t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+          </GuardedButton>
         </div>
 
         <div className="amp-insight-toolbar">
@@ -274,12 +257,26 @@ function PortfolioOverview() {
             value={status}
             options={[
               { value: "all", label: t("全部状态", "All statuses") },
-              { value: "generating", label: t("生成中", "Generating") },
+              { value: "draft", label: t("草稿", "Draft") },
               { value: "completed", label: t("已完成", "Completed") },
-              { value: "failed", label: t("失败", "Failed") },
+              ...(scripts.some(script => script.status === "generating")
+                ? [{ value: "generating" as const, label: t("处理中（历史）", "Processing (legacy)") }] : []),
+              ...(scripts.some(script => script.status === "failed")
+                ? [{ value: "failed" as const, label: t("保存失败", "Save failed") }] : []),
             ]}
             onChange={setStatus}
             ariaLabel={t("作品状态", "Work status")}
+            className="w-36"
+          />
+          <EnterpriseSelect
+            value={typeFilter}
+            options={[
+              { value: "all", label: t("全部类型", "All types") },
+              { value: "image", label: t("图文作品", "Image and copy") },
+              { value: "video", label: t("视频作品", "Video work") },
+            ]}
+            onChange={setTypeFilter}
+            ariaLabel={t("类型", "Type")}
             className="w-36"
           />
           <EnterpriseSelect
@@ -300,40 +297,40 @@ function PortfolioOverview() {
         ) : visibleScripts.length === 0 ? (
           <div className="amp-projects-state">
             <span className="amp-projects-empty-icon"><InlineIcon name="briefcase" /></span>
-            <strong>{query ? t("没有匹配的作品", "No matching work") : t("暂无作品", "No work yet")}</strong>
-            <p>{query
-              ? t("请尝试其他搜索关键词。", "Try a different search term.")
-              : t("在智能创作中生成作品后，内容会自动保存到这里。", "Work generated in Content Studio is saved here automatically.")}</p>
+            <strong>{hasActiveFilters ? t("没有匹配的作品", "No matching work") : t("暂无作品", "No work yet")}</strong>
+            <p>{hasActiveFilters
+              ? t("请调整搜索关键词或筛选条件。", "Adjust your search or filters.")
+              : t("点击“创建”添加作品，或从智能创作保存成品。", "Select Create to add a work, or save one from Content Studio.")}</p>
           </div>
         ) : (
           <>
           <div className="amp-insight-grid">
             {pagination.pageItems.map((script) => {
-              const report = parsePortfolioReport(script.title, script.content, script.updated_at, t, locale);
               const projectTitle = script.project_title
                 || projects.find((project) => project.id === script.project_id)?.title
                 || t("未关联项目", "No project");
-              const statusClass = script.status === "generating" ? "analyzing" : script.status;
-              const statusLabel = script.status === "generating"
-                ? t("生成中", "Generating")
-                : script.status === "failed"
-                  ? t("失败", "Failed")
-                  : t("已完成", "Completed");
+              const workStatus = portfolioWorkStatus(script);
+              const statusClass = workStatus === "generating" ? "analyzing"
+                : workStatus === "draft" ? "drafting" : workStatus;
+              const statusLabel = workStatus === "draft" ? t("草稿", "Draft")
+                : workStatus === "generating" ? t("处理中（历史）", "Processing (legacy)")
+                  : workStatus === "failed" ? t("保存失败", "Save failed") : t("已完成", "Completed");
               return (
                 <article key={script.id} className="amp-portfolio-card">
                   <Link href={`/portfolio/${encodeURIComponent(script.id)}`} className="amp-portfolio-card-link">
                     <span className="amp-portfolio-card-preview" aria-hidden="true">
-                      <small>MARVENTA AI</small>
-                      <strong>{script.status === "generating"
-                        ? t("正在生成作品内容", "Generating work content")
-                        : script.status === "failed"
-                          ? t("作品生成失败", "Work generation failed")
-                          : report.title}</strong>
-                      <i />
-                      <i />
+                      <span className="amp-case-type-overlay">{script.media_kind === "video" ? t("视频", "Video")
+                        : script.media_kind === "image" ? t("图文", "Image post") : t("文字档案", "Text archive")}</span>
+                      {script.media?.[0]?.media_type === "image"
+                        ? <Image src={script.media[0].file_url} alt="" width={480} height={320} unoptimized />
+                        : script.media?.[0]?.media_type === "video"
+                          ? <video src={script.media[0].file_url} muted playsInline preload="metadata" />
+                          : script.media_kind
+                            ? <PortfolioEmptyPreview kind={script.media_kind} />
+                            : <InlineIcon name="file" />}
                     </span>
                     <span className="amp-portfolio-card-footer">
-                      <strong title={script.title}>{script.title}</strong>
+                      <strong title={script.name}>{script.name || t("未命名作品", "Untitled work")}</strong>
                       <span className="amp-insight-card-meta">
                         <span>{projectTitle}</span>
                         <span className={`amp-insight-status amp-insight-status-${statusClass}`}>{statusLabel}</span>
@@ -343,7 +340,7 @@ function PortfolioOverview() {
                   </Link>
                   <div ref={menuScriptId === script.id ? menuRef : undefined} className="amp-insight-card-menu">
                     <button type="button" className="amp-insight-card-more"
-                      aria-label={t("{name} 作品操作", "Actions for {name}", { name: script.title })}
+                      aria-label={t("{name} 作品操作", "Actions for {name}", { name: script.name || t("未命名作品", "Untitled work") })}
                       aria-haspopup="menu" aria-expanded={menuScriptId === script.id}
                       onClick={() => setMenuScriptId((current) => current === script.id ? null : script.id)}>
                       <InlineIcon name="more" strokeWidth={3} />
@@ -378,6 +375,49 @@ function PortfolioOverview() {
         )}
       </main>
 
+      <dialog ref={createDialogRef} aria-labelledby="create-work-title"
+        className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
+        onCancel={event => { if (creating) { event.preventDefault(); showError(createReason); } }}>
+        <form onSubmit={event => void createWork(event)}>
+          <h2 id="create-work-title" className="text-xl font-semibold">{t("新建作品", "New work")}</h2>
+          <p className="mt-2 text-sm text-slate-500">{t("选择所属项目、作品类型并填写作品名称。", "Select a project, work type and name.")}</p>
+          <label className="mt-5 block text-sm font-medium text-slate-700">
+            {t("所属项目", "Project")}
+            <EnterpriseSelect value={newProjectId}
+              options={projects.map(project => ({ value: project.id, label: project.title }))}
+              onChange={setNewProjectId} ariaLabel={t("选择所属项目", "Select project")}
+              disabled={creating} disabledReason={createReason}
+              placeholder={t("请选择项目", "Select a project")} className="mt-2 w-full" />
+          </label>
+          <label className="mt-4 block text-sm font-medium text-slate-700">
+            {t("作品类型", "Work type")}
+            <EnterpriseSelect value={newKind} options={[
+              { value: "image", label: t("图文作品", "Image and copy") },
+              { value: "video", label: t("视频作品", "Video work") },
+            ]} onChange={value => setNewKind(value === "video" ? "video" : "image")}
+              ariaLabel={t("作品类型", "Work type")} placeholder={t("请选择作品类型", "Select a work type")}
+              disabled={creating} disabledReason={createReason}
+              className="mt-2 w-full" />
+          </label>
+          <label className="mt-4 block text-sm font-medium text-slate-700">
+            {t("作品名称", "Work name")}
+            <GuardedInput value={newName} maxLength={200} autoFocus disabled={creating} blockedReason={createReason}
+              onChange={event => setNewName(event.target.value)} placeholder={t("请输入作品名称", "Enter a work name")}
+              className="amp-workspace-control mt-2 w-full font-normal" />
+          </label>
+          <div className="mt-6 flex justify-end gap-3">
+            <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+              disabled={creating} blockedReason={createReason}
+              onClick={() => createDialogRef.current?.close()}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+            <GuardedButton type="submit" className="amp-button amp-button-primary"
+              disabled={creating || !newKind || !newName.trim() || !projects.some(project => project.id === newProjectId)}
+              blockedReason={createReason}>
+              {creating ? t(CHINESE_PROGRESS.creating, ENGLISH_PROGRESS.creating) : t(CHINESE_ACTIONS.create, ENGLISH_ACTIONS.create)}
+            </GuardedButton>
+          </div>
+        </form>
+      </dialog>
+
       <dialog ref={renameDialogRef} aria-labelledby="rename-work-title"
         className="amp-workspace-dialog m-auto w-[calc(100%_-_32px)] max-w-md bg-white p-6 text-slate-950 backdrop:bg-slate-950/40"
         onCancel={(event) => { if (renaming) { event.preventDefault(); showError(busyReason); } else setRenamingScript(null); }}>
@@ -402,7 +442,7 @@ function PortfolioOverview() {
       <DeleteConfirmDialog
         open={Boolean(pendingDelete)}
         title={t("删除作品", "Delete work")}
-        message={t("删除后将无法恢复，确认删除“{title}”吗？", "This cannot be undone. Delete “{title}”?", { title: pendingDelete?.title || "" })}
+        message={t("删除后将无法恢复，确认删除“{name}”吗？", "This cannot be undone. Delete “{name}”?", { name: pendingDelete?.name || "" })}
         cancelLabel={t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}
         confirmLabel={t(CHINESE_ACTIONS.delete, ENGLISH_ACTIONS.delete)}
         busyLabel={t(CHINESE_PROGRESS.deleting, ENGLISH_PROGRESS.deleting)}

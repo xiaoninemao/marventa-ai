@@ -1,9 +1,10 @@
-import type { ReactNode, SVGProps } from "react";
+import { Children, Fragment, isValidElement, type ReactNode, type SVGProps } from "react";
 
 export type InlineIconName =
   | "alert"
   | "arrowLeft"
   | "bell"
+  | "bolt"
   | "bold"
   | "briefcase"
   | "case"
@@ -43,6 +44,7 @@ export type InlineIconName =
   | "panelLeftClose"
   | "panelLeftOpen"
   | "pen"
+  | "plus"
   | "portfolio"
   | "quote"
   | "redo"
@@ -54,6 +56,8 @@ export type InlineIconName =
   | "settings"
   | "sparkle"
   | "star"
+  | "stop"
+  | "shuffle"
   | "sun"
   | "target"
   | "trash"
@@ -83,6 +87,7 @@ const paths: Record<InlineIconName, ReactNode> = {
   underline: <path d="M6 3v8a6 6 0 0 0 12 0V3M4 21h16" />,
   undo: <path d="m8 4-5 5 5 5M3 9h12a6 6 0 0 1 0 12h-3" />,
   bell: <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-4 12a2 2 0 0 1-4 0" />,
+  bolt: <path d="m13 2-9 12h7l-1 8 10-13h-7V2Z" />,
   briefcase: <><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2" /></>,
   case: <path d="M7 3.5h10A1.5 1.5 0 0 1 18.5 5v16L12 17l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z" />,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" /></>,
@@ -90,6 +95,7 @@ const paths: Record<InlineIconName, ReactNode> = {
   check: <path d="m5 12 4 4L19 6" />,
   chevronRight: <path d="m9 18 6-6-6-6" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  stop: <><circle cx="12" cy="12" r="9" strokeWidth="1.5" /><rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor" stroke="none" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   collection: <><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></>,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
@@ -117,6 +123,7 @@ const paths: Record<InlineIconName, ReactNode> = {
   panelLeftClose: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="m16 15-3-3 3-3" /></>,
   panelLeftOpen: <><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="m13 9 3 3-3 3" /></>,
   pen: <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z" /><path d="m15 5 3 3" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
   portfolio: <><path d="M3.75 7.5A2.25 2.25 0 0 1 6 5.25h4.15c.55 0 1.07.2 1.48.56l1.34 1.19H18a2.25 2.25 0 0 1 2.25 2.25v7.5A2.25 2.25 0 0 1 18 19H6a2.25 2.25 0 0 1-2.25-2.25V7.5Z" /><path d="M8 10.5h8M8 13.5h6M8 16.5h4" /></>,
   refresh: <><path d="M20 11a8 8 0 0 0-14.9-4M4 4v5h5" /><path d="M4 13a8 8 0 0 0 14.9 4M20 20v-5h-5" /></>,
   search: <path d="m21 21-4.3-4.3M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" />,
@@ -126,6 +133,7 @@ const paths: Record<InlineIconName, ReactNode> = {
   settings: <><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" /><path d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.5-2.4 1a8.1 8.1 0 0 0-2.6-1.5L14 2h-4l-.4 2.5A8.1 8.1 0 0 0 7 6L4.6 5l-2 3.5 2 1.5c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2 1.5 2 3.5 2.4-1a8.1 8.1 0 0 0 2.6 1.5L10 22h4l.4-2.5A8.1 8.1 0 0 0 17 18l2.4 1 2-3.5-2-1.5Z" /></>,
   sparkle: <path d="M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3Zm6 12 .7 2.3L21 18l-2.3.7L18 21l-.7-2.3L15 18l2.3-.7L18 15Z" />,
   star: <path d="m12 2.8 2.8 5.7 6.3.9-4.6 4.4 1.1 6.2-5.6-2.9L6.4 20l1.1-6.2-4.6-4.4 6.3-.9L12 2.8Z" />,
+  shuffle: <><path d="M4 7h3c5 0 5 10 10 10h3M17 14l3 3-3 3" /><path d="M4 17h3c5 0 5-10 10-10h3M17 4l3 3-3 3" /></>,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
   target: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></>,
   trash: (
@@ -142,6 +150,34 @@ const paths: Record<InlineIconName, ReactNode> = {
   videoFile: <><path d="M6 2.5h7.5L19 8v13.5H6a2 2 0 0 1-2-2v-15a2 2 0 0 1 2-2Z" /><path d="M13.5 2.5V8H19" /><rect x="7" y="11" width="9" height="7" rx="1" /><path d="m10.5 13 3 1.5-3 1.5v-3Z" /></>,
   wand: <><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.21 1.21 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z" /><path d="m14 7 3 3M5 6v4M3 8h4M19 14v4M17 16h4M10 2v2M9 3h2" /></>,
 };
+
+export function createInlineIconElement(name: InlineIconName): SVGSVGElement {
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  for (const [key, value] of Object.entries({
+    "aria-hidden": "true", focusable: "false", fill: "none", stroke: "currentColor",
+    "stroke-linecap": "round", "stroke-linejoin": "round", "stroke-width": "2", viewBox: "0 0 24 24",
+  })) svg.setAttribute(key, value);
+  const append = (parent: SVGElement, nodes: ReactNode) => {
+    Children.forEach(nodes, (node) => {
+      if (!isValidElement<SVGProps<SVGElement>>(node)) return;
+      if (node.type === Fragment) {
+        append(parent, node.props.children);
+      } else if (typeof node.type === "string") {
+        const element = document.createElementNS(namespace, node.type);
+        for (const [key, value] of Object.entries(node.props)) {
+          if (key !== "children" && (typeof value === "string" || typeof value === "number")) {
+            element.setAttribute(key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`), String(value));
+          }
+        }
+        append(element, node.props.children);
+        parent.append(element);
+      }
+    });
+  };
+  append(svg, paths[name]);
+  return svg;
+}
 
 export default function InlineIcon({
   className = "",

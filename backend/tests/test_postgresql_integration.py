@@ -1,8 +1,9 @@
+import json
 import os
 import sqlite3
 import unittest
 import uuid
-
+from unittest.mock import patch
 
 POSTGRES_URL = os.getenv("TEST_POSTGRES_URL", "")
 
@@ -27,7 +28,9 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         from app.auth.storage import init_users_db
         from app.engines.case_library.import_tasks import init_import_tasks_db
         from app.engines.case_library.storage import init_db as init_case_library_db
-        from app.engines.content_generator.storage import init_db as init_content_generator_db
+        from app.engines.content_generator.storage import (
+            init_db as init_content_generator_db,
+        )
         from app.engines.market_insight.storage import init_db as init_market_insight_db
         from app.engines.portfolio.storage import init_db as init_portfolio_db
         from app.engines.publishing.storage import init_db as init_publishing_db
@@ -59,22 +62,9 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
 
     def test_core_organization_project_and_asset_flow(self):
         from app.auth import storage as auth_storage
+        from app.database import connect_database
         from app.engines.case_library.storage import create_case, get_case
         from app.engines.portfolio.storage import create_script
-        from app.engines.publishing.publication_plans import (
-            create_publication_plan,
-            get_publication_plan,
-            list_publication_plans,
-            update_publication_plan,
-        )
-        from app.engines.publishing.publication_contents import (
-            delete_publication_content,
-            get_publication_copy,
-            get_publication_document,
-            import_publication_materials,
-            list_publication_contents,
-            update_publication_copy,
-        )
         from app.engines.publishing.project_materials import (
             create_project_material,
             create_project_material_set,
@@ -85,7 +75,17 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             create_manual_project,
             get_project,
         )
-        from app.database import connect_database
+        from app.engines.publishing.publication_contents import (
+            get_publication_copy,
+            list_publication_contents,
+        )
+        from app.engines.publishing.publication_plans import (
+            create_publication_plan,
+            get_publication_plan,
+            list_publication_plans,
+            select_publication_work,
+            update_publication_plan,
+        )
 
         suffix = uuid.uuid4().hex[:8]
         user = auth_storage.create_user(
@@ -144,8 +144,7 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         plan = create_publication_plan(
             user["id"],
             project_id=project.id,
-            portfolio_id=work.id,
-            channel_account_id=account_id,
+            name="PostgreSQL plan",
         )
         self.assertEqual(
             [item.id for item in list_publication_plans(user["id"], project.id)],
@@ -172,44 +171,41 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
             media_type="document", mime_type="text/html", file_size=0, object_key="",
             material_set_id=material_set.id, content_html="<p>Snapshot</p>",
         )
-        content = import_publication_materials(user["id"], plan.id, [copy.id])[0]
-        self.assertEqual(get_publication_plan(user["id"], plan.id).document_count, 1)
-        self.assertEqual([item.id for item in list_publication_contents(user["id"], plan.id)], [content.id])
-        with self.assertRaisesRegex(ValueError, "already added"):
-            import_publication_materials(user["id"], plan.id, [copy.id])
+        with connect_database("") as conn:
+            conn.execute("UPDATE portfolio SET media_kind='image', media=?, tags=? WHERE id=?", (
+                json.dumps([{"id": "pg-image", "name": "image.png", "media_type": "image",
+                             "mime_type": "image/png", "object_key": f"portfolio/{work.id}/image.png"}]),
+                '["Launch"]', work.id,
+            ))
+            conn.commit()
+        with patch("app.engines.publishing.publication_contents.read_media_bytes", return_value=b"image"), patch(
+            "app.engines.publishing.publication_contents.put_media_bytes",
+        ):
+            select_publication_work(user["id"], plan.id, portfolio_id=work.id)
+        content = list_publication_contents(user["id"], plan.id)[0]
+        self.assertEqual(get_publication_plan(user["id"], plan.id).image_count, 1)
         delete_project_material(user["id"], project.id, copy.id)
-        self.assertEqual(get_publication_document(user["id"], plan.id, content.id), "<p>Snapshot</p>")
-        self.assertEqual(update_publication_plan(
-            user["id"], plan.id, scheduled_for="2026-10-01T10:00:00Z", status="scheduled",
-        ).status, "scheduled")
+        saved_copy = get_publication_copy(user["id"], plan.id)
+        self.assertEqual(saved_copy.content, "Content")
+        self.assertEqual(saved_copy.tags, ["Launch"])
+        with patch("app.engines.publishing.publication_plans._clock", return_value="2026-09-30T00:00:00Z"):
+            self.assertEqual(update_publication_plan(
+                user["id"], plan.id, channel_account_id=account_id,
+                scheduled_for="2026-10-01T10:00:00Z", status="scheduled",
+            ).status, "scheduled")
         with self.assertRaisesRegex(ValueError, "Scheduled plans cannot be edited"):
-            delete_publication_content(user["id"], plan.id, content.id)
+            select_publication_work(user["id"], plan.id, portfolio_id=work.id)
         self.assertEqual([item.id for item in list_publication_contents(user["id"], plan.id)], [content.id])
         self.assertEqual(update_publication_plan(user["id"], plan.id, status="cancelled").status, "cancelled")
-        delete_publication_content(user["id"], plan.id, content.id)
         self.assertEqual(get_publication_plan(user["id"], plan.id).status, "cancelled")
-        saved_copy = update_publication_copy(
-            user["id"], plan.id, title="Copy title", content="Saved body", tags=[" #Launch ", "Launch"],
-        )
         self.assertEqual(get_publication_copy(user["id"], plan.id), saved_copy)
-        self.assertEqual(saved_copy.tags, ["Launch"])
         copy_plan = get_publication_plan(user["id"], plan.id)
         self.assertTrue(copy_plan.has_copy)
-        self.assertEqual((copy_plan.content_count, copy_plan.document_count), (1, 1))
-        self.assertEqual(update_publication_plan(
-            user["id"], plan.id, scheduled_for="2026-10-01T10:00:00Z", status="scheduled",
-        ).status, "scheduled")
-        with self.assertRaisesRegex(ValueError, "Scheduled plans cannot be edited"):
-            update_publication_copy(user["id"], plan.id, title="", content=" \n ")
-        self.assertEqual(get_publication_copy(user["id"], plan.id), saved_copy)
-        self.assertEqual(update_publication_plan(user["id"], plan.id, status="cancelled").status, "cancelled")
-        update_publication_copy(user["id"], plan.id, title="", content=" \n ")
-        self.assertEqual(get_publication_copy(user["id"], plan.id).tags, ["Launch"])
-        update_publication_copy(user["id"], plan.id, title="", content="", tags=[])
-        self.assertEqual(get_publication_copy(user["id"], plan.id).tags, [])
+        self.assertEqual((copy_plan.content_count, copy_plan.document_count), (2, 1))
+        update_publication_plan(user["id"], plan.id, scheduled_for="")
         cleared_plan = get_publication_plan(user["id"], plan.id)
-        self.assertEqual((cleared_plan.status, cleared_plan.scheduled_for), ("cancelled", "2026-10-01T10:00:00Z"))
-        self.assertFalse(cleared_plan.has_copy)
+        self.assertEqual((cleared_plan.status, cleared_plan.scheduled_for), ("draft", ""))
+        self.assertTrue(cleared_plan.has_copy)
         material = create_project_material(
             user["id"],
             project.id,
@@ -265,12 +261,13 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_publication_modes_concurrent_upload_and_image_ordering(self):
+    def test_publication_modes_concurrent_selection_preserves_one_video(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Barrier
-        from unittest.mock import patch
 
         from app.auth import storage as auth_storage
+        from app.database import connect_database
+        from app.engines.portfolio.storage import create_script
         from app.engines.publishing import publication_contents, publication_plans
         from app.engines.publishing.projects import create_manual_project
 
@@ -278,38 +275,31 @@ class PostgreSQLIntegrationTests(unittest.TestCase):
         user = auth_storage.create_user(f"mode-{suffix}", f"mode-{suffix}@example.com", "hash")
         project = create_manual_project(user["id"], title=f"Media {suffix}")
         plan = publication_plans.create_publication_plan(
-            user["id"], project_id=project.id, name="Video race", media_mode="video",
+            user["id"], project_id=project.id, name="Video race",
         )
+        works = [create_script(user["id"], f"Video {i}", "", project_id=project.id, media_kind="video") for i in range(2)]
+        with connect_database("") as conn:
+            for i, work in enumerate(works):
+                conn.execute("UPDATE portfolio SET media=? WHERE id=?", (
+                    json.dumps([{"id": f"video-{i}", "name": f"clip{i}.mp4", "media_type": "video",
+                                 "mime_type": "video/mp4", "object_key": f"portfolio/{work.id}/clip.mp4"}]), work.id,
+                ))
+            conn.commit()
         barrier = Barrier(2)
 
-        def upload_video(index):
+        def select_video(work):
             barrier.wait(timeout=5)
-            try:
-                return publication_contents.upload_publication_content(
-                    user["id"], plan.id, filename=f"clip{index}.mp4", media_type="video", data=b"video",
-                )
-            except ValueError as exc:
-                return str(exc)
+            return publication_plans.select_publication_work(user["id"], plan.id, portfolio_id=work.id)
 
         with (
             patch.object(publication_contents, "put_media_bytes"),
+            patch.object(publication_contents, "read_media_bytes", return_value=b"video"),
             ThreadPoolExecutor(max_workers=2) as executor,
         ):
-            results = list(executor.map(upload_video, range(2)))
-        self.assertEqual(sum(isinstance(result, str) for result in results), 1)
+            results = list(executor.map(select_video, works))
+        self.assertEqual([result.video_count for result in results], [1, 1])
         self.assertEqual(publication_plans.get_publication_plan(user["id"], plan.id).video_count, 1)
-        image_plan = publication_plans.create_publication_plan(user["id"], project_id=project.id, name="Images")
-        with patch.object(publication_contents, "put_media_bytes"):
-            images = [
-                publication_contents.upload_publication_content(
-                    user["id"], image_plan.id, filename=f"image{index}.png", media_type="image", data=b"image",
-                ) for index in range(3)
-            ]
-        ordered = publication_contents.reorder_publication_images(
-            user["id"], image_plan.id, [image.id for image in reversed(images)],
-        )
-        self.assertEqual([item.id for item in ordered], [image.id for image in reversed(images)])
-        self.assertEqual([item.position for item in ordered], [0, 1, 2])
+        self.assertEqual([item.position for item in publication_contents.list_publication_contents(user["id"], plan.id)], [0])
 
     def test_postgres_scope_trigger_rejects_cross_project_rows(self):
         from app.auth import storage as auth_storage

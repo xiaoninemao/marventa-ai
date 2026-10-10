@@ -25,7 +25,6 @@ from app.config import (
     CONTENT_STUDIO_TRANSCRIPTION_MODEL,
 )
 from app.ai_provider import get_ai_provider
-from app.engines.content_generator.models import ChatMessage
 from app.engines.publishing.material_copy import copy_html_to_text
 from app.engines.publishing.models import ProjectMaterial
 from app.engines.publishing.project_materials import (
@@ -34,7 +33,7 @@ from app.engines.publishing.project_materials import (
     save_material_transcript,
 )
 from app.engines.publishing.project_memberships import ProjectNotFound
-from app.engines.publishing.publication_contents import read_material_document
+from app.engines.publishing.document_copy import read_material_document
 from app.media_storage import (
     materialize_media,
     media_exists,
@@ -62,13 +61,6 @@ MULTIMODAL_VIDEO_MIME_TYPES = {
 class MaterialVisualInput:
     data_url: str
     label: str
-
-
-def latest_material_reference_ids(messages: list[ChatMessage]) -> list[str]:
-    latest_user = next((message for message in reversed(messages) if message.role == "user"), None)
-    return [
-        reference.id for reference in latest_user.references if reference.kind == "material"
-    ] if latest_user else []
 
 
 def ensure_material_content_available(material: ProjectMaterial) -> None:

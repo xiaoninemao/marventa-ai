@@ -14,9 +14,10 @@ import InlineIcon, { type InlineIconName } from "@/components/redesign/InlineIco
 import EmptyStateIcon from "@/components/redesign/EmptyStateIcon";
 import CaseCard from "@/components/case_library/case_card";
 import type { CaseItem } from "@/types/case_library";
+import type { CreationPlan } from "@/types/content_generator";
 import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 
-export type CreationContextPage = "insights" | "cases" | "materials";
+export type CreationContextPage = "insights" | "cases" | "materials" | "plans";
 
 export async function loadMaterialReferences(projectId: string, ids: string[]): Promise<Array<{ id: string; material?: ProjectMaterial }>> {
   if (!ids.length) return [];
@@ -74,15 +75,18 @@ function MaterialReferences({ projectId, ids }: { projectId: string; ids: string
       {items.map(({ id, material }) => (
         <article key={id} className="amp-reference-insight-card amp-reference-insight-card-selected" data-reference-kind="material">
           {material ? <>
-            {material.media_type === "image" && material.file_url && (
-              <Image src={material.file_url} alt={material.name} width={600} height={450}
-                unoptimized className="amp-project-material-media" />
+            {(material.media_type === "image" || material.media_type === "video") && material.file_url && (
+              <div className="amp-reference-material-preview">
+                {material.media_type === "image"
+                  ? <Image src={material.file_url} alt={material.name} width={600} height={450}
+                      unoptimized className="amp-reference-material-media" />
+                  : <video src={material.file_url} controls playsInline preload="metadata"
+                      aria-label={material.name} className="amp-reference-material-media" />}
+              </div>
             )}
-            {material.media_type === "video" && material.file_url && (
-              <video src={material.file_url} controls playsInline preload="metadata"
-                aria-label={material.name} className="amp-project-material-media" />
+            {material.media_type === "document" && (
+              <div className="amp-reference-material-preview"><MaterialDocumentThumbnail material={material} /></div>
             )}
-            {material.media_type === "document" && <MaterialDocumentThumbnail material={material} />}
             <strong title={material.name}>{material.name}</strong>
             <p>{material.media_type === "image" ? t("图片", "Image")
               : material.media_type === "video" ? t("视频", "Video") : t("文案", "Document")}</p>
@@ -182,9 +186,6 @@ function ContextReferences({ kind, ids }: { kind: "insights" | "cases"; ids: str
         <article key={item.id} className="amp-reference-insight-card amp-reference-insight-card-selected">
           <strong title={item.title}>{item.title}</strong>
           <p>{item.summary || t("暂无洞察摘要", "No insight summary")}</p>
-          <span className="amp-reference-card-check amp-reference-card-check-selected" aria-hidden="true">
-            <InlineIcon name="check" />
-          </span>
         </article>
       ))}
     </div>
@@ -198,11 +199,59 @@ interface Props {
   caseIds: string[];
   projectId?: string;
   materialIds?: string[];
+  plans?: CreationPlan[];
 }
 
 const EMPTY_MATERIAL_IDS: string[] = [];
 
-export default function CreationContextPanel({ page, onPageChange, insightIds, caseIds, projectId = "", materialIds = EMPTY_MATERIAL_IDS }: Props) {
+function PlanReference({ plan, number, open, onOpenChange }: {
+  plan: CreationPlan; number: number; open: boolean; onOpenChange: (open: boolean) => void;
+}) {
+  const { t, locale } = useI18n();
+  const normalized = plan.created_at.includes(" ") ? `${plan.created_at.replace(" ", "T")}Z` : plan.created_at;
+  const created = new Date(normalized);
+  const validTime = Number.isFinite(created.getTime());
+  return (
+    <details className="amp-reference-insight-card amp-reference-insight-card-selected amp-creation-plan-card"
+      data-plan-id={plan.id} open={open}>
+      <summary aria-label={t("查看创作方案 {count}", "View creation plan {count}", { count: number })}
+        onClick={(event) => {
+          event.preventDefault();
+          onOpenChange(!open);
+        }}>
+        <span className="amp-creation-plan-meta">
+          <span><InlineIcon name="listBullet" />{t("方案 {count}", "Plan {count}", { count: number })}</span>
+          {validTime ? <time dateTime={plan.created_at}>{new Intl.DateTimeFormat(locale, {
+            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+          }).format(created)}</time> : <span>{t("生成时间不可用", "Creation time unavailable")}</span>}
+        </span>
+        <strong title={plan.title}>{plan.title || t("未命名方案", "Untitled plan")}</strong>
+        <span className="amp-creation-plan-disclosure">
+          <span className="is-closed">{t("查看原文", "View raw content")}</span>
+          <span className="is-open">{t("收起原文", "Hide raw content")}</span>
+          <InlineIcon name="chevronRight" />
+        </span>
+      </summary>
+      <div className="amp-creation-plan-source">
+        <span>{t("AI 创作方案原文", "Raw AI creation plan")}</span>
+        <pre tabIndex={0} aria-label={t("创作方案原文", "Raw creation plan")}>{plan.content}</pre>
+      </div>
+    </details>
+  );
+}
+
+function PlanReferences({ plans }: { plans: CreationPlan[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  return <div className="amp-reference-card-grid amp-creation-plans">
+    {[...plans].reverse().map((plan, index) => (
+      <PlanReference key={plan.id} plan={plan} number={plans.length - index}
+        open={openId === plan.id}
+        onOpenChange={(open) => setOpenId((current) => open ? plan.id : current === plan.id ? null : current)} />
+    ))}
+  </div>;
+}
+
+export default function CreationContextPanel({ page, onPageChange, insightIds, caseIds, projectId = "", materialIds = EMPTY_MATERIAL_IDS, plans = [] }: Props) {
   const { t } = useI18n();
   const { user } = useAuth();
   const id = useId();
@@ -211,6 +260,7 @@ export default function CreationContextPanel({ page, onPageChange, insightIds, c
     { key: "insights", label: t("市场洞察", "Insights"), count: insightIds.length, icon: "insight" as InlineIconName },
     { key: "cases", label: t("案例引用", "Cases"), count: caseIds.length, icon: "case" as InlineIconName },
     { key: "materials", label: t("素材", "Materials"), count: materialIds.length, icon: "collection" as InlineIconName },
+    { key: "plans", label: t("创作方案", "Plans"), count: plans.length, icon: "listBullet" as InlineIconName },
   ] as const;
 
   return (
@@ -241,7 +291,12 @@ export default function CreationContextPanel({ page, onPageChange, insightIds, c
         ))}
       </div>
       <div className="amp-content-context-page" id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${page}`}>
-        {page === "materials" ? (
+        {page === "plans" ? (
+          plans.length ? <PlanReferences key={`${scope}:${projectId}`} plans={plans} /> : <div className="amp-content-context-empty amp-empty-state">
+            <EmptyStateIcon name="listBullet" />
+            <p>{t("暂无创作方案", "No plans yet")}</p>
+          </div>
+        ) : page === "materials" ? (
           <MaterialReferences key={`${scope}:${projectId}:${materialIds.join(",")}`}
             projectId={projectId} ids={materialIds} />
         ) : (

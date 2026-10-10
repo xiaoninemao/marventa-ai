@@ -111,7 +111,9 @@ class PlatformPublisher:
                 if not isinstance(media_id, str) or not media_id:
                     raise PublicationExecutionError("Douyin upload did not return a media ID")
                 ids.append(media_id)
-            body: dict[str, object] = {"text": text}
+            body: dict[str, object] = {}
+            if text.strip():
+                body["text"] = text
             if job.media_mode == "video":
                 body["video_id"] = ids[0]
                 url = DOUYIN_CREATE_VIDEO

@@ -56,35 +56,15 @@ function close(node: ts.Node) {
   return button;
 }
 
-test("material selection has guarded Cancel and Add/Import without a dismissal X", () => {
-  const file = source("./PublicationContentPanel.tsx");
-  const picker = find(file, "dialog", "ref", "{picker}");
-  const button = cancel(picker);
-  assert.equal(attribute(button, "disabled"), "{busy}");
-  assert.equal(attribute(button, "blockedReason"), "{busyReason}");
-  assert.equal(attribute(button, "onClick"), "{() => picker.current?.close()}");
-  assert.equal(attribute(picker, "onClose"), "{() => setPickerOpen(false)}");
-  assert.match(attribute(picker, "onCancel"), /if \(busy\).*event\.preventDefault\(\)/);
-  assert.ok(!elements(picker).some((node) => attribute(node, "name") === '"close"'));
-  assert.match(picker.getText(), /onClick=\{\(\) => void addSelected\(\)\}/);
-  assert.match(picker.getText(), /disabled=\{locked \|\| !selected\.size\}/);
-  assert.match(picker.getText(), /CHINESE_ACTIONS\.import/);
-  assert.match(picker.getText(), /CHINESE_ACTIONS\.add/);
-});
-
-test("media and PDF previews use accessible close X without Cancel or Confirm", () => {
-  const media = find(source("./PublicationContentPanel.tsx"), "dialog", "ref", "{preview}");
-  const pdf = find(source("../../app/portfolio/[scriptId]/page.tsx"), "dialog", "ref", "{pdfPreviewDialogRef}");
-  for (const dialog of [media, pdf]) {
-    close(dialog);
-    assert.doesNotMatch(dialog.getText(), /CHINESE_ACTIONS\.(?:cancel|confirm)/);
-  }
-  const pdfClose = close(pdf);
-  assert.equal(attribute(pdfClose, "disabled"), "{exportingPdf}");
-  assert.equal(attribute(pdfClose, "blockedReason"), "{exportReason}");
-  assert.match(attribute(pdf, "onCancel"), /if \(!exportingPdf\)/);
-  assert.match(pdf.getText(), /onClick=\{\(\) => void exportPdf\(\)\}/);
-  assert.match(pdf.getText(), /CHINESE_ACTIONS\.export/);
+test("publication overview content shows the selected work name, not media counts", () => {
+  const file = source("../../app/publishing/page.tsx");
+  const field = find(file, "dd", "title", "{plan.portfolio_title || undefined}");
+  assert.match(attribute(field, "className"), /amp-publication-brief-work/);
+  assert.match(attribute(field, "className"), /!plan\.portfolio_title/);
+  assert.match(field.getText(), /plan\.portfolio_title \|\| t\("待选择", "Not selected"\)/);
+  assert.doesNotMatch(field.getText(), /plan\.(?:name|content_count|image_count|video_count|document_count)/);
+  const css = readFileSync(new URL("../../styles/projects.css", import.meta.url), "utf8");
+  assert.match(css, /dd\.amp-publication-brief-work\s*\{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/);
 });
 
 test("settings switches dismissal controls when explicit Save is available", () => {
@@ -161,7 +141,6 @@ test("case details exposes close X only outside the guarded Save/Cancel editor",
 
 test("existing create/upload/import and rename confirmations retain guarded Cancel", () => {
   const dialogs = [
-    [source("../../app/publishing/page.tsx"), "{dialogRef}", "{saving}"],
     [source("../../app/publishing/page.tsx"), "{renameDialogRef}", "{saving}"],
     [source("../../app/case_library/page.tsx"), "{createDialogRef}", "{isImporting}"],
     [source("../../app/portfolio/page.tsx"), "{renameDialogRef}", "{renaming}"],
@@ -179,11 +158,21 @@ test("existing create/upload/import and rename confirmations retain guarded Canc
   }
 });
 
+test("work selection uses the reference picker and prevents dismissal while saving", () => {
+  const file = source("./PublicationWorkDialog.tsx");
+  const dialog = elements(file).find(element => opening(element).tagName.getText() === "ReferencePickerDialog");
+  assert.ok(dialog);
+  assert.equal(attribute(cancel(dialog), "disabled"), "{saving}");
+  assert.equal(attribute(dialog, "onClose"), "{close}");
+  assert.match(file.getText(), /if \(saving\) \{ showError\(busyReason\); return; \}/);
+  assert.match(dialog.getText(), /type="submit"/);
+});
+
 test("account selection reports a missing channel before unsupported-channel or missing-account feedback", () => {
   const dialog = find(source("../../app/publishing/[planId]/page.tsx"), "dialog", "ref", "{settingsDialog}");
   const account = find(dialog, "EnterpriseSelect", "ariaLabel", '{t("选择发布账号", "Select publication account")}');
   const reason = attribute(account, "disabledReason");
-  assert.match(reason, /!settingsEditable \|\| saving \|\| contentBusy \|\| cancelling \? settingsReason/);
+  assert.match(reason, /!settingsEditable \|\| saving \|\| cancelling \? settingsReason/);
   assert.match(reason, /: !form\.platform \? selectChannelReason/);
   assert.match(reason, /: form\.platform !== "douyin" \? unsupportedReason/);
   assert.ok(reason.indexOf("!form.platform") < reason.indexOf('form.platform !== "douyin"'));
@@ -197,19 +186,10 @@ test("save button and form submission share validation instead of separate platf
   assert.equal(attribute(save, "disabled"), "{Boolean(saveReason)}");
   assert.match(file.getText(), /const validationReason = settingsValidationReason\(plan, form\)/);
   assert.match(file.getText(), /if \(validationReason\) \{ showError\(validationReason\); return; \}/);
-  assert.match(file.getText(), /const saveReason = saving \|\| contentBusy \|\| cancelling \|\| !settingsEditable \? settingsReason\s+: settingsValidationReason\(plan, form\)/);
+  assert.match(file.getText(), /const saveReason = saving \|\| cancelling \|\| !settingsEditable \? settingsReason\s+: settingsValidationReason\(plan, form\)/);
   assert.match(file.getText(), /"missing-channel": selectChannelReason/);
   assert.match(file.getText(), /"unsupported-channel": unsupportedReason/);
   assert.match(file.getText(), /"no-accounts": noAccountReason/);
-});
-
-test("publication media menu follows its caption width instead of reserving 180 pixels", () => {
-  const css = readFileSync(new URL("../../styles/projects.css", import.meta.url), "utf8");
-  const menu = css.match(/\.amp-redesign\.amp-publication-add-menu\s*\{([^}]*)\}/)?.[1];
-  assert.ok(menu);
-  assert.match(menu, /min-width:\s*0\s*;/);
-  assert.match(menu, /width:\s*max-content\s*;/);
-  assert.doesNotMatch(menu, /(?:min-)?width:\s*180px/);
 });
 
 test("scheduled plans have no Edit escape hatch while cancellation remains available to managers", () => {

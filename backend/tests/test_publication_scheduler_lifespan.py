@@ -6,6 +6,24 @@ from app import main
 
 
 class PublicationSchedulerLifespanTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        class IdleAgentWorker:
+            async def serve(self, stop):
+                await stop.wait()
+
+        self.enterContext(patch.object(main, "AgentJobWorker", IdleAgentWorker))
+        self.enterContext(patch.object(main, "init_content_generator_db"))
+        self.enterContext(patch.object(main, "LEAD_TRACKING_SYNC_ENABLED", False))
+
+    async def test_agent_worker_is_visible_in_health_and_stops_with_lifespan(self):
+        with patch.object(main, "PUBLISHING_SCHEDULER_ENABLED", False):
+            async with main.lifespan(main.app):
+                await asyncio.sleep(0)
+                worker = main.app.state.agent_worker_task
+                self.assertTrue((await main.root())["agent_worker_running"])
+            self.assertTrue(worker.done())
+            self.assertFalse((await main.root())["agent_worker_running"])
+
     async def test_disabled_scheduler_does_not_construct_executor(self):
         with patch.object(main, "PUBLISHING_SCHEDULER_ENABLED", False), patch.object(main, "PublicationExecutor") as factory:
             async with main.lifespan(main.app):

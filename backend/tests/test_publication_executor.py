@@ -34,11 +34,11 @@ class FakePublisher:
 class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
     setUp = contents_tests.PublicationContentTests.setUp
     headers = contents_tests.PublicationContentTests.headers
-    own_upload = contents_tests.PublicationContentTests.own_upload
+    create_work = contents_tests.PublicationContentTests.create_work
+    select_work = contents_tests.PublicationContentTests.select_work
     account = contents_tests.PublicationContentTests.account
     schedule = contents_tests.PublicationContentTests.schedule
     cancel = contents_tests.PublicationContentTests.cancel
-    save_copy = contents_tests.PublicationContentTests.save_copy
     items = contents_tests.PublicationContentTests.items
     load_copy = contents_tests.PublicationContentTests.load_copy
 
@@ -50,9 +50,9 @@ class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
 
     def prepare(self):
         self.account()
-        self.own_upload("a.png", b"a")
-        self.own_upload("b.png", b"b")
-        self.save_copy(title="Post title", content="Line one\nLine two")
+        response = self.select_work(title="Post title", content="Line one\nLine two",
+                                    assets=[("a.png", b"a"), ("b.png", b"b")])
+        self.assertEqual(response.status_code, 200, response.text)
         response = self.schedule()
         self.assertEqual(response.status_code, 200, response.text)
 
@@ -77,8 +77,7 @@ class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["platform_video_id"], "platform-video-123")
         self.assertTrue(detail["published_at"])
         self.assertEqual(self.items(), before)
-        self.assertEqual(self.save_copy(content="cannot change").status_code, 400)
-        self.assertEqual(self.own_upload("extra.png").status_code, 400)
+        self.assertEqual(self.select_work(content="cannot change").status_code, 400)
         self.assertEqual(self.client.patch(self.path, headers=self.headers(), json={"name": "Rename"}).status_code, 400)
 
     async def test_future_cancelled_and_draft_plans_are_not_published(self):
@@ -125,7 +124,7 @@ class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
             jobs = list(pool.map(lambda _: executor.claim(), range(2)))
         self.assertEqual(sum(job is not None for job in jobs), 1)
         self.assertEqual(self.plan_detail()["status"], "publishing")
-        self.assertEqual(self.save_copy(content="changed").status_code, 400)
+        self.assertEqual(self.select_work(content="changed").status_code, 400)
         self.assertEqual(self.client.patch(self.path, headers=self.headers(), json={"status": "cancelled"}).status_code, 400)
 
     async def test_expired_submission_recovers_to_failed_without_duplicate_publication(self):
@@ -190,7 +189,7 @@ class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
         async def transport(request):
             requests.append(request.url.path)
             self.assertEqual(self.plan_detail()["status"], "publishing")
-            self.assertEqual(self.save_copy(content="Cannot edit during upload").status_code, 400)
+            self.assertEqual(self.select_work(content="Cannot edit during upload").status_code, 400)
             if request.url.path.endswith("/upload_image/"):
                 data = {"image": {"image_id": f"upload-{len(requests)}"}}
             else:
@@ -209,7 +208,7 @@ class PublicationExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail["platform_post_id"], "real-adapter-item")
         self.assertEqual(detail["platform_video_id"], "real-adapter-work")
         self.assertEqual(len(requests), 3)
-        self.assertEqual(self.save_copy(content="Cannot edit after publish").status_code, 400)
+        self.assertEqual(self.select_work(content="Cannot edit after publish").status_code, 400)
 
 
 if __name__ == "__main__":

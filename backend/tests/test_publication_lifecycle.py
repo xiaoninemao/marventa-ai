@@ -11,23 +11,21 @@ from tests import test_publication_contents as content_tests
 class PublicationLifecycleTests(unittest.TestCase):
     setUp = content_tests.PublicationContentTests.setUp
     headers = content_tests.PublicationContentTests.headers
-    own_upload = content_tests.PublicationContentTests.own_upload
-    save_copy = content_tests.PublicationContentTests.save_copy
+    create_work = content_tests.PublicationContentTests.create_work
+    select_work = content_tests.PublicationContentTests.select_work
     account = content_tests.PublicationContentTests.account
     create_copy = content_tests.PublicationContentTests.create_copy
     schedule = content_tests.PublicationContentTests.schedule
 
     def test_scheduled_plan_freezes_all_content_settings_and_combined_cancellation(self):
         self.account()
-        self.save_copy()
-        image = self.own_upload().json()["data"]
-        second = self.own_upload("second.png").json()["data"]
-        material = self.create_copy().json()["data"]
+        self.assertEqual(self.select_work().status_code, 200)
+        work_id = self.create_work()
         scheduled = self.schedule()
         self.assertEqual(scheduled.status_code, 200, scheduled.text)
         before = scheduled.json()["data"]
         settings = {
-            "name": before["name"], "media_mode": "image_text", "portfolio_id": "",
+            "name": before["name"],
             "channel_account_id": "account", "scheduled_for": before["scheduled_for"], "note": "",
         }
         updates = [{field: value} for field, value in settings.items()]
@@ -36,11 +34,7 @@ class PublicationLifecycleTests(unittest.TestCase):
         requests = [
             ("patch", self.path, {"json": update}) for update in updates
         ] + [
-            ("patch", self.path + "/copy", {"json": {"title": "New", "content": "New", "tags": ["New"]}}),
-            ("post", self.contents, {"files": {"file": ("new.png", b"image", "image/png")}}),
-            ("post", self.contents + "/from-materials", {"json": {"material_ids": [material["id"]]}}),
-            ("patch", self.contents + "/order", {"json": {"content_ids": [second["id"], image["id"]]}}),
-            ("delete", self.contents + "/" + image["id"], {}),
+            ("put", self.path + "/work", {"json": {"portfolio_id": work_id}}),
             ("delete", self.path, {}),
             ("delete", self.base + "/channel-accounts/account", {}),
             ("delete", self.base, {}),
@@ -66,7 +60,7 @@ class PublicationLifecycleTests(unittest.TestCase):
 
     def test_exact_authorized_cancellation_unlocks_edits_and_rescheduling(self):
         self.account()
-        self.save_copy()
+        self.assertEqual(self.select_work().status_code, 200)
         self.assertEqual(self.schedule().status_code, 200)
         for user, code in ((self.member, 403), (self.outsider, 404)):
             response = self.client.patch(
@@ -83,21 +77,10 @@ class PublicationLifecycleTests(unittest.TestCase):
             self.path, headers=self.headers(), json={"name": "Unlocked", "note": "Edited"},
         )
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(self.save_copy(content="Updated body").status_code, 200)
-        image = self.own_upload().json()["data"]
-        self.assertEqual(self.client.patch(
-            self.contents + "/order", headers=self.headers(), json={"content_ids": [image["id"]]},
-        ).status_code, 200)
-        self.assertEqual(self.client.delete(
-            self.contents + "/" + image["id"], headers=self.headers(),
-        ).status_code, 200)
-        material = self.create_copy().json()["data"]
-        imported = self.client.post(
-            self.contents + "/from-materials", headers=self.headers(),
-            json={"material_ids": [material["id"]]},
-        )
-        self.assertEqual(imported.status_code, 200, imported.text)
-        self.assertEqual(self.get_plan()["status"], "cancelled")
+        selected = self.select_work(content="Updated body")
+        self.assertEqual(selected.status_code, 200, selected.text)
+        self.assertEqual(self.get_plan()["status"], "draft")
+        self.assertEqual(self.client.get(self.path + "/copy", headers=self.headers()).json()["data"]["content"], "Updated body")
         response = self.client.patch(
             self.path, headers=self.headers(), json={"scheduled_for": "2026-10-02T10:00:00Z"},
         )
@@ -109,7 +92,7 @@ class PublicationLifecycleTests(unittest.TestCase):
 
     def test_worker_claim_and_finish_ignore_edit_freeze_but_respect_cancellation(self):
         self.account()
-        self.save_copy()
+        self.assertEqual(self.select_work().status_code, 200)
         self.assertEqual(self.schedule().status_code, 200)
         executor = publication_executor.PublicationExecutor(
             None, clock=lambda: datetime(2026, 10, 3, tzinfo=timezone.utc),
@@ -178,9 +161,8 @@ class PublicationLifecycleTests(unittest.TestCase):
             )
 
     def test_running_and_published_lock_every_content_mutation_and_cancel(self):
-        image = self.own_upload().json()["data"]
-        material = self.create_copy().json()["data"]
-        self.save_copy()
+        self.assertEqual(self.select_work().status_code, 200)
+        work_id = self.create_work()
         self.seed_execution()
         for status, state, message in (
             ("scheduled", "running", "Publishing plans cannot be edited"),
@@ -193,12 +175,7 @@ class PublicationLifecycleTests(unittest.TestCase):
                 ("patch", self.path, {"json": {"name": "Changed"}}),
                 ("patch", self.path, {"json": {"status": "cancelled"}}),
                 ("patch", self.path, {"json": {"scheduled_for": ""}}),
-                ("patch", self.path, {"json": {"media_mode": "video"}}),
-                ("patch", self.path + "/copy", {"json": {"title": "New", "content": "New"}}),
-                ("post", self.contents, {"files": {"file": ("new.png", b"image", "image/png")}}),
-                ("post", self.contents + "/from-materials", {"json": {"material_ids": [material["id"]]}}),
-                ("patch", self.contents + "/order", {"json": {"content_ids": [image["id"]]}}),
-                ("delete", self.contents + "/" + image["id"], {}),
+                ("put", self.path + "/work", {"json": {"portfolio_id": work_id}}),
                 ("delete", self.path, {}),
             )
             with patch("app.engines.publishing.publication_contents.put_media_bytes") as save_media:
@@ -213,7 +190,7 @@ class PublicationLifecycleTests(unittest.TestCase):
 
     def test_failed_reschedule_and_draft_keep_execution_results_until_next_claim(self):
         self.account()
-        self.save_copy()
+        self.assertEqual(self.select_work().status_code, 200)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("UPDATE project_publications SET channel_account_id = 'account' WHERE id = ?", (self.plan["id"],))
         self.seed_execution(state="failed", status="failed", error_message="Network failed", outcome_unknown=1)

@@ -46,9 +46,6 @@ from app.engines.publishing.projects import (
     create_manual_project as create_manual_project,
 )
 from app.engines.publishing.projects import (
-    create_project_from_session as create_project_from_session,
-)
-from app.engines.publishing.projects import (
     delete_project as delete_project,
 )
 from app.engines.publishing.projects import (
@@ -740,10 +737,8 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             title TEXT NOT NULL,
             xhs_account TEXT DEFAULT '',
             source_session_id TEXT NOT NULL,
-            source_card_id TEXT DEFAULT '',
             content_type TEXT DEFAULT 'mixed',
             platform_hint TEXT DEFAULT '',
-            cards_snapshot TEXT DEFAULT '[]',
             final_snapshot TEXT DEFAULT '{}',
             notes TEXT DEFAULT '',
             status TEXT DEFAULT 'active',
@@ -1187,7 +1182,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
         ensure_organization_scope(conn, table, "user_id")
     ensure_json_columns(
         conn, "content_projects",
-        ("cards_snapshot", "final_snapshot"),
+        ("final_snapshot",),
     )
     ensure_json_columns(
         conn, "publish_tasks",

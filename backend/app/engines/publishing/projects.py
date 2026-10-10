@@ -10,8 +10,6 @@ from typing import Any, Callable
 
 from app.config import DB_PATH
 from app.database import connect_database
-from app.engines.content_generator.models import ContentCard
-from app.engines.content_generator.storage import get_session
 from app.engines.publishing.models import BrandProfile, ContentProject
 from app.engines.publishing.project_memberships import (
     ProjectNotFound,
@@ -65,31 +63,8 @@ def _load_json(value: str | None, default: Any) -> Any:
         return default
 
 
-def _cards_json(cards: list[ContentCard]) -> str:
-    return _json([card.model_dump() for card in cards])
 
 
-def _snapshot_from_cards(
-    cards: list[ContentCard], source_title: str = "",
-) -> dict[str, Any]:
-    def pick(card_type: str) -> ContentCard | None:
-        return next((card for card in cards if card.card_type == card_type), None)
-
-    title = pick("title")
-    body = pick("copy")
-    cover = pick("visual")
-    tags = pick("hashtags")
-    script = pick("script")
-    return {
-        "source_title": source_title,
-        "title": title.title if title else (cards[0].title if cards else ""),
-        "body": body.content if body else "",
-        "cover_text": cover.preview if cover else "",
-        "tags": tags.content if tags else "",
-        "layout": cover.content if cover else "",
-        "script": script.content if script else "",
-        "selected_card_ids": {},
-    }
 
 
 def _random_project_avatar() -> tuple[str, str]:
@@ -118,52 +93,6 @@ def _ensure_project_name_available(
         raise ProjectNameExists("Project name already exists")
 
 
-def create_project_from_session(
-    user_id: str,
-    source_session_id: str,
-    title: str = "",
-    xhs_account: str = "",
-    source_card_id: str = "",
-    content_type: str = "mixed",
-    platform_hint: str = "",
-    notes: str = "",
-) -> ContentProject:
-    _schema_initializer()
-    session = get_session(source_session_id, user_id)
-    if not session or session.user_id != user_id:
-        raise ValueError("Session not found")
-    now = _clock()
-    project_id = uuid.uuid4().hex[:12]
-    snapshot = _snapshot_from_cards(session.cards, source_title=session.title)
-    project_title = title.strip() or session.title.strip() or "Untitled content project"
-    avatar_color, avatar_icon = _random_project_avatar()
-    conn = _connection_factory()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        _ensure_project_name_available(conn, user_id, project_title)
-        conn.execute(
-            """
-            INSERT INTO content_projects (
-                id, user_id, title, xhs_account, source_session_id, source_card_id,
-                content_type, platform_hint, cards_snapshot, final_snapshot, notes,
-                status, created_at, updated_at, avatar_color, avatar_icon
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                project_id, user_id, project_title, xhs_account,
-                source_session_id, source_card_id, content_type, platform_hint,
-                _cards_json(session.cards), _json(snapshot), notes, "active", now, now,
-                avatar_color, avatar_icon,
-            ),
-        )
-        conn.execute(
-            "INSERT INTO project_memberships VALUES (?, ?, 'owner', ?)",
-            (project_id, user_id, now),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    return get_project(project_id)  # type: ignore[return-value]
 
 
 def create_manual_project(
@@ -188,14 +117,14 @@ def create_manual_project(
         conn.execute(
             """
             INSERT INTO content_projects (
-                id, user_id, title, xhs_account, source_session_id, source_card_id,
-                content_type, platform_hint, cards_snapshot, final_snapshot, notes,
+                id, user_id, title, xhs_account, source_session_id,
+                content_type, platform_hint, final_snapshot, notes,
                 status, created_at, updated_at, avatar_color, avatar_icon
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id, user_id, project_title,
-                xhs_account, "", "", content_type, platform_hint, "[]", _json(snapshot),
+                xhs_account, "", content_type, platform_hint, _json(snapshot),
                 notes, "active", now, now, avatar_color, avatar_icon,
             ),
         )
@@ -395,12 +324,11 @@ def delete_project(user_id: str, project_id: str) -> list[str]:
 
 
 def _row_to_project(row: sqlite3.Row) -> ContentProject:
-    cards = [ContentCard(**card) for card in _load_json(row["cards_snapshot"], [])]
     return ContentProject(
         id=row["id"], user_id=row["user_id"], title=row["title"],
         xhs_account=row["xhs_account"] or "", source_session_id=row["source_session_id"],
-        source_card_id=row["source_card_id"] or "", content_type=row["content_type"] or "mixed",
-        platform_hint=row["platform_hint"] or "", cards_snapshot=cards,
+        content_type=row["content_type"] or "mixed",
+        platform_hint=row["platform_hint"] or "",
         final_snapshot=_load_json(row["final_snapshot"], {}), notes=row["notes"] or "",
         status=row["status"] or "active",
         role=row["role"] if "role" in row.keys() else "owner",

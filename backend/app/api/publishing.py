@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -61,7 +62,7 @@ from app.engines.publishing.material_copy import (
     validate_copy_title,
 )
 from app.engines.publishing.models import (
-    CreateProjectRequest,
+    LeadTrackingReviewRequest,
     ManualProjectRequest,
     ProjectChannelAuthorizationPollRequest,
     ProjectChannelAuthorizationRequest,
@@ -73,12 +74,9 @@ from app.engines.publishing.models import (
     ProjectMember,
     ProjectMemberInvite,
     ProjectMemberRole,
-    PublicationContentOrder,
-    PublicationContentsFromMaterials,
-    PublicationCopy,
     PublicationPlanCreate,
     PublicationPlanUpdate,
-    LeadTrackingReviewRequest,
+    PublicationWorkSelection,
     UpdateProjectRequest,
 )
 from app.engines.publishing.project_channel_accounts import (
@@ -113,28 +111,21 @@ from app.engines.publishing.project_memberships import (
 from app.engines.publishing.projects import (
     ProjectNameExists,
     create_manual_project,
-    create_project_from_session,
     delete_project,
     get_project,
     list_projects,
     update_project,
 )
 from app.engines.publishing.publication_contents import (
-    delete_publication_content,
-    ensure_content_edit_access,
     get_publication_copy,
-    get_publication_document,
-    import_publication_materials,
     list_publication_contents,
-    reorder_publication_images,
-    update_publication_copy,
-    upload_publication_content,
 )
 from app.engines.publishing.publication_plans import (
     create_publication_plan,
     delete_publication_plan,
     get_publication_plan,
     list_publication_plans,
+    select_publication_work,
     update_publication_plan,
 )
 from app.media_storage import (
@@ -222,6 +213,21 @@ async def edit_publication_plan(
     return success_response("Publication plan updated", plan.model_dump())
 
 
+@router.put("/publications/{plan_id}/work")
+async def select_plan_work(
+    plan_id: str, body: PublicationWorkSelection, current_user=Depends(get_current_user),
+):
+    try:
+        plan = await asyncio.to_thread(select_publication_work, current_user["id"], plan_id, **body.model_dump())
+    except (ProjectNotFound, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return success_response("Publication work selected", plan.model_dump())
+
+
 @router.delete("/publications/{plan_id}")
 async def remove_publication_plan(
     plan_id: str,
@@ -254,23 +260,6 @@ async def get_saved_publication_copy(plan_id: str, current_user=Depends(get_curr
     return success_response("Publication copy retrieved", copy.model_dump())
 
 
-@router.patch("/publications/{plan_id}/copy")
-async def save_publication_copy(
-    plan_id: str, body: PublicationCopy, current_user=Depends(get_current_user),
-):
-    try:
-        copy = update_publication_copy(
-            current_user["id"], plan_id, **body.model_dump(exclude_unset=True),
-        )
-    except (ProjectNotFound, LookupError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ProjectPermissionDenied as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return success_response("Publication copy updated", copy.model_dump())
-
-
 @router.get("/publications/{plan_id}/contents")
 async def get_publication_contents(plan_id: str, request: Request, current_user=Depends(get_current_user)):
     try:
@@ -280,126 +269,6 @@ async def get_publication_contents(plan_id: str, request: Request, current_user=
     return success_response("Publication contents retrieved", [
         _publication_content_response(item, request) for item in items
     ])
-
-
-@router.post("/publications/{plan_id}/contents")
-async def add_publication_content(
-    plan_id: str, request: Request, file: UploadFile = File(...),
-    current_user=Depends(get_current_user),
-):
-    try:
-        ensure_content_edit_access(current_user["id"], plan_id)
-        filename = os.path.basename(file.filename or "").strip()
-        if not filename:
-            raise ValueError("Material filename is required")
-        media_type, limit = _material_kind(filename)
-        data = await file.read(limit + 1)
-        if not data:
-            raise ValueError("Material file is empty")
-        if len(data) > limit:
-            raise HTTPException(status_code=413, detail="Material file is too large")
-        item = await run_in_threadpool(
-            upload_publication_content, current_user["id"], plan_id,
-            filename=filename, media_type=media_type, data=data,
-        )
-    except (ProjectNotFound, LookupError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ProjectPermissionDenied as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return success_response("Publication content added", _publication_content_response(item, request))
-
-
-@router.post("/publications/{plan_id}/contents/from-materials")
-async def add_publication_materials(
-    plan_id: str, body: PublicationContentsFromMaterials, request: Request,
-    current_user=Depends(get_current_user),
-):
-    try:
-        items = await run_in_threadpool(
-            import_publication_materials, current_user["id"], plan_id, body.material_ids,
-        )
-    except (ProjectNotFound, LookupError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Material content not found") from exc
-    except ProjectPermissionDenied as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return success_response("Publication contents added", [
-        _publication_content_response(item, request) for item in items
-    ])
-
-
-@router.patch("/publications/{plan_id}/contents/order")
-async def order_publication_images(
-    plan_id: str, body: PublicationContentOrder, request: Request,
-    current_user=Depends(get_current_user),
-):
-    try:
-        items = reorder_publication_images(current_user["id"], plan_id, body.content_ids)
-    except (ProjectNotFound, LookupError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ProjectPermissionDenied as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return success_response("Publication image order updated", [
-        _publication_content_response(item, request) for item in items
-    ])
-
-
-@router.get("/publications/{plan_id}/contents/{content_id}/content")
-async def get_publication_content_document(
-    plan_id: str, content_id: str, format: Literal["html", "text"] = Query(default="html"),
-    current_user=Depends(get_current_user),
-):
-    try:
-        content = get_publication_document(current_user["id"], plan_id, content_id)
-        if format == "text":
-            content = copy_html_to_text(content)
-    except (ProjectNotFound, LookupError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return success_response("Publication content retrieved", {"content": content, "format": format})
-
-
-@router.delete("/publications/{plan_id}/contents/{content_id}")
-async def remove_publication_content(
-    plan_id: str, content_id: str, current_user=Depends(get_current_user),
-):
-    try:
-        delete_publication_content(current_user["id"], plan_id, content_id)
-    except (ProjectNotFound, LookupError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ProjectPermissionDenied as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return success_response("Publication content deleted")
-
-
-@router.post("/projects/from_session")
-async def create_project(req: CreateProjectRequest, current_user=Depends(get_current_user)):
-    try:
-        project = create_project_from_session(
-            current_user["id"],
-            req.source_session_id,
-            title=req.title,
-            xhs_account=req.xhs_account,
-            source_card_id=req.source_card_id,
-            content_type=req.content_type,
-            platform_hint=req.platform_hint,
-            notes=req.notes,
-        )
-    except ProjectNameExists as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return success_response("Project saved", project.model_dump())
 
 
 def _material_kind(filename: str) -> tuple[str, int]:
@@ -624,7 +493,7 @@ async def get_project_material_content(
     if material.media_type != "document":
         raise HTTPException(status_code=400, detail="Material does not support text preview")
     try:
-        from app.engines.publishing.publication_contents import read_material_document
+        from app.engines.publishing.document_copy import read_material_document
         content = await run_in_threadpool(read_material_document, {
             "content_html": material.content_html,
             "object_key": material.object_key,

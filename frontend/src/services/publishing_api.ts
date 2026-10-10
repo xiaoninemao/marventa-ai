@@ -207,7 +207,6 @@ export async function fetch_publication_plans(
 export async function create_publication_plan(payload: {
   project_id: string;
   name: string;
-  media_mode?: "image_text" | "video";
 }): Promise<ItemResponse<PublicationPlan>> {
   const res = await fetch(`${API_BASE}/api/v1/publishing/publications`, {
     method: "POST",
@@ -227,6 +226,15 @@ export async function fetch_publication_plan(plan_id: string): Promise<ItemRespo
   return res.json();
 }
 
+export async function select_publication_work(planId: string, portfolioId: string): Promise<ItemResponse<PublicationPlan>> {
+  const response = await fetch(`${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(planId)}/work`, {
+    method: "PUT", headers: { "Content-Type": "application/json", ...auth_headers() },
+    body: JSON.stringify({ portfolio_id: portfolioId }),
+  });
+  if (!response.ok) throw await response_error(response, "Could not update publication plan");
+  return response.json();
+}
+
 function publicationContentsUrl(planId: string) {
   return `${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(planId)}/contents`;
 }
@@ -239,77 +247,16 @@ export async function fetch_publication_copy(planId: string): Promise<ItemRespon
   return response.json();
 }
 
-export async function update_publication_copy(
-  planId: string,
-  title: string,
-  content: string,
-  tags: string[],
-): Promise<ItemResponse<{ title: string; content: string; tags: string[] }>> {
-  const response = await fetch(`${API_BASE}/api/v1/publishing/publications/${encodeURIComponent(planId)}/copy`, {
-    method: "PATCH", headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ title, content, tags }),
-  });
-  if (!response.ok) throw await response_error(response, "Could not save publication copy");
-  return response.json();
-}
-
 export async function fetch_publication_contents(planId: string): Promise<ListResponse<PublicationContent>> {
   const response = await fetch(publicationContentsUrl(planId), { headers: auth_headers() });
   if (!response.ok) throw await response_error(response, "Could not load publication content");
   return response.json();
 }
 
-export async function upload_publication_content(planId: string, file: File): Promise<ItemResponse<PublicationContent>> {
-  const body = new FormData();
-  body.append("file", file);
-  const response = await fetch(publicationContentsUrl(planId), { method: "POST", headers: auth_headers(), body });
-  if (!response.ok) throw await response_error(response, "Could not upload publication content");
-  return response.json();
-}
-
-export async function import_publication_materials(planId: string, materialIds: string[]): Promise<ListResponse<PublicationContent>> {
-  const response = await fetch(`${publicationContentsUrl(planId)}/from-materials`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ material_ids: materialIds }),
-  });
-  if (!response.ok) throw await response_error(response, "Could not add project materials");
-  return response.json();
-}
-
-export async function fetch_publication_content_text(
-  planId: string, contentId: string, format: "html" | "text" = "html",
-): Promise<ItemResponse<{ content: string; format: "html" | "text" }>> {
-  const response = await fetch(`${publicationContentsUrl(planId)}/${encodeURIComponent(contentId)}/content?format=${format}`, {
-    headers: auth_headers(),
-  });
-  if (!response.ok) throw await response_error(response, "Could not load publication content");
-  return response.json();
-}
-
-export async function delete_publication_content(planId: string, contentId: string): Promise<void> {
-  const response = await fetch(`${publicationContentsUrl(planId)}/${encodeURIComponent(contentId)}`, {
-    method: "DELETE", headers: auth_headers(),
-  });
-  if (!response.ok) throw await response_error(response, "Could not remove publication content");
-}
-
-export async function reorder_publication_images(planId: string, contentIds: string[]): Promise<ListResponse<PublicationContent>> {
-  const response = await fetch(`${publicationContentsUrl(planId)}/order`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ content_ids: contentIds }),
-  });
-  if (!response.ok) throw await response_error(response, "Could not reorder publication images");
-  return response.json();
-}
-
 export async function update_publication_plan(
   plan_id: string,
   payload: {
-    media_mode?: "image_text" | "video";
     name?: string;
-    portfolio_id?: string;
     channel_account_id?: string;
     scheduled_for?: string;
     note?: string;

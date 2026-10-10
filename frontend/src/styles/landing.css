@@ -26,8 +26,7 @@
 
 .amp-public-container {
   margin-inline: auto;
-  max-width: 1320px;
-  width: calc(100% - 112px);
+  width: calc(100% - clamp(112px, 10vw, 240px));
 }
 
 .amp-public-sections {
@@ -220,7 +219,6 @@
   letter-spacing: -0.025em;
   line-height: 1.45;
   margin-top: 24px;
-  max-width: 480px;
 }
 
 .amp-public-hero-actions {
@@ -283,7 +281,6 @@
   font-size: 15px;
   line-height: 1.9;
   margin-top: 24px;
-  max-width: 410px;
 }
 
 .amp-public-value-outcomes {

@@ -1,3 +1,5 @@
+import base64
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -9,29 +11,31 @@ from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.organizations import router as organization_router
-from app.api.market_insight import router as market_insight_router
+from app import media_storage
+from app.api import market_insight as market_insight_api
+from app.api import publishing as publishing_api
 from app.api.case_library import router as case_library_router
 from app.api.content_generator import router as content_generator_router
+from app.api.market_insight import router as market_insight_router
+from app.api.organizations import router as organization_router
 from app.api.publishing import router as publishing_router
-from app.api import publishing as publishing_api
-from app.api import market_insight as market_insight_api
 from app.auth import storage as auth_storage
 from app.auth.security import create_access_token, decode_access_token
-from app import media_storage
-from app.engines.publishing import channel_credentials
-from app.engines.publishing import channel_oauth
-from app.engines.publishing import project_channel_accounts
-from app.engines.publishing import storage as publishing_storage
-from app.engines.market_insight import storage as market_insight_storage
-from app.engines.market_insight.models import AIAnalysis, ParsedDocument
-from app.engines.case_library import storage as case_storage
 from app.engines.case_library import favorites as case_favorites
 from app.engines.case_library import import_tasks as case_import_tasks
+from app.engines.case_library import storage as case_storage
 from app.engines.case_library.models import CaseAIAnalysis
 from app.engines.content_generator import storage as content_storage
-from app.engines.content_generator.models import ChatMessage
+from app.engines.content_generator.models import AgentTurnResult, ChatMessage
+from app.engines.market_insight import storage as market_insight_storage
+from app.engines.market_insight.models import AIAnalysis, ParsedDocument
 from app.engines.portfolio import storage as portfolio_storage
+from app.engines.publishing import (
+    channel_credentials,
+    channel_oauth,
+    project_channel_accounts,
+)
+from app.engines.publishing import storage as publishing_storage
 
 
 class ProjectMembershipTests(unittest.TestCase):
@@ -755,7 +759,7 @@ class ProjectMembershipTests(unittest.TestCase):
 
         self.assertEqual(canvas.title, "Launch campaign")
         self.assertEqual(canvas.messages, [])
-        self.assertEqual(canvas.cards, [])
+        self.assertEqual(canvas.deliverables, [])
         self.assertIn(
             canvas.id,
             [item.id for item in content_storage.list_sessions(self.owner["id"], self.project.id)],
@@ -875,7 +879,6 @@ class ProjectMembershipTests(unittest.TestCase):
         content_storage.update_session(
             creation.id, messages=[ChatMessage(role="user", content="Keep this content")],
         )
-        content_storage.save_next_version(creation.id, [], is_major_bump=True)
         path = f"/api/v1/content_generator/sessions/{creation.id}"
         admin_headers = self.headers(self.admin["id"])
         self.assertEqual(self.client.get(path, headers=admin_headers).status_code, 200)
@@ -898,20 +901,19 @@ class ProjectMembershipTests(unittest.TestCase):
             self.assertEqual(renamed.json()["data"]["organization_id"], self.organization["id"])
             self.assertEqual(renamed.json()["data"]["messages"], [{
                 "role": "user", "content": "Keep this content",
-                "client_message_id": None, "references": [],
+                "client_message_id": None, "references": [], "image_reference": None, "reference_positions": [],
+                "agent_events": [],
             }])
             retrieved = self.client.get(path, headers=headers).json()["data"]
             listed = self.client.get("/api/v1/content_generator/sessions", headers=headers).json()["data"]
             self.assertEqual(retrieved["title"], f"Renamed {role}")
             self.assertEqual(next(item for item in listed if item["id"] == creation.id)["project_role"], role)
             removable = content_storage.create_session(self.member["id"], self.project.id, "Delete")
-            content_storage.save_next_version(removable.id, [], is_major_bump=True)
             self.assertEqual(self.client.delete(
                 f"/api/v1/content_generator/sessions/{removable.id}", headers=headers,
             ).status_code, 200)
             self.assertIsNone(content_storage.get_session(removable.id))
-            self.assertEqual(content_storage.get_versions(removable.id), [])
-        self.assertEqual(len(content_storage.get_versions(creation.id)), 1)
+        self.assertEqual(content_storage.get_session(creation.id).deliverables, [])
 
     def test_creation_management_requires_current_project_access(self):
         with sqlite3.connect(self.db_path) as conn:
@@ -960,9 +962,12 @@ class ProjectMembershipTests(unittest.TestCase):
 
         def reply_after_rename(*args, **kwargs):
             content_storage.update_session(creation.id, title="Renamed during chat")
-            return "AI reply"
+            return AgentTurnResult(intent="explore", reply="AI reply")
 
-        with patch("app.api.content_generator.chat", side_effect=reply_after_rename):
+        with patch(
+            "app.api.content_generator.run_creation_agent",
+            side_effect=reply_after_rename,
+        ):
             response = self.client.post(path + "/chat", headers=headers, json={"message": "A new brief"})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["data"]["session"]["title"], "Renamed during chat")
@@ -1017,12 +1022,12 @@ class ProjectMembershipTests(unittest.TestCase):
         first_id = "11111111-1111-4111-8111-111111111111"
         observed: dict = {}
 
-        def reply(messages, reference_context=""):
+        def reply(messages, **kwargs):
             observed["messages"] = messages
-            observed["context"] = reference_context
-            return "Accepted"
+            observed["context"] = kwargs["reference_context"]
+            return AgentTurnResult(intent="explore", reply="Accepted")
 
-        with patch("app.api.content_generator.chat", side_effect=reply):
+        with patch("app.api.content_generator.run_creation_agent", side_effect=reply):
             response = self.client.post(path + "/chat", headers=headers, json={
                 "message": "Create launch content",
                 "insight_ids": [insight.id, insight.id],
@@ -1049,14 +1054,17 @@ class ProjectMembershipTests(unittest.TestCase):
         self.assertIn("Launch insight", observed["context"])
         self.assertIn("Launch case", observed["context"])
 
-        with patch("app.api.content_generator.chat", return_value="Duplicate retry") as duplicate_chat:
+        with patch(
+            "app.api.content_generator.run_creation_agent",
+            return_value=AgentTurnResult(intent="explore", reply="Duplicate retry"),
+        ) as duplicate_agent:
             duplicate = self.client.post(path + "/chat", headers=headers, json={
                 "message": "Changed retry payload",
                 "preference_keys": ["xiaohongshu"],
                 "client_message_id": first_id,
             })
         self.assertEqual(duplicate.status_code, 200, duplicate.text)
-        duplicate_chat.assert_not_called()
+        duplicate_agent.assert_not_called()
         duplicate_session = duplicate.json()["data"]["session"]
         self.assertEqual(
             len([message for message in duplicate_session["messages"]
@@ -1066,7 +1074,10 @@ class ProjectMembershipTests(unittest.TestCase):
         self.assertNotIn("xiaohongshu", duplicate_session["preference_keys"])
 
         second_id = "22222222-2222-4222-8222-222222222222"
-        with patch("app.api.content_generator.chat", return_value="Updated"):
+        with patch(
+            "app.api.content_generator.run_creation_agent",
+            return_value=AgentTurnResult(intent="explore", reply="Updated"),
+        ):
             response = self.client.post(path + "/chat", headers=headers, json={
                 "message": "Refine it",
                 "preference_keys": ["image_text", "xiaohongshu"],
@@ -1083,7 +1094,10 @@ class ProjectMembershipTests(unittest.TestCase):
         self.assertEqual(committed["title"], "Context")
 
         failed_id = "33333333-3333-4333-8333-333333333333"
-        with patch("app.api.content_generator.chat", side_effect=RuntimeError("AI down")):
+        with patch(
+            "app.api.content_generator.run_creation_agent",
+            side_effect=RuntimeError("AI down"),
+        ):
             failed = self.client.post(path + "/chat", headers=headers, json={
                 "message": "Accepted before AI failure",
                 "preference_keys": ["short_video"],
@@ -2033,7 +2047,7 @@ class ProjectMembershipTests(unittest.TestCase):
         ).status_code, 422)
         updated = self.client.patch(path, headers=headers, json={
             "name": " Settings ", "note": " Persisted ",
-            "portfolio_id": "", "channel_account_id": "", "scheduled_for": "",
+            "channel_account_id": "", "scheduled_for": "",
             "status": "cancelled",
         })
         self.assertEqual(updated.status_code, 200, updated.text)
@@ -2068,6 +2082,7 @@ class ProjectMembershipTests(unittest.TestCase):
         ).status_code, 200)
 
     def test_publication_plans_are_project_scoped_and_creator_managed(self):
+        self.enterContext(patch("app.engines.publishing.publication_plans._clock", return_value="2026-10-01T00:00:00Z"))
         portfolio_storage.init_db()
         portfolio_id = "publication-portfolio"
         account_id = "publication-account"
@@ -2075,12 +2090,12 @@ class ProjectMembershipTests(unittest.TestCase):
             conn.execute(
                 """
                 INSERT INTO portfolio (
-                    id, user_id, title, content, source_session_id,
+                    id, user_id, name, title, content, source_session_id,
                     created_at, updated_at, organization_id, project_id, status
-                ) VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, 'completed')
+                ) VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, 'completed')
                 """,
                 (
-                    portfolio_id, self.owner["id"], "Launch portfolio", "Content",
+                    portfolio_id, self.owner["id"], "Launch portfolio", "Launch portfolio", "Content",
                     "2026-01-01", "2026-01-01", self.organization["id"],
                     self.project.id,
                 ),
@@ -2107,23 +2122,29 @@ class ProjectMembershipTests(unittest.TestCase):
             headers=self.headers(self.owner["id"]),
             json={
                 "project_id": self.project.id,
-                "portfolio_id": portfolio_id,
-                "channel_account_id": account_id,
-                "note": "Review before publishing",
+                "name": "Launch plan",
             },
         )
         self.assertEqual(created.status_code, 200, created.text)
         plan = created.json()["data"]
         self.assertEqual(plan["status"], "draft")
         self.assertFalse(plan["publishing_ready"])
-        self.assertEqual(plan["missing_scope"], "video.create.bind")
+        self.assertEqual(plan["missing_scope"], "")
         path = f"{base}/{plan['id']}"
         headers = self.headers(self.owner["id"])
-        self.assertEqual(self.client.post(
-            path + "/contents", headers=headers, files={"file": ("release.txt", b"Release", "text/plain")},
-        ).status_code, 200)
+        image = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        key = f"portfolio/{portfolio_id}/release.png"
+        media_storage.put_media_bytes(key, image, content_type="image/png")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("UPDATE portfolio SET media_kind='image', media=? WHERE id=?", (
+                json.dumps([{"id": "release", "name": "release.png", "media_type": "image",
+                             "mime_type": "image/png", "object_key": key, "file_size": len(image)}]), portfolio_id,
+            ))
+        self.assertEqual(self.client.put(path + "/work", headers=headers, json={"portfolio_id": portfolio_id}).status_code, 200)
         configured = self.client.patch(path, headers=headers, json={
-            "name": "Configured", "portfolio_id": portfolio_id,
+            "name": "Configured",
             "channel_account_id": account_id, "scheduled_for": "2026-10-02T08:30:00Z",
             "note": "Saved settings", "status": "scheduled",
         })
@@ -2137,8 +2158,9 @@ class ProjectMembershipTests(unittest.TestCase):
             path, headers=headers, json={"status": "cancelled"},
         ).status_code, 200)
         for field in ("portfolio_id", "channel_account_id"):
-            self.assertEqual(self.client.patch(
-                path, headers=headers, json={field: "missing"},
+            self.assertEqual(self.client.request(
+                "PUT" if field == "portfolio_id" else "PATCH",
+                path + "/work" if field == "portfolio_id" else path, headers=headers, json={field: "missing"},
             ).status_code, 404)
         other_project = publishing_storage.create_manual_project(self.owner["id"], title="Other plan project")
         for table, row_id, field in (
@@ -2147,8 +2169,9 @@ class ProjectMembershipTests(unittest.TestCase):
         ):
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(f"UPDATE {table} SET project_id = ? WHERE id = ?", (other_project.id, row_id))
-            self.assertEqual(self.client.patch(
-                path, headers=headers, json={field: row_id, "status": "draft"},
+            self.assertEqual(self.client.request(
+                "PUT" if field == "portfolio_id" else "PATCH",
+                path + "/work" if field == "portfolio_id" else path, headers=headers, json={field: row_id},
             ).status_code, 404)
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(f"UPDATE {table} SET project_id = ? WHERE id = ?", (self.project.id, row_id))
@@ -2172,12 +2195,12 @@ class ProjectMembershipTests(unittest.TestCase):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("UPDATE project_channel_accounts SET authorization_status = 'active' WHERE id = ?", (account_id,))
         cleared = self.client.patch(path, headers=headers, json={
-            "portfolio_id": "", "channel_account_id": "", "scheduled_for": "", "status": "draft",
+            "channel_account_id": "", "scheduled_for": "", "status": "draft",
         })
         self.assertEqual(cleared.status_code, 200, cleared.text)
-        self.assertEqual(cleared.json()["data"]["portfolio_id"], "")
+        self.assertEqual(cleared.json()["data"]["portfolio_id"], portfolio_id)
         self.assertEqual(self.client.patch(path, headers=headers, json={
-            "portfolio_id": portfolio_id, "channel_account_id": account_id,
+            "channel_account_id": account_id,
             "scheduled_for": "2026-10-02T08:30:00Z", "status": "scheduled",
         }).status_code, 200)
 
@@ -2236,11 +2259,14 @@ class ProjectMembershipTests(unittest.TestCase):
             headers=self.headers(self.owner["id"]),
             json={
                 "project_id": self.project.id,
-                "portfolio_id": portfolio_id,
-                "channel_account_id": account_id,
+                "name": "Recreated plan",
             },
         )
         self.assertEqual(recreated.status_code, 200, recreated.text)
+        self.assertEqual(self.client.patch(
+            f"{base}/{recreated.json()['data']['id']}", headers=headers,
+            json={"channel_account_id": account_id},
+        ).status_code, 200)
         self.assertEqual(self.client.delete(
             f"/api/v1/publishing/projects/{self.project.id}"
             f"/channel-accounts/{account_id}",

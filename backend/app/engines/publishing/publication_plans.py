@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.config import DB_PATH
 from app.database import connect_database
@@ -124,7 +124,7 @@ def _row_to_plan(row: sqlite3.Row) -> PublicationPlan:
 
 _PLAN_SELECT = """
     SELECT publication.id, publication.name, publication.media_mode, publication.project_id, project.title AS project_title,
-           publication.portfolio_id, portfolio.title AS portfolio_title,
+           publication.portfolio_id, portfolio.name AS portfolio_title,
            publication.channel_account_id, account.platform, account.account_name,
            account.scopes, publication.created_by_user_id,
            COALESCE(NULLIF(creator.nickname, ''), creator.username, '')
@@ -193,61 +193,28 @@ def create_publication_plan(
     *,
     project_id: str,
     name: str = "",
-    media_mode: str = "image_text",
-    portfolio_id: str = "",
-    channel_account_id: str = "",
-    scheduled_for: str = "",
-    note: str = "",
 ) -> PublicationPlan:
     _schema_initializer()
-    if media_mode not in {"image_text", "video"}:
-        raise ValueError("Publication media mode is invalid")
-    normalized_schedule = scheduled_for.strip()
-    if normalized_schedule:
-        try:
-            datetime.fromisoformat(normalized_schedule.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError("Scheduled time is invalid") from exc
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise ValueError("Publication plan name is required")
+    if len(normalized_name) > 120:
+        raise ValueError("Publication plan name must be at most 120 characters")
     now = _clock()
     plan_id = uuid.uuid4().hex[:12]
     with closing(_connection_factory()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         _project_access(conn, user_id, project_id)
-        portfolio = conn.execute(
-            """
-            SELECT id, title FROM portfolio
-            WHERE id = ? AND project_id = ? AND status = 'completed'
-            """,
-            (portfolio_id, project_id),
-        ).fetchone() if portfolio_id else None
-        if portfolio_id and portfolio is None:
-            raise LookupError("Completed portfolio work not found")
-        account = conn.execute(
-            """
-            SELECT id FROM project_channel_accounts
-            WHERE id = ? AND project_id = ? AND authorization_status = 'active'
-            """,
-            (channel_account_id, project_id),
-        ).fetchone() if channel_account_id else None
-        if channel_account_id and account is None:
-            raise LookupError("Connected channel account not found")
-        normalized_name = name.strip() or (portfolio["title"] if portfolio else "")
-        if not normalized_name:
-            raise ValueError("Publication plan name is required")
-        if normalized_schedule:
-            raise ValueError("Content, account and time are required to schedule")
         conn.execute(
             """
             INSERT INTO project_publications (
                 id, project_id, portfolio_id, channel_account_id,
                 created_by_user_id, status, scheduled_for, note,
                 created_at, updated_at, name, media_mode, copy_text
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')
+            ) VALUES (?, ?, '', '', ?, 'draft', '', '', ?, ?, ?, 'image_text', '')
             """,
             (
-                plan_id, project_id, portfolio_id, channel_account_id,
-                user_id, "scheduled" if normalized_schedule else "draft",
-                normalized_schedule, note.strip(), now, now, normalized_name, media_mode,
+                plan_id, project_id, user_id, now, now, normalized_name,
             ),
         )
         row = conn.execute(
@@ -255,6 +222,82 @@ def create_publication_plan(
             (plan_id,),
         ).fetchone()
         return _row_to_plan(row)
+
+
+def select_publication_work(user_id: str, plan_id: str, *, portfolio_id: str) -> PublicationPlan:
+    from app.engines.publishing.publication_contents import (
+        _cleanup,
+        import_portfolio_work,
+    )
+
+    _schema_initializer()
+    owned = []
+    removed = []
+    try:
+        with closing(_connection_factory()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT * FROM project_publications WHERE id = ?"
+                + (" FOR UPDATE" if getattr(conn, "dialect", "") == "postgresql" else ""),
+                (plan_id,),
+            ).fetchone()
+            if existing is None:
+                raise LookupError("Publication plan not found")
+            project_id = existing["project_id"]
+            access = _project_access(conn, user_id, project_id)
+            if existing["created_by_user_id"] != user_id and access["role"] not in {"owner", "admin"}:
+                raise ProjectPermissionDenied("Only the plan creator and project managers can update publication plans")
+            _ensure_plan_mutable(conn, existing)
+            work = conn.execute(
+                "SELECT * FROM portfolio WHERE id = ? AND project_id = ? AND status = 'completed'",
+                (portfolio_id, project_id),
+            ).fetchone()
+            if work is None:
+                raise LookupError("Completed portfolio work not found")
+            media_mode = "video" if work["media_kind"] == "video" else "image_text"
+            expected_kind = "video" if media_mode == "video" else "image"
+            media = json.loads(work["media"])
+            if work["media_kind"] != expected_kind or not media:
+                raise ValueError("Select a portfolio work with matching media")
+            now = _clock()
+            removed = [row["object_key"] for row in conn.execute(
+                "SELECT object_key FROM publication_contents WHERE plan_id = ? AND object_key != ''", (plan_id,),
+            ).fetchall()]
+            conn.execute("DELETE FROM publication_contents WHERE plan_id = ?", (plan_id,))
+            conn.execute(
+                "UPDATE project_publications SET portfolio_id = ?, media_mode = ?, "
+                "status = 'draft', scheduled_for = '', updated_at = ? WHERE id = ?",
+                (portfolio_id, media_mode, now, plan_id),
+            )
+            import_portfolio_work(conn, user_id, plan_id, work)
+            owned = [row["object_key"] for row in conn.execute(
+                "SELECT object_key FROM publication_contents WHERE plan_id = ? AND object_key != ''", (plan_id,),
+            ).fetchall()]
+            result = _row_to_plan(conn.execute(_PLAN_SELECT + " WHERE publication.id = ?", (plan_id,)).fetchone())
+    except Exception:
+        _cleanup(owned)
+        raise
+    _cleanup(removed)
+    return result
+
+
+def _validate_work_schedule(conn, project_id: str, channel_account_id: str, scheduled_for: str, now: str) -> None:
+    account = conn.execute(
+        "SELECT platform FROM project_channel_accounts WHERE id = ? AND project_id = ? "
+        "AND authorization_status = 'active'", (channel_account_id, project_id),
+    ).fetchone()
+    if account is None:
+        raise LookupError("Connected channel account not found")
+    if account["platform"] != "douyin":
+        raise ValueError("Xiaohongshu publishing is not available; select Douyin.")
+    when = datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
+    current = datetime.fromisoformat(now.replace("Z", "+00:00"))
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    if when.tzinfo is None:
+        raise ValueError("Scheduled time must include a timezone")
+    if when.date() <= current.astimezone(when.tzinfo).date():
+        raise ValueError("Select a publication date tomorrow or later.")
 
 
 def validate_publication_media(
@@ -273,6 +316,8 @@ def validate_publication_media(
     if media_mode == "image_text":
         if videos:
             raise ValueError("Image-text mode does not support videos")
+        if scheduling and not images:
+            raise ValueError("Image-text mode requires at least one image to schedule")
     elif media_mode == "video":
         if images:
             raise ValueError("Video mode does not support images")
@@ -289,8 +334,6 @@ def update_publication_plan(
     plan_id: str,
     *,
     name: str | None = None,
-    media_mode: str | None = None,
-    portfolio_id: str | None = None,
     channel_account_id: str | None = None,
     scheduled_for: str | None = None,
     note: str | None = None,
@@ -318,14 +361,14 @@ def update_publication_plan(
             conn, existing,
             allow_scheduled_cancel=status == "cancelled" and all(
                 value is None for value in (
-                    name, media_mode, portfolio_id, channel_account_id, scheduled_for, note,
+                    name, channel_account_id, scheduled_for, note,
                 )
             ),
         )
         changes = {
             key: value.strip()
             for key, value in {
-                "name": name, "portfolio_id": portfolio_id, "media_mode": media_mode,
+                "name": name,
                 "channel_account_id": channel_account_id,
                 "scheduled_for": scheduled_for, "note": note, "status": status,
             }.items() if value is not None
@@ -349,20 +392,11 @@ def update_publication_plan(
         if status is None and scheduled_for is not None and existing["status"] in {"draft", "scheduled", "cancelled", "failed"}:
             changes["status"] = "scheduled" if schedule else "draft"
         effective_status = changes.get("status", existing["status"])
-        if media_mode is not None or effective_status == "scheduled":
+        if effective_status == "scheduled":
             validate_publication_media(
-                conn, plan_id, changes.get("media_mode", existing["media_mode"]),
-                scheduling=effective_status == "scheduled",
+                conn, plan_id, existing["media_mode"], scheduling=True,
             )
-        work_id = changes.get("portfolio_id", existing["portfolio_id"])
         account_id = changes.get("channel_account_id", existing["channel_account_id"])
-        if work_id and portfolio_id is not None:
-            work = conn.execute(
-                "SELECT id FROM portfolio WHERE id = ? AND project_id = ? AND status = 'completed'",
-                (work_id, existing["project_id"]),
-            ).fetchone()
-            if work is None:
-                raise LookupError("Completed portfolio work not found")
         if account_id and (channel_account_id is not None or effective_status == "scheduled"):
             account = conn.execute(
                 "SELECT id FROM project_channel_accounts "
@@ -378,6 +412,8 @@ def update_publication_plan(
             (has_content or existing["copy_text"]) and account_id and schedule
         ):
             raise ValueError("Content, account and time are required to schedule")
+        if effective_status == "scheduled":
+            _validate_work_schedule(conn, existing["project_id"], account_id, schedule, _clock())
         updates = [f"{key} = ?" for key in changes]
         values = list(changes.values())
         updates.append("updated_at = ?")

@@ -168,7 +168,7 @@ export default function NotificationCenter() {
           <div className="amp-notification-menu-header">
             <strong>{t("通知", "Notifications")}</strong>
             {unreadCount > 0 && (
-              <button type="button" onClick={() => void readAll()}>
+              <button type="button" className="amp-text-action amp-text-action-primary" onClick={() => void readAll()}>
                 {t(CHINESE_ACTIONS.markAllRead, ENGLISH_ACTIONS.markAllRead)}
               </button>
             )}
@@ -179,7 +179,7 @@ export default function NotificationCenter() {
             ) : error ? (
               <div className="amp-notification-state" role="alert">
                 <p>{t("通知加载失败", "Could not load notifications")}</p>
-                <button type="button" onClick={() => void loadNotifications(true)}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
+                <button type="button" className="amp-text-action amp-text-action-primary" onClick={() => void loadNotifications(true)}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
               </div>
             ) : items.length === 0 ? (
               <div className="amp-notification-empty">

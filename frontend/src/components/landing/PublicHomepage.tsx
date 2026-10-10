@@ -87,7 +87,7 @@ export default function PublicHomepage() {
             </a>
             <div className="amp-public-nav-actions">
               <LanguageSwitcher variant="minimal" />
-              <button type="button" className="amp-public-login-link" onClick={(event) => openAuth("login", event)}>
+              <button type="button" className="amp-public-login-link amp-text-action" onClick={(event) => openAuth("login", event)}>
                 {t(CHINESE_ACTIONS.signIn, ENGLISH_ACTIONS.signIn)}
               </button>
               <button ref={registrationTrigger} type="button" className="amp-public-nav-cta" onClick={(event) => openAuth("register", event)}>
@@ -126,7 +126,7 @@ export default function PublicHomepage() {
             <div className="amp-public-container">
               <div className="amp-public-value-layout">
                 <div className="amp-public-value-copy">
-                  <h2 id="public-capabilities-title">{t("内容生产，", "Project work becomes")}<br />{t("沉淀为组织能力。", "shared capability.")}</h2>
+                  <h2 id="public-capabilities-title">{t("内容生产，沉淀为组织能力。", "Project work becomes shared capability.")}</h2>
                   <p>{t(
                     "市场研究、案例分析与内容版本统一归档于项目，团队方法与成果持续积累。",
                     "Research, case analysis, and content versions remain with the project. Team methods and results accumulate over time.",

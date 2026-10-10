@@ -278,6 +278,17 @@ export default function MarketInsightDetailPage() {
               <p><Link href={`/projects/${encodeURIComponent(insight.project_id)}`}>{insight.project_title}</Link></p>
             </div>
           </div>
+          {isEditing && draft && (
+            <div className="amp-insight-edit-actions">
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel" disabled={saving}
+                blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
+                onClick={() => { setEditing(false); setDraft(null); }}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
+              <GuardedButton type="submit" form="insight-edit-form" className="amp-button amp-button-primary" disabled={saving}
+                blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
+                {saving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
+              </GuardedButton>
+            </div>
+          )}
           {!isEditing && (canRetry || canEdit) && (
             <div className="flex gap-2">
               {canRetry && (
@@ -327,7 +338,7 @@ export default function MarketInsightDetailPage() {
                 : t("请联系创建者或项目管理员重新分析。", "Ask the creator or a project administrator to retry the analysis.")}</p>}
             </div>
           ) : isEditing && draft ? (
-            <form className="amp-insight-edit-form" onSubmit={(event) => { event.preventDefault(); void saveInsight(); }}>
+            <form id="insight-edit-form" className="amp-insight-edit-form" onSubmit={(event) => { event.preventDefault(); void saveInsight(); }}>
               <div className="amp-insight-edit-grid">
                 <label className="amp-insight-edit-wide"><span>{t("洞察摘要", "Insight summary")}</span>
                   <textarea className="amp-workspace-control resize-none" rows={3} value={draft.product_summary}
@@ -355,15 +366,6 @@ export default function MarketInsightDetailPage() {
                         event.target.value.split("\n"),
                       )} /></label>
                 ))}
-              </div>
-              <div className="amp-insight-edit-actions">
-                <GuardedButton type="button" className="amp-button amp-button-secondary" disabled={saving}
-                  blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
-                  onClick={() => { setEditing(false); setDraft(null); }}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
-                <GuardedButton type="submit" className="amp-button amp-button-primary" disabled={saving}
-                  blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}>
-                  {saving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
-                </GuardedButton>
               </div>
             </form>
           ) : (
@@ -471,7 +473,7 @@ export default function MarketInsightDetailPage() {
                 </a>
               )}
               {selectedSource?.has_source_file && (
-                <GuardedButton type="button" className="amp-insight-source-download"
+                <GuardedButton type="button" className="amp-insight-source-download amp-text-action amp-text-action-primary"
                   blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                   disabled={sourceDownloading} onClick={() => void downloadSourceFile()}>
                   {sourceDownloading ? t(CHINESE_PROGRESS.downloading, ENGLISH_PROGRESS.downloading) : t(CHINESE_ACTIONS.download, ENGLISH_ACTIONS.download)}
@@ -492,7 +494,7 @@ export default function MarketInsightDetailPage() {
               </div>
             )}
             {sourcePreview?.has_more && (
-              <GuardedButton type="button" className="amp-insight-source-preview-more"
+              <GuardedButton type="button" className="amp-insight-source-preview-more amp-text-action"
                 blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 disabled={previewLoadingMore} onClick={() => void loadMoreSourcePreview()}>
                 {previewLoadingMore ? t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading) : t("加载更多", "Load more")}

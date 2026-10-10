@@ -1,48 +1,55 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth_context";
 import { useI18n } from "@/contexts/i18n_context";
-import { ENGLISH_ACTIONS, ENGLISH_PROGRESS, CHINESE_PROGRESS, CHINESE_ACTIONS } from "@/i18n/interaction_copy";
 import { useToast } from "@/contexts/toast_context";
-import { localizeErrorMessage } from "@/i18n/errors";
 import InlineIcon from "@/components/redesign/InlineIcon";
 import { GuardedButton } from "@/components/redesign/GuardedControls";
+import DeleteConfirmDialog from "@/components/redesign/DeleteConfirmDialog";
 import PortfolioProjectSidebar from "@/components/portfolio/PortfolioProjectSidebar";
-import PortfolioReportDocument from "@/components/portfolio/PortfolioReportDocument";
-import {
-  fetch_content_projects,
-  fetch_script,
-} from "@/services/api_client";
-import type { PortfolioScript } from "@/types/portfolio";
-import type { ContentProject } from "@/types/publishing";
-import {
-  buildPortfolioReportHtml,
-  hasBilingualPortfolioReport,
-  parsePortfolioReport,
-} from "@/utils/portfolio_report";
-import type { Locale } from "@/i18n/locale";
+import PortfolioWorkView from "@/components/portfolio/PortfolioWorkView";
+import PortfolioMaterialPicker from "@/components/portfolio/PortfolioMaterialPicker";
+import { fetch_content_projects, fetch_script, save_portfolio_edit, update_script } from "@/services/api_client";
+import type { PortfolioMedia, PortfolioScript } from "@/types/portfolio";
+import type { ContentProject, ProjectMaterial } from "@/types/publishing";
+
+type DraftMedia = PortfolioMedia & { file?: File; material?: ProjectMaterial };
+interface WorkDraft {
+  work: PortfolioScript;
+  media: DraftMedia[];
+  tagsText: string;
+}
 
 export default function PortfolioDetailPage() {
-  const params = useParams<{ scriptId: string }>();
-  const scriptId = params.scriptId;
+  const { scriptId } = useParams<{ scriptId: string }>();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { t, locale } = useI18n();
-  const { showError } = useToast();
-  const pdfPreviewDialogRef = useRef<HTMLDialogElement>(null);
-  const [script, setScript] = useState<PortfolioScript | null>(null);
+  const { t } = useI18n();
+  const { showError, showSuccess } = useToast();
+  const [work, setWork] = useState<PortfolioScript | null>(null);
   const [projects, setProjects] = useState<ContentProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const [exportingPdf, setExportingPdf] = useState(false);
-  const [reportLocale, setReportLocale] = useState<Locale>(locale);
-
-  const loadScript = useCallback(async () => {
-    const response = await fetch_script(scriptId);
-    setScript(response.data);
-    return response.data;
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<WorkDraft | null>(null);
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const materialGap = useRef(0);
+  const uploadUrls = useRef(new Set<string>());
+  const activeId = useRef(scriptId);
+  useLayoutEffect(() => { activeId.current = scriptId; }, [scriptId]);
+  const releaseUploads = () => {
+    for (const url of uploadUrls.current) URL.revokeObjectURL(url);
+    uploadUrls.current.clear();
+  };
+  useEffect(() => {
+    const urls = uploadUrls.current;
+    setDraft(null);
+    setMaterialPickerOpen(false);
+    setPendingRemoveId(null);
+    return () => { for (const url of urls) URL.revokeObjectURL(url); urls.clear(); };
   }, [scriptId]);
 
   useEffect(() => {
@@ -50,181 +57,201 @@ export default function PortfolioDetailPage() {
   }, [authLoading, router, user]);
 
   useEffect(() => {
-    setReportLocale(locale);
-  }, [locale, scriptId]);
-
-  useEffect(() => {
-    if (!user || !scriptId) return;
+    if (!user) return;
     let cancelled = false;
     setLoading(true);
+    setWork(null);
     Promise.all([fetch_script(scriptId), fetch_content_projects()])
-      .then(([scriptResponse, projectsResponse]) => {
+      .then(([response, projectResponse]) => {
         if (cancelled) return;
-        setScript(scriptResponse.data);
-        setProjects(projectsResponse.data || []);
+        setProjects(projectResponse.data);
+        setWork(response.data);
       })
-      .catch((error) => {
-        if (!cancelled) {
-          showError(localizeErrorMessage(error instanceof Error ? error.message : "Could not load work", locale));
-          router.replace("/portfolio");
-        }
+      .catch(error => {
+        if (!cancelled) showError(error instanceof Error ? error.message : t("加载作品失败", "Could not load work"));
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [locale, router, scriptId, showError, user]);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [scriptId, user, showError, t]);
 
-  useEffect(() => {
-    if (script?.status !== "generating") return;
-    const timer = window.setInterval(() => {
-      void loadScript().catch((error) => {
-        showError(localizeErrorMessage(
-          error instanceof Error ? error.message : "Could not refresh work",
-          locale,
-        ));
-      });
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [loadScript, locale, script?.status, showError]);
-
-  const report = useMemo(() => (
-    script ? parsePortfolioReport(script.title, script.content, script.updated_at, t, reportLocale) : null
-  ), [reportLocale, script, t]);
-  const bilingual = Boolean(script && hasBilingualPortfolioReport(script.content));
-  const pdfPreviewHtml = useMemo(
-    () => report ? buildPortfolioReportHtml(report, t, reportLocale) : "",
-    [report, reportLocale, t],
-  );
-  const completed = script?.status === "completed";
-  const exportReason = t("PDF 正在导出，请稍候。", "The PDF is being exported. Please wait.");
-
-  const exportPdf = async () => {
-    if (exportingPdf) { showError(exportReason); return; }
-    if (!script || !report) return;
-    setExportingPdf(true);
+  const reorder = async (ids: string[]) => {
+    if (!work || saving) return;
+    if (draft) {
+      const byId = new Map(draft.media.map(item => [item.id, item]));
+      const reordered = ids.map(id => byId.get(id));
+      if (reordered.some(item => !item) || ids.length !== draft.media.length || new Set(ids).size !== ids.length) {
+        showError(t("图片顺序无效，请重试", "Invalid image order. Please try again."));
+        return;
+      }
+      setDraft({ ...draft, media: reordered.filter((item): item is DraftMedia => Boolean(item)) });
+      return;
+    }
+    setSaving(true);
     try {
-      const html2pdf = (await import("html2pdf.js")).default;
-      const container = document.createElement("div");
-      container.innerHTML = pdfPreviewHtml;
-      document.body.appendChild(container);
-      await html2pdf().set({
-        margin: [12, 12, 12, 12],
-        filename: `${script.title}.pdf`,
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      }).from(container.firstElementChild as HTMLElement).save();
-      container.remove();
-      pdfPreviewDialogRef.current?.close();
+      const response = await update_script(work.id, { media_order: ids, expected_updated_at: work.updated_at });
+      if (activeId.current !== work.id) return;
+      if (!response.success) throw new Error(response.message);
+      setWork(response.data);
+      showSuccess(t("图片顺序已保存", "Image order saved"));
     } catch (error) {
-      showError(localizeErrorMessage(error instanceof Error ? error.message : "Could not export work", locale));
+      showError(error instanceof Error ? error.message : t("保存顺序失败", "Could not save order"));
     } finally {
-      setExportingPdf(false);
+      setSaving(false);
     }
   };
 
-  if (authLoading || loading || !script || !report || !user) {
-    return <div className="amp-page-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</div>;
-  }
+  const upload = (files: File[], gap: number) => {
+    if (!work || saving || !files.length) return;
+    const uploadDraft: WorkDraft = draft || { work: { ...work }, media: [...(work.media || [])], tagsText: (work.tags || []).join(", ") };
+    const video = uploadDraft.work.media_kind === "video";
+    if (video && uploadDraft.media.length > 0) {
+      showError(t("请先删除现有视频，再添加新视频", "Remove the existing video before adding a new one."));
+      return;
+    }
+    const allowed = video ? /\.(mp4|mov|webm|m4v)$/i : /\.(jpg|jpeg|png|gif|webp)$/i;
+    if (files.some(file => !allowed.test(file.name)) || (video && files.length !== 1)) {
+      showError(video ? t("请选择一个视频文件", "Select one video file") : t("请选择 JPG、PNG、GIF 或 WebP 图片", "Select JPG, PNG, GIF or WebP images"));
+      return;
+    }
+    const added = files.map(file => {
+      const url = URL.createObjectURL(file);
+      uploadUrls.current.add(url);
+      return { id: `upload:${crypto.randomUUID()}`, file, name: file.name,
+        media_type: video ? "video" as const : "image" as const, mime_type: file.type,
+        object_key: "", file_url: url };
+    });
+    const index = Math.max(0, Math.min(gap, uploadDraft.media.length));
+    setDraft({ ...uploadDraft, media: video ? added : [...uploadDraft.media.slice(0, index), ...added, ...uploadDraft.media.slice(index)] });
+  };
 
+  const removeMedia = (id: string) => {
+    if (!draft || saving) return;
+    const item = draft.media.find(media => media.id === id);
+    if (item?.file) {
+      URL.revokeObjectURL(item.file_url);
+      uploadUrls.current.delete(item.file_url);
+    }
+    setDraft({ ...draft, media: draft.media.filter(item => item.id !== id) });
+  };
+
+  const chooseMaterials = (selected: ProjectMaterial[]) => {
+    if (!work || saving) return;
+    const materialDraft: WorkDraft = draft || { work: { ...work }, media: [...(work.media || [])], tagsText: (work.tags || []).join(", ") };
+    const kind = materialDraft.work.media_kind || "image";
+    if (kind === "video" && materialDraft.media.length > 0) {
+      showError(t("请先删除现有视频，再添加新视频", "Remove the existing video before adding a new one."));
+      return;
+    }
+    if (selected.some(item => item.project_id !== materialDraft.work.project_id || item.media_type !== kind)
+      || (kind === "video" && selected.length !== 1)) {
+      showError(t("素材类型或所属项目不匹配，请重新选择", "Material type or project does not match. Select again."));
+      return;
+    }
+    const pickedIds = new Set(selected.map(item => item.id));
+    const kept = materialDraft.media.filter(item => !item.material || pickedIds.has(item.material.id));
+    const existingIds = new Set(kept.flatMap(item => item.material ? [item.material.id] : []));
+    const added = selected.filter(item => kind === "video" || !existingIds.has(item.id)).map(material => ({
+      id: `material:${material.id}`, material, name: material.name, media_type: kind,
+      object_key: material.object_key, mime_type: material.mime_type, file_url: material.file_url,
+    }));
+    const gap = materialDraft.media.slice(0, materialGap.current)
+      .filter(item => !item.material || pickedIds.has(item.material.id)).length;
+    setDraft({ ...materialDraft, media: kind === "video" ? added : [...kept.slice(0, gap), ...added, ...kept.slice(gap)] });
+  };
+
+  const saveEdit = async () => {
+    if (!draft || !work || saving) return;
+    const added = draft.media.filter(item => item.file);
+    const uploadIndex = new Map(added.map((item, index) => [item.id, index]));
+    const files = added.flatMap(item => item.file ? [item.file] : []);
+    setSaving(true);
+    try {
+      const metadata = {
+        title: draft.work.title, content: draft.work.content,
+        tags: draft.tagsText.split(/[,，\n]/).map(tag => tag.trim()).filter(Boolean),
+        media_ids: draft.media.map(item => item.file ? `upload:${uploadIndex.get(item.id)}`
+          : item.material ? `material:${item.material.id}` : item.id),
+      };
+      const response = await save_portfolio_edit(work.id, { ...metadata, expected_updated_at: draft.work.updated_at }, files);
+      if (activeId.current !== work.id) return;
+      if (!response.success) throw new Error(response.message);
+      setWork(response.data);
+      setDraft(null);
+      setMaterialPickerOpen(false);
+      setPendingRemoveId(null);
+      releaseUploads();
+      showSuccess(t("作品已保存", "Work saved"));
+    } catch (error) {
+      showError(error instanceof Error ? error.message : t("无法保存作品", "Could not save work"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading || authLoading) return <div className="amp-page-state" role="status">{t("加载中", "Loading")}</div>;
+  if (!user) return null;
+  if (!work) return <div className="amp-page-state">{t("无法加载作品，请刷新重试", "Could not load work. Reload to retry.")}</div>;
+  const editable = work.user_id === user.id || ["owner", "admin"].includes(work.project_role);
+  const pendingRemove = draft?.media.find(item => item.id === pendingRemoveId);
+  const workView = <PortfolioWorkView work={draft ? { ...draft.work, media: draft.media } : work}
+    editable={editable} saving={saving} editing={Boolean(draft)} tagsText={draft?.tagsText || ""}
+    onReorder={ids => void reorder(ids)} onUpload={upload} onRemove={setPendingRemoveId}
+    onPickMaterials={gap => { materialGap.current = gap; setMaterialPickerOpen(true); }}
+    onTextChange={(field, value) => setDraft(current => current ? { ...current, work: { ...current.work, [field]: value } } : current)}
+    onTagsChange={value => setDraft(current => current ? { ...current, tagsText: value } : current)} />;
   return (
-    <div className="amp-project-detail-layout">
-      <PortfolioProjectSidebar projects={projects} selectedProjectId={script.project_id} />
+    <div className="amp-project-detail-layout amp-portfolio-detail-layout">
+      <PortfolioProjectSidebar projects={projects} selectedProjectId={work.project_id} />
       <main className="amp-project-detail-main">
         <header className="amp-project-detail-header">
           <div className="amp-project-detail-title">
-            <Link href={`/portfolio?project=${encodeURIComponent(script.project_id)}`}
-              className="amp-project-detail-back" aria-label={t("返回作品列表", "Back to portfolio")}>
-              <InlineIcon name="arrowLeft" />
-            </Link>
+            <Link href={`/portfolio?project=${encodeURIComponent(work.project_id)}`} className="amp-project-detail-back"
+              aria-label={t("返回作品列表", "Back to portfolio")}><InlineIcon name="arrowLeft" /></Link>
             <div>
-              <div className="amp-insight-title-row">
-                <h1>{script.title}</h1>
-                <span className={`amp-insight-status amp-insight-status-${
-                  script.status === "generating" ? "analyzing" : script.status
-                }`}>
-                  {script.status === "generating"
-                    ? t("生成中", "Generating")
-                    : script.status === "failed"
-                      ? t("失败", "Failed")
-                      : t("已完成", "Completed")}
-                </span>
-              </div>
-              <p><Link href={`/projects/${encodeURIComponent(script.project_id)}`}>{script.project_title}</Link></p>
+              <h1>{work.name || t("未命名作品", "Untitled work")}</h1>
+              <p><Link href={`/projects/${encodeURIComponent(work.project_id)}`}>{work.project_title}</Link></p>
             </div>
           </div>
-          {completed && (
-            <div className="flex gap-2">
-              <GuardedButton type="button" className="amp-button amp-button-secondary"
-                disabled={exportingPdf} blockedReason={exportReason}
-                onClick={() => pdfPreviewDialogRef.current?.showModal()}>
-                <InlineIcon name="download" className="h-4 w-4" />
-                {t(CHINESE_ACTIONS.export, ENGLISH_ACTIONS.export)}
-              </GuardedButton>
-            </div>
-          )}
+          {(work.status === "completed" || work.status === "draft") && <div className="amp-insight-edit-actions">
+            {draft ? <>
+              <GuardedButton type="button" className="amp-button amp-button-secondary amp-button-cancel"
+                disabled={saving} blockedReason={t("正在保存作品，请稍候", "Work is being saved. Please wait.")}
+                onClick={() => {
+                  setDraft(null); setMaterialPickerOpen(false); setPendingRemoveId(null); releaseUploads();
+                }}>{t("取消", "Cancel")}</GuardedButton>
+              <GuardedButton type="submit" form="portfolio-edit-form" className="amp-button amp-button-primary"
+                disabled={saving} blockedReason={t("正在保存作品，请稍候", "Work is being saved. Please wait.")}
+                >{saving ? t("保存中", "Saving") : t("保存", "Save")}</GuardedButton>
+            </> : <GuardedButton type="button" className="amp-button amp-button-secondary"
+              disabled={!editable || saving}
+              blockedReason={!editable ? t("仅作品创建者和项目管理员可编辑", "Only the creator and project managers can edit this work")
+                : t("正在保存作品，请稍候", "Work is being saved. Please wait.")}
+              onClick={() => setDraft({ work: { ...work }, media: [...(work.media || [])], tagsText: (work.tags || []).join(", ") })}>
+              <InlineIcon name="edit" className="h-4 w-4" />{t("编辑", "Edit")}
+            </GuardedButton>}
+          </div>}
         </header>
-
-        <div className="amp-project-detail-tabs" role="tablist">
-          {bilingual ? (
-            <>
-              <button type="button" role="tab" aria-selected={reportLocale === "en"}
-                onClick={() => setReportLocale("en")}>English</button>
-              <button type="button" role="tab" aria-selected={reportLocale === "zh-CN"}
-                onClick={() => setReportLocale("zh-CN")}>中文版</button>
-            </>
-          ) : (
-            <button type="button" role="tab" aria-selected="true">{t("作品内容", "Work content")}</button>
-          )}
-        </div>
-
-        {script.status === "generating" ? (
-          <div className="amp-insight-processing" role="status">
-            <span className="amp-insight-processing-icon"><InlineIcon name="wand" /></span>
-            <strong>{t("正在生成作品内容", "Generating work content")}</strong>
-            <p>{t("生成完成后，作品内容会自动更新。", "The work will update automatically when generation completes.")}</p>
-          </div>
-        ) : script.status === "failed" ? (
-          <div className="amp-projects-state">
-            <strong>{t("作品生成失败", "Work generation failed")}</strong>
-            <p>{t("请返回智能创作重新生成作品。", "Return to Content Studio and generate the work again.")}</p>
-          </div>
-        ) : (
-          <PortfolioReportDocument report={report} locale={reportLocale} />
-        )}
+        {work.status === "failed" ? <div className="amp-projects-state">{t("作品保存失败，请返回创作重试", "Work could not be saved. Return to creation to retry.")}</div>
+          : work.status === "generating" ? <div className="amp-projects-state" role="status">{t("旧作品正在处理中", "Legacy work is processing")}</div>
+            : draft ? <form id="portfolio-edit-form" className="amp-portfolio-edit-form"
+              onSubmit={event => { event.preventDefault(); void saveEdit(); }}>{workView}</form> : workView}
+        {editable && <PortfolioMaterialPicker open={materialPickerOpen} projectId={work.project_id}
+          kind={work.media_kind || "image"}
+          selected={draft?.media.flatMap(item => item.material ? [item.material] : []) || []}
+          onConfirm={chooseMaterials} onClose={() => setMaterialPickerOpen(false)} />}
+        <DeleteConfirmDialog open={Boolean(pendingRemove)}
+          title={pendingRemove?.media_type === "video" ? t("删除视频", "Delete video") : t("删除图片", "Delete image")}
+          message={t("确认移除“{name}”？移除后需保存作品才会生效。",
+            "Remove “{name}”? The removal takes effect only after saving the work.", { name: pendingRemove?.name || "" })}
+          cancelLabel={t("取消", "Cancel")} confirmLabel={t("删除", "Delete")}
+          busyLabel={t("处理中", "Processing")} busy={saving}
+          blockedReason={t("正在保存作品，请稍候", "Work is being saved. Please wait.")}
+          onCancel={() => setPendingRemoveId(null)}
+          onConfirm={() => {
+            if (pendingRemove) removeMedia(pendingRemove.id);
+            setPendingRemoveId(null);
+          }} />
       </main>
-
-      <dialog ref={pdfPreviewDialogRef} aria-labelledby="portfolio-pdf-preview-title"
-        className="amp-workspace-dialog amp-portfolio-pdf-preview-dialog m-auto w-[calc(100%_-_32px)] max-w-4xl overflow-hidden bg-white p-0 text-slate-950 backdrop:bg-slate-950/40"
-        onCancel={(event) => {
-          event.preventDefault();
-          if (!exportingPdf) pdfPreviewDialogRef.current?.close();
-          else showError(exportReason);
-        }}>
-        <div className="flex max-h-[88dvh] min-h-0 flex-col">
-          <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">
-            <h2 id="portfolio-pdf-preview-title" className="text-base font-semibold">
-              {t("导出 PDF 预览", "PDF export preview")}
-            </h2>
-            <GuardedButton blockedReason={exportReason} type="button" className="amp-material-preview-icon" disabled={exportingPdf}
-              aria-label={t("关闭预览", "Close preview")} onClick={() => pdfPreviewDialogRef.current?.close()}>
-              <InlineIcon name="close" />
-            </GuardedButton>
-          </header>
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100 p-5">
-            <div className="mx-auto overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
-              dangerouslySetInnerHTML={{ __html: pdfPreviewHtml }} />
-          </div>
-          <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-5 py-3">
-            <GuardedButton blockedReason={exportReason} type="button" className="amp-button amp-button-primary" disabled={exportingPdf}
-              onClick={() => void exportPdf()}>
-              {exportingPdf ? t(CHINESE_PROGRESS.exporting, ENGLISH_PROGRESS.exporting) : t(CHINESE_ACTIONS.export, ENGLISH_ACTIONS.export)}
-            </GuardedButton>
-          </footer>
-        </div>
-      </dialog>
     </div>
   );
 }

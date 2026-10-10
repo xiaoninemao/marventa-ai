@@ -1017,11 +1017,6 @@
   font-weight: 600;
 }
 
-.amp-redesign .amp-notification-menu-header button:hover {
-  color: #1d4ed8;
-  transform: none;
-}
-
 .amp-redesign .amp-notification-list {
   max-height: min(480px, calc(100dvh - 100px));
   overflow-y: auto;
@@ -1656,6 +1651,57 @@
   box-shadow: none;
 }
 
+.amp-redesign .amp-text-action-primary {
+  --amp-text-action-color: #175cd3;
+  --amp-text-action-hover-color: #1849a9;
+}
+
+.amp-redesign .amp-text-action-danger {
+  --amp-text-action-color: #b42318;
+  --amp-text-action-hover-color: #912018;
+}
+
+.amp-redesign :is(.amp-text-action, .amp-button-cancel, .amp-button-back),
+.amp-redesign.amp-app-shell :is(.amp-text-action, .amp-button-cancel, .amp-button-back) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--amp-text-action-color, #475467);
+  text-decoration: none;
+  transform: none;
+  transition: color 150ms ease;
+}
+
+.amp-redesign :is(.amp-text-action, .amp-button-cancel, .amp-button-back):hover:not(:disabled):not([aria-disabled="true"]),
+.amp-redesign.amp-app-shell :is(.amp-text-action, .amp-button-cancel, .amp-button-back):hover:not(:disabled):not([aria-disabled="true"]) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--amp-text-action-hover-color, #344054);
+  text-decoration: none;
+  transform: none;
+}
+
+.amp-redesign :is(.amp-text-action, .amp-button-cancel, .amp-button-back):is(:hover, :active),
+.amp-redesign.amp-app-shell :is(.amp-text-action, .amp-button-cancel, .amp-button-back):is(:hover, :active) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  text-decoration: none;
+  transform: none;
+}
+
+.amp-redesign :is(.amp-text-action, .amp-button-cancel, .amp-button-back):is(:disabled, [aria-disabled="true"]),
+.amp-redesign.amp-app-shell :is(.amp-text-action, .amp-button-cancel, .amp-button-back):is(:disabled, [aria-disabled="true"]) {
+  color: var(--amp-text-action-color, #475467);
+}
+
+.amp-redesign :is(.amp-text-action, .amp-button-cancel, .amp-button-back):focus-visible,
+.amp-redesign.amp-app-shell :is(.amp-text-action, .amp-button-cancel, .amp-button-back):focus-visible {
+  outline: 2px solid #175cd3;
+  outline-offset: 2px;
+}
+
 .amp-redesign .amp-app-content-home {
   padding: 0 clamp(20px, 2vw, 32px) 32px;
 }
@@ -2264,16 +2310,6 @@
   cursor: pointer;
   font-size: 14px;
   font-weight: 900;
-  transition: color 180ms ease, transform 180ms ease;
-}
-
-.amp-redesign .amp-slide-topline > button:not(.amp-modal-close):hover {
-  color: var(--amp-primary-dark);
-  transform: translateY(-1px);
-}
-
-.amp-redesign .amp-slide-topline > button:not(.amp-modal-close):active {
-  transform: translateY(0) scale(0.98);
 }
 
 .amp-redesign .amp-slide-form-panel .amp-form-title {

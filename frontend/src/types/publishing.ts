@@ -1,4 +1,3 @@
-import type { ContentCard } from "@/types/content_generator";
 
 export interface BrandProfile {
   tone: string;
@@ -14,10 +13,8 @@ export interface ContentProject {
   title: string;
   xhs_account: string;
   source_session_id: string;
-  source_card_id: string;
   content_type: string;
   platform_hint: string;
-  cards_snapshot: ContentCard[];
   final_snapshot: Record<string, unknown>;
   notes: string;
   status: string;

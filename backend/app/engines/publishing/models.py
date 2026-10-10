@@ -7,8 +7,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.engines.content_generator.models import ContentCard
-
 
 class ProjectMember(BaseModel):
     user_id: str
@@ -44,10 +42,8 @@ class ContentProject(BaseModel):
     title: str
     xhs_account: str = ""
     source_session_id: str
-    source_card_id: str = ""
     content_type: str = "mixed"
     platform_hint: str = ""
-    cards_snapshot: list[ContentCard] = []
     final_snapshot: dict[str, Any] = {}
     notes: str = ""
     status: str = "active"
@@ -255,21 +251,21 @@ class PublicationPlan(BaseModel):
 
 
 class PublicationPlanCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     project_id: str = Field(min_length=1)
     name: str = Field(default="", max_length=120)
-    media_mode: Literal["image_text", "video"] = "image_text"
-    portfolio_id: str = ""
-    channel_account_id: str = ""
-    scheduled_for: str = Field(default="", max_length=40)
-    note: str = Field(default="", max_length=500)
+
+
+class PublicationWorkSelection(BaseModel):
+    model_config = {"extra": "forbid"}
+    portfolio_id: str = Field(min_length=1)
 
 
 class PublicationPlanUpdate(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str | None = Field(default=None, max_length=120)
-    media_mode: Literal["image_text", "video"] | None = None
-    portfolio_id: str | None = None
     channel_account_id: str | None = None
     scheduled_for: str | None = Field(default=None, max_length=40)
     note: str | None = Field(default=None, max_length=500)
@@ -293,7 +289,7 @@ class PublicationCopy(BaseModel):
         description=(
             "Up to 5 tags, at most 200 input code points each and 50 after trimming "
             "and removing leading ASCII/full-width hash markers. Case-sensitive duplicates are removed. "
-            "Empty tags, controls and line breaks are invalid. Omit on PATCH to preserve; [] clears."
+            "Empty tags, controls and line breaks are invalid."
         ),
     )
 
@@ -335,18 +331,6 @@ class PublicationContent(BaseModel):
     object_key: str = Field(default="", exclude=True, repr=False)
     created_at: str
     updated_at: str
-
-
-class PublicationContentsFromMaterials(BaseModel):
-    model_config = {"extra": "forbid"}
-
-    material_ids: list[str] = Field(min_length=1, max_length=10)
-
-
-class PublicationContentOrder(BaseModel):
-    model_config = {"extra": "forbid"}
-
-    content_ids: list[str]
 
 
 class MaterialCover(BaseModel):
@@ -404,14 +388,6 @@ class ProjectMaterialContentUpdate(BaseModel):
     content: str = Field(min_length=1, max_length=1024 * 1024)
 
 
-class CreateProjectRequest(BaseModel):
-    source_session_id: str
-    source_card_id: str = ""
-    title: str = ""
-    xhs_account: str = ""
-    content_type: str = "mixed"
-    platform_hint: str = ""
-    notes: str = ""
 
 
 class ManualProjectRequest(BaseModel):

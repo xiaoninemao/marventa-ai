@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import subprocess
 import sys
 from html import escape
@@ -18,6 +19,7 @@ from app.engines.publishing.material_copy import (
     MAX_COPY_CONTENT_BYTES,
     sanitize_copy_html,
 )
+from app.media_storage import media_exists, read_media_bytes
 
 MAX_PDF_PAGES = 200
 MAX_DOCX_ENTRIES = 2000
@@ -25,6 +27,29 @@ MAX_DOCX_EXPANDED_BYTES = 20 * 1024 * 1024
 PARSE_TIMEOUT_SECONDS = 15
 logger = logging.getLogger(__name__)
 _PARSER_SLOTS = BoundedSemaphore(2)
+
+
+def read_material_document(material, *, max_bytes: int = MAX_UPLOAD_SIZE_BYTES) -> str:
+    """Read sanitized copy using the same bounded parsing as material previews."""
+    if material["content_html"] is not None:
+        return sanitize_copy_html(material["content_html"])
+    key = material["object_key"]
+    if not key or not media_exists(key):
+        raise LookupError("Material content not found")
+    data = read_media_bytes(key, max_bytes=max_bytes)
+    if material["mime_type"] == "text/html":
+        try:
+            return sanitize_copy_html(data.decode("utf-8-sig"))
+        except UnicodeDecodeError as exc:
+            raise ValueError("Material content is not UTF-8 text") from exc
+    extension = os.path.splitext(key)[1].lower()
+    if extension not in DOCUMENT_CONTENT_TYPES:
+        extension = {mime: suffix for suffix, mime in DOCUMENT_CONTENT_TYPES.items()}.get(
+            material["mime_type"], "",
+        )
+        if material["mime_type"] == "text/x-markdown":
+            extension = ".md"
+    return parse_document_copy(data, extension)
 
 
 def text_to_html(text: str) -> str:

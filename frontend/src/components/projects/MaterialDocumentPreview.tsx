@@ -103,13 +103,13 @@ export default function MaterialDocumentPreview({
             <>
               <GuardedButton type="button" className="amp-material-preview-action amp-button-cancel" disabled={saving} blockedReason={t("正在处理中，请稍候。", "Please wait for the current operation to finish.")}
                 onClick={() => setEditing(false)}>{t(CHINESE_ACTIONS.cancel, ENGLISH_ACTIONS.cancel)}</GuardedButton>
-              <GuardedButton type="submit" form="material-copy-edit-form" className="amp-material-preview-action is-primary"
+              <GuardedButton type="submit" form="material-copy-edit-form" className="amp-material-preview-action is-primary amp-text-action amp-text-action-primary"
                 disabled={saving || !text.trim()} blockedReason={saving ? t("正在处理中，请稍候。", "Please wait for the current operation to finish.") : t("请输入文案正文。", "Enter copy content.")}>
                 {saving ? t(CHINESE_PROGRESS.saving, ENGLISH_PROGRESS.saving) : t(CHINESE_ACTIONS.save, ENGLISH_ACTIONS.save)}
               </GuardedButton>
             </>
           ) : canEdit && (
-            <GuardedButton type="button" className="amp-material-preview-action"
+            <GuardedButton type="button" className="amp-material-preview-action amp-text-action"
               disabled={content === null || Boolean(error)} blockedReason={error ? t("文案加载失败，请重试后再编辑。", "Copy failed to load. Retry before editing.") : t("正在加载文案，请稍候再编辑。", "Copy is loading. Please wait before editing.")} onClick={startEditing}>
               {t(CHINESE_ACTIONS.edit, ENGLISH_ACTIONS.edit)}
             </GuardedButton>

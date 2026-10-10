@@ -6,14 +6,16 @@ import { AuthProvider } from "../../contexts/auth_context.tsx";
 import { I18nProvider } from "../../contexts/i18n_context.tsx";
 import CreationContextPanel, { loadMaterialReferences, type CreationContextPage } from "./CreationContextPanel.tsx";
 import type { ProjectMaterial } from "../../types/publishing.ts";
+import type { CreationPlan } from "../../types/content_generator.ts";
 
-function renderContext(page: CreationContextPage, ids: string[] = []) {
+function renderContext(page: CreationContextPage, ids: string[] = [], plans: CreationPlan[] = []) {
   return renderToStaticMarkup(createElement(AuthProvider, null,
     createElement(I18nProvider, null,
       createElement(CreationContextPanel, {
         page, onPageChange: () => {}, insightIds: page === "insights" ? ids : [],
         caseIds: page === "cases" ? ids : [],
         projectId: "project", materialIds: page === "materials" ? ids : [],
+        plans,
       }),
     ),
   ));
@@ -40,6 +42,52 @@ test("material context has its own tab, count and empty state", () => {
   assert.match(populated, /Materials<\/span><small>2<\/small>/);
   assert.match(populated, /Loading\.\.\./);
   assert.doesNotMatch(populated, /No insight summary/);
+});
+
+test("plans sit after materials and display intermediate results", () => {
+  const empty = renderContext("plans");
+  assert.match(empty, /No plans yet/);
+  assert.ok(empty.indexOf("Materials") < empty.indexOf(">Plans<"));
+  const html = renderToStaticMarkup(createElement(AuthProvider, null,
+    createElement(I18nProvider, null, createElement(CreationContextPanel, {
+      page: "plans", onPageChange: () => {}, insightIds: [], caseIds: [],
+      plans: [{ id: "plan", title: "Launch plan", content: "Audience and execution steps", created_at: "2026-10-08" }],
+    })),
+  ));
+  assert.match(html, /Launch plan/);
+  assert.match(html, /Audience and execution steps/);
+});
+
+test("plans use reference cards and keep their full machine-readable source untouched", () => {
+  const content = "Plan source\n\n{\"handoff\":\"Keep <script> & all fields\"}\n  Indented line";
+  const plans: CreationPlan[] = [{
+    id: "plan-raw", title: "A long routing objective ".repeat(12), content, created_at: "2026-10-09T00:00:00Z",
+  }];
+  const before = JSON.stringify(plans);
+  const html = renderContext("plans", [], plans);
+  assert.match(html, /amp-reference-card-grid amp-creation-plans/);
+  assert.match(html, /amp-reference-insight-card-selected amp-creation-plan-card/);
+  assert.match(html, /<summary aria-label="View creation plan 1">/);
+  assert.match(html, /<time dateTime="2026-10-09T00:00:00Z">/i);
+  assert.match(html, /<pre[^>]*tabindex="0"[^>]*>Plan source\n\n/);
+  assert.match(html, /&lt;script&gt; &amp; all fields/);
+  assert.match(html, /\n  Indented line<\/pre>/);
+  assert.doesNotMatch(html, /<script>|<textarea|<input/);
+  assert.doesNotMatch(html, /amp-creation-plan-preview/);
+  assert.doesNotMatch(html, /<details[^>]*\sopen(?:=|>)/);
+  assert.equal(JSON.stringify(plans), before);
+});
+
+test("plan cards show newest first, retain stable numbering and expose unavailable metadata", () => {
+  const html = renderContext("plans", [], [
+    { id: "first", title: "First plan", content: "Original", created_at: "2026-10-08" },
+    { id: "second", title: "", content: "New", created_at: "not-a-time" },
+  ]);
+  assert.ok(html.indexOf('data-plan-id="second"') < html.indexOf('data-plan-id="first"'));
+  assert.match(html, /View creation plan 2/);
+  assert.match(html, /View creation plan 1/);
+  assert.match(html, /Untitled plan/);
+  assert.match(html, /Creation time unavailable/);
 });
 
 test("saved materials load only same-project files and retain missing placeholders", async (context) => {

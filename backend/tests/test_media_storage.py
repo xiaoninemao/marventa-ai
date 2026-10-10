@@ -4,8 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.testclient import TestClient
 
 from app import media_storage
 
@@ -65,6 +66,49 @@ class _FakeS3Client:
 
 
 class MediaStorageTests(unittest.TestCase):
+    def test_agent_work_media_urls_are_loadable_by_the_browser(self):
+        app = FastAPI()
+
+        @app.get("/media/{key:path}")
+        def serve_media(key: str):
+            return media_storage.media_response(key, public=True)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(media_storage, "MEDIA_ROOT", directory),
+            patch.object(media_storage, "MEDIA_STORAGE_BACKEND", "local"),
+            TestClient(app) as client,
+        ):
+            for filename, content_type, data in (
+                ("imported.png", "image/png", b"\x89PNG\r\n\x1a\nimage"),
+                ("generated.webp", "image/webp", b"RIFFimageWEBP"),
+                ("imported.mp4", "video/mp4", b"video"),
+            ):
+                with self.subTest(filename=filename):
+                    key = f"content-generator/org/project/{filename}"
+                    media_storage.put_media_bytes(key, data, content_type=content_type)
+                    response = client.get(media_storage.media_url(key, "http://testserver"))
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.content, data)
+                    self.assertEqual(response.headers["content-type"], content_type)
+            self.assertEqual(client.get("/media/content-generator/org/project/missing.png").status_code, 404)
+
+    def test_s3_agent_work_media_returns_a_presigned_response(self):
+        fake = _FakeS3Client()
+        fake.objects = {}
+        with (
+            patch.object(media_storage, "MEDIA_STORAGE_BACKEND", "s3"),
+            patch.object(media_storage, "MEDIA_S3_BUCKET", "media-bucket"),
+            patch.object(media_storage, "MEDIA_S3_PREFIX", "marventa"),
+            patch.object(media_storage, "MEDIA_S3_PUBLIC_BASE_URL", ""),
+            patch.object(media_storage, "_s3_client", return_value=fake),
+        ):
+            key = "content-generator/org/project/imported.png"
+            media_storage.put_media_bytes(key, b"image", content_type="image/png")
+            response = media_storage.media_response(key, public=True)
+            self.assertEqual(response.status_code, 307)
+            self.assertIn(f"/marventa/{key}?expires=", response.headers["location"])
+
     def test_s3_publication_media_redirect_keeps_historical_files_private(self):
         fake = _FakeS3Client()
         fake.objects = {}

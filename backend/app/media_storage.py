@@ -43,6 +43,8 @@ _PUBLIC_MEDIA_PREFIXES = (
     "avatars/",
     "organization-avatars/",
     "project-materials/",
+    "content-generator/",
+    "portfolio/",
     "users/",
 )
 
@@ -344,6 +346,25 @@ def _valid_image_signature(mime_type: str, data: bytes) -> bool:
     if mime_type == "image/gif":
         return data.startswith((b"GIF87a", b"GIF89a"))
     return len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+
+
+def validate_work_media(filename: str, data: bytes, kind: str) -> str:
+    extension = PurePosixPath(filename).suffix.lower()
+    allowed = ALLOWED_VIDEO_EXTENSIONS if kind == "video" else ALLOWED_IMAGE_EXTENSIONS
+    if extension not in allowed:
+        raise ValueError("Unsupported work media type")
+    mime_type = guess_content_type(filename)
+    if not data:
+        raise ValueError("Work media file is empty")
+    if kind == "image" and not _valid_image_signature(mime_type, data):
+        raise ValueError("Invalid work image file")
+    if kind == "video" and not (
+        (extension == ".webm" and data.startswith(b"\x1a\x45\xdf\xa3"))
+        or (extension != ".webm" and len(data) >= 12 and data[4:8] == b"ftyp")
+        or (extension == ".mov" and len(data) >= 12 and data[4:8] in {b"moov", b"mdat", b"wide", b"free"})
+    ):
+        raise ValueError("Invalid work video file")
+    return mime_type
 
 
 def store_image_data_url(

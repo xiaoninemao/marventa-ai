@@ -116,7 +116,7 @@ export default function ModuleListing() {
         }
         const sessions = sessionsRes.data;
         const projects = projectsRes.data;
-        const generatedContent = sessions.reduce((sum, session) => sum + (session.cards?.length || 0), 0);
+        const generatedContent = sessions.reduce((sum, session) => sum + (session.deliverables?.length || 0), 0);
         const activeProjects = projects.filter((project) => project.status !== "archived").length;
 
         if (!cancelled) {

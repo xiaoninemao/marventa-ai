@@ -82,3 +82,22 @@ def get_ai_provider(area: AIProviderArea) -> AIProvider:
         base_url=config.AI_BASE_URL,
         model=config.AI_MODEL,
     )
+
+
+def get_content_image_provider() -> AIProvider:
+    if not config.CONTENT_STUDIO_IMAGE_GENERATION_ENABLED:
+        raise AIProviderConfigurationError(
+            "Content Studio image generation is not enabled",
+        )
+    provider = AIProvider(
+        area="content_studio",
+        source="override",
+        api_key=config.CONTENT_STUDIO_IMAGE_API_KEY,
+        base_url=config.CONTENT_STUDIO_IMAGE_BASE_URL,
+        model=config.CONTENT_STUDIO_IMAGE_MODEL,
+    )
+    if not provider.configured:
+        raise AIProviderConfigurationError(
+            "Content Studio image generation requires an API key, base URL, and model",
+        )
+    return provider

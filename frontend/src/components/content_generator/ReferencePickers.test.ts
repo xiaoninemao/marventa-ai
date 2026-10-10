@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,6 +9,7 @@ import { ToastProvider } from "../../contexts/toast_context.tsx";
 import ReferencePanel from "./ReferencePanel.tsx";
 import MaterialReferencePicker from "./MaterialReferencePicker.tsx";
 import ReferencePickerDialog from "./ReferencePickerDialog.tsx";
+import ReferencePickerSearch from "./ReferencePickerSearch.tsx";
 
 function renderPicker(element: ReactElement) {
   return renderToStaticMarkup(createElement(AuthProvider, null,
@@ -33,6 +35,28 @@ function assertCommonLayout(html: string) {
   assert.match(html, /<header class="amp-reference-picker-header">/);
   assert.match(html, /<main class="amp-reference-picker-body">/);
 }
+
+test("shared reference search preserves the standard input, icon and clear action", () => {
+  const html = renderPicker(createElement(ReferencePickerSearch, {
+    value: "Work", onChange: () => {}, ariaLabel: "Search works", placeholder: "Search work names",
+  }));
+  assert.match(html, /aria-label="Search works"/);
+  assert.match(html, /value="Work"/);
+  assert.match(html, /aria-label="Clear search"/);
+  assert.match(html, /h-10 w-full/);
+  assert.match(html, /h-3\.5 w-3\.5/);
+  assert.match(html, /text-xs/);
+});
+
+test("all reference picker headers use compact spacing above their content", () => {
+  const css = readFileSync(new URL("../../styles/projects.css", import.meta.url), "utf8");
+  const header = css.split(".amp-redesign .amp-reference-picker-header {")[1]?.split("}")[0];
+  assert.ok(header);
+  assert.match(header, /min-height:\s*40px/);
+  assert.match(header, /padding:\s*12px 20px 4px/);
+  const panel = readFileSync(new URL("./ReferencePanel.tsx", import.meta.url), "utf8");
+  assert.match(panel, /gap-2 px-3 pt-1 sm:flex-nowrap/);
+});
 
 for (const initial_tab of ["insight", "case"] as const) {
   test(`${initial_tab} reference picker uses the shared compact footer with a leading count`, () => {

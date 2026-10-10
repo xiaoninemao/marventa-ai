@@ -1,7 +1,6 @@
 import sqlite3
 import tempfile
 import unittest
-import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -13,8 +12,8 @@ from fastapi.testclient import TestClient
 from app.api import content_generator as content_api
 from app.auth import storage as auth_storage
 from app.auth.security import create_access_token
-from app.engines.content_generator import ai_analyzer, presence, storage as content_storage
-from app.engines.content_generator.models import ChatMessage, ContentCard
+from app.engines.content_generator import presence, storage as content_storage
+from app.engines.content_generator.models import AgentTurnResult, ChatMessage, CreativeDeliverable
 from app.engines.portfolio import storage as portfolio_storage
 from app.engines.publishing import storage as publishing_storage
 
@@ -28,7 +27,7 @@ class CreationPresenceTests(unittest.TestCase):
         self.addCleanup(self.cleanup_database)
         for module in (auth_storage, content_storage, portfolio_storage, publishing_storage):
             self.enterContext(patch.object(module, "DB_PATH", self.db_path))
-        for name in ("chat", "generate_async", "generate_document", "modify_card",
+        for name in ("run_creation_agent",
                      "build_reference_context"):
             self.enterContext(patch.object(
                 content_api, name, side_effect=AssertionError("Unexpected AI call"),
@@ -75,10 +74,8 @@ class CreationPresenceTests(unittest.TestCase):
         app.include_router(content_api.router)
         self.client = self.enterContext(TestClient(app))
         self.visit = str(uuid4())
-        content_api._document_jobs.clear()
 
     def cleanup_database(self):
-        content_api._document_jobs.clear()
         for suffix in ("", "-wal", "-shm"):
             Path(self.db_path + suffix).unlink(missing_ok=True)
 
@@ -314,14 +311,13 @@ class CreationPresenceTests(unittest.TestCase):
     def test_presence_never_changes_creation_content_or_versions(self):
         content_storage.update_session(
             self.creation.id, messages=[ChatMessage(role="user", content="Keep this")],
-            cards=[ContentCard(id="card", card_type="copy", title="Title", preview="Preview", content="Content")],
+            deliverables=[CreativeDeliverable(id="work", media_kind='image', title="Title", publication_copy="Content", created_at='2026-10-09T00:00:00Z')],
             insight_ids=["insight"], case_ids=["case"], status="completed",
         )
         def snapshot():
             with sqlite3.connect(self.db_path) as conn:
                 return (
                     conn.execute("SELECT * FROM creation_sessions ORDER BY id").fetchall(),
-                    conn.execute("SELECT * FROM content_versions ORDER BY id").fetchall(),
                 )
         before = snapshot()
         self.heartbeat()
@@ -359,223 +355,11 @@ class CreationPresenceTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertEqual(self.lease_count(), 1)
 
-    def test_card_and_work_operations_persist_activity_records(self):
-        card = ContentCard(
-            id="card-1",
-            card_type="copy",
-            title="正文文案",
-            preview="初稿",
-            content="初稿内容",
-            tips=["保持简洁"],
-        )
-        content_storage.update_session(
-            self.creation.id,
-            cards=[card],
-            messages=[ChatMessage(role="user", content="生成营销内容")],
-        )
-        class InlineThread:
-            def __init__(self, target, daemon):
-                self.target = target
 
-            def start(self):
-                self.target()
 
-        with (
-            patch.object(ai_analyzer, "generate_cards", return_value=[card]),
-            patch.object(ai_analyzer, "build_reference_context", return_value=""),
-            patch.object(ai_analyzer.threading, "Thread", InlineThread),
-        ):
-            ai_analyzer.generate_async(self.creation.id)
 
-        modified = card.model_copy(update={"content": "修改后的内容"})
-        with patch.object(content_api, "modify_card", return_value=modified):
-            response = self.client.post(
-                f"/api/v1/content_generator/sessions/{self.creation.id}/cards/{card.id}/modify",
-                headers=self.headers(self.member),
-                json={"instruction": "更简洁"},
-            )
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(
-            response.json()["data"]["version"]["changed_card_ids"],
-            [card.id],
-        )
 
-        with (
-            patch.object(content_api, "generate_document", return_value="生成的作品"),
-        ):
-            response = self.client.post(
-                f"/api/v1/content_generator/sessions/{self.creation.id}/generate_document",
-                headers=self.headers(self.member),
-            )
-        self.assertEqual(response.status_code, 200, response.text)
 
-        activities = content_storage.get_session(self.creation.id).activities
-        self.assertEqual(
-            [activity.activity_type for activity in activities],
-            ["cards_generated", "card_modified", "work_generation_started"],
-        )
-        self.assertEqual(activities[0].card_count, 1)
-        self.assertEqual(activities[1].card_id, card.id)
-        self.assertEqual(activities[1].card_title, card.title)
-
-    def test_restoring_a_version_still_requires_creation_management_permission(self):
-        card = ContentCard(
-            id="card-1", card_type="copy", title="Owner draft",
-            preview="Draft", content="Original content", tips=[],
-        )
-        content_storage.update_session(self.other_creation.id, cards=[card])
-        version = content_storage.save_next_version(
-            self.other_creation.id, [card], is_major_bump=True,
-        )
-        for user, status in ((self.member, 403), (self.outsider, 404)):
-            with self.subTest(user=user["username"]):
-                response = self.client.post(
-                    f"/api/v1/content_generator/sessions/{self.other_creation.id}"
-                    f"/versions/{version.id}/restore",
-                    headers=self.headers(user),
-                )
-                self.assertEqual(response.status_code, status, response.text)
-        self.assertEqual(len(content_storage.get_versions(self.other_creation.id)), 1)
-        self.assertEqual(
-            content_storage.get_session(self.other_creation.id).cards[0].content,
-            "Original content",
-        )
-
-    def test_restoring_a_version_creates_a_new_rollback_major_version(self):
-        original = ContentCard(
-            id="card-1", card_type="copy", title="初版",
-            preview="初版", content="初版内容", tips=[],
-        )
-        revised = original.model_copy(update={"title": "第二版", "content": "第二版内容"})
-        content_storage.update_session(self.creation.id, cards=[original])
-        first = content_storage.save_next_version(
-            self.creation.id, [original], is_major_bump=True,
-        )
-        content_storage.update_session(self.creation.id, cards=[revised])
-        content_storage.save_next_version(
-            self.creation.id, [revised], is_major_bump=True,
-        )
-
-        response = self.client.post(
-            f"/api/v1/content_generator/sessions/{self.creation.id}/versions/{first.id}/restore",
-            headers=self.headers(self.member),
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-        restored = response.json()["data"]["version"]
-        self.assertEqual(restored["version_label"], "v3.0")
-        self.assertEqual(restored["major"], 3)
-        self.assertEqual(restored["minor"], 0)
-        self.assertEqual(restored["version_type"], "rollback")
-        self.assertEqual(restored["source_version_label"], "v1.0")
-        self.assertEqual(
-            content_storage.get_session(self.creation.id).cards[0].content,
-            "初版内容",
-        )
-
-    def test_generate_document_persists_work_in_portfolio(self):
-        card = ContentCard(
-            id="card-1",
-            card_type="copy",
-            title="发布文案",
-            preview="预览",
-            content="完整内容",
-            tips=[],
-        )
-        content_storage.update_session(self.creation.id, cards=[card])
-
-        with patch.object(content_api, "generate_document", return_value="生成的作品正文"):
-            response = self.client.post(
-                f"/api/v1/content_generator/sessions/{self.creation.id}/generate_document",
-                headers=self.headers(self.member),
-            )
-
-        self.assertEqual(response.status_code, 200, response.text)
-        works = portfolio_storage.list_scripts(self.member["id"], self.project.id)
-        self.assertEqual(len(works), 1)
-        self.assertEqual(works[0].title, self.creation.title)
-        self.assertEqual(works[0].source_session_id, self.creation.id)
-        self.assertEqual(works[0].status, "completed")
-        self.assertIn("生成的作品正文", works[0].content)
-        self.assertNotIn("由 Marventa AI 生成", works[0].content)
-
-    def test_generate_document_creates_visible_placeholder_before_background_work(self):
-        class CapturingTasks:
-            def __init__(self):
-                self.task = None
-                self.args = ()
-
-            def add_task(self, task, *args):
-                self.task = task
-                self.args = args
-
-        card = ContentCard(
-            id="card-1",
-            card_type="copy",
-            title="发布文案",
-            preview="预览",
-            content="完整内容",
-            tips=[],
-        )
-        content_storage.update_session(self.creation.id, cards=[card])
-        tasks = CapturingTasks()
-
-        with patch.object(content_api, "generate_document", return_value="最终作品正文"):
-            response = asyncio.run(content_api.generate_session_document(
-                self.creation.id,
-                tasks,
-                current_user=self.member,
-            ))
-            placeholder = portfolio_storage.list_scripts(
-                self.member["id"], self.project.id,
-            )[0]
-            self.assertEqual(response.data["work_id"], placeholder.id)
-            self.assertEqual(placeholder.status, "generating")
-            self.assertEqual(placeholder.source_session_id, self.creation.id)
-            self.assertEqual(placeholder.title, self.creation.title)
-            self.assertEqual(placeholder.content, "Your report is being generated. Please wait.")
-
-            self.assertIsNotNone(tasks.task)
-            tasks.task(*tasks.args)
-
-        completed = portfolio_storage.get_script(placeholder.id, self.member["id"])
-        self.assertEqual(completed.status, "completed")
-        self.assertIn("最终作品正文", completed.content)
-
-    def test_generate_document_marks_placeholder_failed_when_background_work_fails(self):
-        class CapturingTasks:
-            def __init__(self):
-                self.task = None
-                self.args = ()
-
-            def add_task(self, task, *args):
-                self.task = task
-                self.args = args
-
-        content_storage.update_session(
-            self.creation.id,
-            cards=[ContentCard(
-                id="card-1",
-                card_type="copy",
-                title="发布文案",
-                preview="预览",
-                content="完整内容",
-                tips=[],
-            )],
-        )
-        tasks = CapturingTasks()
-
-        with patch.object(content_api, "generate_document", side_effect=RuntimeError("AI failed")):
-            response = asyncio.run(content_api.generate_session_document(
-                self.creation.id,
-                tasks,
-                current_user=self.member,
-            ))
-            tasks.task(*tasks.args)
-
-        failed = portfolio_storage.get_script(
-            response.data["work_id"], self.member["id"],
-        )
-        self.assertEqual(failed.status, "failed")
 
     def test_latest_user_message_can_be_rewritten_and_regenerated_in_place(self):
         content_storage.update_session(
@@ -587,7 +371,14 @@ class CreationPresenceTests(unittest.TestCase):
         )
         path = f"/api/v1/content_generator/sessions/{self.creation.id}/chat"
         with (
-            patch.object(content_api, "chat", side_effect=["重新生成的回复", "改写后的回复"]) as ai,
+            patch.object(
+                content_api,
+                "run_creation_agent",
+                side_effect=[
+                    AgentTurnResult(intent="explore", reply="重新生成的回复"),
+                    AgentTurnResult(intent="explore", reply="改写后的回复"),
+                ],
+            ) as ai,
             patch.object(content_api, "build_reference_context", return_value=""),
         ):
             response = self.client.post(

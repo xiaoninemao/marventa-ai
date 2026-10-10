@@ -15,6 +15,7 @@ import type { HistoryRecord } from "@/types/market_insight";
 import { isCaseAnalyzed } from "@/utils/case_permissions";
 import { isInsightAnalyzed } from "@/utils/insight_permissions";
 import ReferencePickerDialog from "./ReferencePickerDialog";
+import ReferencePickerSearch from "./ReferencePickerSearch";
 
 export interface RefLabel { id: string; label: string }
 
@@ -154,20 +155,10 @@ export default function ReferencePanel({
     : t("引用已分析案例", "Reference analyzed cases");
   return (
     <ReferencePickerDialog open={open} title={title} onClose={onClose}>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-3 sm:flex-nowrap">
-          <label className="relative w-full sm:min-w-0 sm:flex-1">
-            <InlineIcon name="search" className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)}
-              aria-label={initial_tab === "insight" ? t("搜索洞察", "Search insights") : t("搜索案例", "Search cases")}
-              placeholder={initial_tab === "insight" ? t("搜索洞察", "Search insights") : t("搜索案例", "Search cases")}
-              className="h-10 w-full rounded-lg border border-zinc-200 bg-white pl-8 pr-8 text-xs text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100" />
-            {search && (
-              <button type="button" onClick={() => setSearch("")} aria-label={t("清除搜索", "Clear search")}
-                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100">
-                <InlineIcon name="close" className="h-3 w-3" />
-              </button>
-            )}
-          </label>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 pt-1 sm:flex-nowrap">
+          <ReferencePickerSearch value={search} onChange={setSearch}
+            ariaLabel={initial_tab === "insight" ? t("搜索洞察", "Search insights") : t("搜索案例", "Search cases")}
+            placeholder={initial_tab === "insight" ? t("搜索洞察", "Search insights") : t("搜索案例", "Search cases")} />
           {initial_tab === "insight" && (
             <EnterpriseSelect value={insightStatus}
               options={[

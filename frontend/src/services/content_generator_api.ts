@@ -1,14 +1,79 @@
 import { apiError } from "@/i18n/errors";
-import type { SessionListResponse, SessionDetailResponse, ChatResponse, GenerateResponse, VersionListResponse, VersionRestoreResponse, CreationPresenceResponse, QualityReport } from "@/types/content_generator";
+import type { AgentJob, SessionListResponse, SessionDetailResponse, ChatResponse, CreationPresenceResponse } from "@/types/content_generator";
 import { API_BASE, auth_headers, response_error } from "@/services/api_core";
+import { agentStateObserver } from "./agent_state_observer";
 
 // ── Content Generator API ──
 
-export async function create_session(project_id: string, title = ""): Promise<SessionDetailResponse> {
+export class AgentTaskCancelledError extends Error {
+  constructor() { super("Agent task cancelled"); this.name = "AgentTaskCancelledError"; }
+}
+
+export class AgentTaskFailedError extends Error {
+  constructor(message: string) { super(apiError(message).message); this.name = "AgentTaskFailedError"; }
+}
+
+export async function fetch_active_agent_job(sessionId: string, signal?: AbortSignal): Promise<AgentJob | null> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/content_generator/sessions/${encodeURIComponent(sessionId)}/agent-jobs/active`,
+    { headers: auth_headers(), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000) },
+  );
+  if (!response.ok) throw await response_error(response, "Could not load Agent task");
+  const body: { data: AgentJob | null } = await response.json();
+  return body.data;
+}
+
+export async function cancel_agent_job(sessionId: string, jobId: string): Promise<AgentJob> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/content_generator/sessions/${encodeURIComponent(sessionId)}/agent-jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: "POST", headers: auth_headers(), signal: AbortSignal.timeout(10000) },
+  );
+  if (!response.ok) throw await response_error(response, "Could not cancel Agent task");
+  const body: { data: AgentJob } = await response.json();
+  return body.data;
+}
+
+export async function wait_for_agent_job(sessionId: string, jobId: string, signal?: AbortSignal): Promise<ChatResponse> {
+  signal?.throwIfAborted();
+  return new Promise<ChatResponse>((resolve, reject) => {
+    const finish = (result?: ChatResponse, error?: unknown) => {
+      unsubscribe();
+      signal?.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve(result!);
+    };
+    const abort = () => finish(undefined, signal?.reason || new DOMException("Aborted", "AbortError"));
+    const unsubscribe = agentStateObserver.subscribe(sessionId, {
+      jobId,
+      onState: ({ job }) => {
+        if (!job || job.id !== jobId) return;
+        if (job.status === "succeeded") {
+          if (!job.result?.success || !job.result.data?.session) {
+            finish(undefined, apiError("Agent task returned an invalid result"));
+          } else finish(job.result);
+        } else if (job.status === "cancelled") finish(undefined, new AgentTaskCancelledError());
+        else if (["failed", "interrupted", "timed_out"].includes(job.status)) {
+          finish(undefined, new AgentTaskFailedError(job.error || "Agent task failed; check backend logs"));
+        }
+      },
+      onError: (error, fatal) => { if (fatal) finish(undefined, error); },
+    });
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  });
+}
+
+async function agent_chat_response(response: Response, sessionId: string, signal?: AbortSignal): Promise<ChatResponse> {
+  if (response.status !== 202) return response.json();
+  const body: { data: { job: AgentJob } } = await response.json();
+  return wait_for_agent_job(sessionId, body.data.job.id, signal);
+}
+
+export async function create_session(project_id: string, title = "", creation_kind: "image" | "video" = "image"): Promise<SessionDetailResponse> {
   const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ project_id, title }),
+    body: JSON.stringify({ project_id, title, creation_kind }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -30,9 +95,10 @@ export async function fetch_sessions(project_id = ""): Promise<SessionListRespon
   return res.json();
 }
 
-export async function fetch_session(id: string): Promise<SessionDetailResponse> {
+export async function fetch_session(id: string, signal?: AbortSignal): Promise<SessionDetailResponse> {
   const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${id}`, {
     headers: auth_headers(),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : undefined,
   });
   if (!res.ok) {
     const err = await res.json();
@@ -67,27 +133,80 @@ export async function send_chat_message(
   insight_ids: string[] = [], case_ids: string[] = [],
   preference_keys: string[] = [], client_message_id = crypto.randomUUID(),
   material_ids: string[] = [],
+  agent_mode: "auto" | "explore" | "create" = "auto",
+  image_reference?: import("@/types/content_generator").ImageReference,
+  reference_positions?: import("@/types/content_generator").MessageReferencePosition[],
+  signal?: AbortSignal,
 ): Promise<ChatResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${id}/chat`, {
+  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${id}/chat?background=true`, {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ message, insight_ids, case_ids, preference_keys, client_message_id, material_ids }),
+    body: JSON.stringify({
+      message,
+      insight_ids,
+      case_ids,
+      preference_keys,
+      client_message_id,
+      material_ids,
+      agent_mode,
+      image_reference,
+      reference_positions,
+    }),
   });
   if (!res.ok) {
     const err = await res.json();
     throw apiError(err.detail || "Send message failed");
   }
+
+  return agent_chat_response(res, id, signal);
+}
+
+export async function restore_work_version(
+  sessionId: string, versionId: string, expectedVersionId: string,
+): Promise<SessionDetailResponse> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/content_generator/sessions/${encodeURIComponent(sessionId)}/deliverables/${encodeURIComponent(versionId)}/restore`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth_headers() },
+      body: JSON.stringify({ expected_version_id: expectedVersionId }),
+    },
+  );
+  if (!res.ok) throw await response_error(res, "Could not restore work version");
   return res.json();
 }
 
-export async function regenerate_latest_reply(session_id: string): Promise<ChatResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/chat/regenerate`, {
+export async function regenerate_latest_reply(
+  session_id: string,
+  agent_mode: "auto" | "explore" | "create" = "auto",
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/chat/regenerate?background=true`, {
     method: "POST",
-    headers: auth_headers(),
+    signal,
+    headers: { "Content-Type": "application/json", ...auth_headers(), "X-Agent-Request-Id": crypto.randomUUID() },
+    body: JSON.stringify({ agent_mode }),
   });
   if (!res.ok) {
     const err = await res.json();
     throw apiError(err.detail || "Regenerate reply failed");
+  }
+  return agent_chat_response(res, session_id, signal);
+}
+
+export async function fetch_agent_progress(session_id: string): Promise<{
+  success: boolean;
+  message: string;
+  data: import("@/types/content_generator").AgentProgress;
+}> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/content_generator/sessions/${encodeURIComponent(session_id)}/agent-progress`,
+    { headers: auth_headers() },
+  );
+  if (!res.ok) {
+    const err = await res.json();
+    throw apiError(err.detail || "Could not load Agent progress");
   }
   return res.json();
 }
@@ -95,69 +214,20 @@ export async function regenerate_latest_reply(session_id: string): Promise<ChatR
 export async function rewrite_latest_reply(
   session_id: string,
   message: string,
+  agent_mode: "auto" | "explore" | "create" = "auto",
+  signal?: AbortSignal,
 ): Promise<ChatResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/chat/rewrite`, {
+  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/chat/rewrite?background=true`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ message }),
+    signal,
+    headers: { "Content-Type": "application/json", ...auth_headers(), "X-Agent-Request-Id": crypto.randomUUID() },
+    body: JSON.stringify({ message, agent_mode }),
   });
   if (!res.ok) {
     const err = await res.json();
     throw apiError(err.detail || "Rewrite reply failed");
   }
-  return res.json();
-}
-
-export async function generate_cards(id: string): Promise<GenerateResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${id}/generate`, {
-    method: "POST",
-    headers: auth_headers(),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw apiError(err.detail || "Generate failed");
-  }
-  return res.json();
-}
-
-export async function modify_card(
-  session_id: string, card_id: string, instruction: string, signal?: AbortSignal,
-): Promise<{
-  success: boolean;
-  message: string;
-  data: {
-    card: import("@/types/content_generator").ContentCard;
-    session: import("@/types/content_generator").SessionRecord;
-  };
-}> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/cards/${card_id}/modify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...auth_headers() },
-    body: JSON.stringify({ instruction }),
-    signal,
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw apiError(err.detail || "Modify card failed");
-  }
-
-  return res.json();
-}
-
-export async function check_content_quality(session_id: string): Promise<{
-  success: boolean;
-  message: string;
-  data: QualityReport;
-}> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/quality-check`, {
-    method: "POST",
-    headers: auth_headers(),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw apiError(err.detail || "Content quality check failed");
-  }
-  return res.json();
+  return agent_chat_response(res, session_id, signal);
 }
 
 export async function rename_session(id: string, title: string): Promise<SessionDetailResponse> {
@@ -184,47 +254,23 @@ export async function delete_session(id: string): Promise<void> {
   }
 }
 
-// ── Generate document from session cards ──
+// ── Save the current Agent work to Portfolio ──
 
-export async function generate_document(session_id: string): Promise<{
+export async function save_creation_work(session_id: string): Promise<{
   success: boolean; message: string; data: {
-    id?: string; title?: string; content?: string;
-    source_session_id: string; created_at?: string;
-    status?: string;
-    work_id?: string;
+    source_session_id: string;
+    status: "draft" | "completed";
+    work_id: string;
   };
 }> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/generate_document`, {
+  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${encodeURIComponent(session_id)}/save-work`, {
     method: "POST",
     headers: auth_headers(),
     keepalive: true,
   });
   if (!res.ok) {
     const err = await res.json();
-    throw apiError(err.detail || "Generate document failed");
-  }
-  return res.json();
-}
-
-export async function fetch_versions(session_id: string): Promise<VersionListResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/versions`, {
-    headers: auth_headers(),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw apiError(err.detail || "Fetch versions failed");
-  }
-  return res.json();
-}
-
-export async function restore_version(session_id: string, version_id: string): Promise<VersionRestoreResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/content_generator/sessions/${session_id}/versions/${version_id}/restore`, {
-    method: "POST",
-    headers: auth_headers(),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw apiError(err.detail || "Restore version failed");
+    throw apiError(err.detail || "Could not save portfolio work");
   }
   return res.json();
 }

@@ -12,10 +12,10 @@ export default function ContentGeneratorEmptyState() {
         <span className="amp-content-result-empty-icon" aria-hidden="true">
           <InlineIcon name="sparkle" strokeWidth={1.5} />
         </span>
-        <h2 id="creation-empty-title">{t("开始智能创作", "Start creating")}</h2>
+        <h2 id="creation-empty-title">{t("开始创作", "Start creating")}</h2>
         <p>{t(
-          "在左侧描述你的产品和创作需求，AI 将帮你生成脚本、标题、文案等内容。",
-          "Describe your product and creative needs on the left. AI will help create scripts, titles, copy, and more.",
+          "输入产品、受众或活动信息，开始梳理方向并生成内容。",
+          "Add the product, audience, or campaign details to develop the direction and create content.",
         )}</p>
       </div>
     </section>

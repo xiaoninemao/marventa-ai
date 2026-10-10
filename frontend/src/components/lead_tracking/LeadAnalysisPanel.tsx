@@ -212,13 +212,13 @@ function LeadRow({
       <div className="amp-lead-analysis-review">
         <span className={`is-${item.review_status}`}>{reviewLabels[item.review_status]}</span>
         <div>
-          {item.review_status !== "confirmed" && <GuardedButton type="button" disabled={busy}
+          {item.review_status !== "confirmed" && <GuardedButton type="button" className="amp-text-action" disabled={busy}
             blockedReason={t("人工确认状态正在更新。", "The review status is being updated.")}
             onClick={() => onReview(item.comment_id, "confirmed")}>{t("确认", "Confirm")}</GuardedButton>}
-          {item.review_status !== "dismissed" && <GuardedButton type="button" disabled={busy}
+          {item.review_status !== "dismissed" && <GuardedButton type="button" className="amp-text-action" disabled={busy}
             blockedReason={t("人工确认状态正在更新。", "The review status is being updated.")}
             onClick={() => onReview(item.comment_id, "dismissed")}>{t("忽略", "Dismiss")}</GuardedButton>}
-          {item.review_status !== "pending" && <GuardedButton type="button" disabled={busy}
+          {item.review_status !== "pending" && <GuardedButton type="button" className="amp-text-action" disabled={busy}
             blockedReason={t("人工确认状态正在更新。", "The review status is being updated.")}
             onClick={() => onReview(item.comment_id, "pending")}>{t("重置", "Reset")}</GuardedButton>}
         </div>
