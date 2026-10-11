@@ -134,6 +134,46 @@ class ContentCreationAgentTests(unittest.TestCase):
         self.assertNotIn("primary language of the user's latest request", system_prompt)
         self.assertNotIn("Use English by default", system_prompt)
 
+    def test_marketing_skills_reach_new_action_agent_without_old_card_contract(self):
+        provider, client = self.provider({
+            "intent": "create", "reply": "Work composed",
+            "deliverable": {"title": "Work", "publication_copy": "Copy", "tags": []},
+        })
+        with patch.object(creation_agent, "get_ai_provider", return_value=provider):
+            creation_agent.run_creation_agent(
+                [{"role": "user", "content": "为小红书写一篇 Marventa AI 图文笔记"}],
+                mode="create", reference_context="", preference_keys=[], image_inputs=[],
+                user_id="user", project_id="project", base_url="http://testserver",
+            )
+        router = client.chat.completions.create.call_args_list[0].kwargs["messages"][0]["content"]
+        action = client.chat.completions.create.call_args_list[1].kwargs["messages"][0]["content"]
+        self.assertNotIn("Marketing skills:", router)
+        for section in (
+            "# Marketing brief", "# Social storytelling", "# Conversion copy",
+            "# Marketing copy edit", "# Xiaohongshu image-text writing",
+        ):
+            self.assertIn(section, action)
+        self.assertIn("compose_work", action)
+        self.assertNotIn("five content cards", action)
+        self.assertNotIn("Source inspiration:", action)
+
+    def test_xiaohongshu_skill_follows_latest_platform_and_image_format(self):
+        from app.engines.content_generator.skill_loader import writing_skill_for
+
+        history = [
+            {"role": "user", "content": "先写小红书图文"},
+            {"role": "user", "content": "改成抖音图文"},
+        ]
+        self.assertNotIn("# Xiaohongshu image-text writing", writing_skill_for(
+            ["xiaohongshu"], messages=history,
+        ))
+        self.assertNotIn("# Xiaohongshu image-text writing", writing_skill_for(
+            [], messages=[history[0]], creation_kind="video",
+        ))
+        self.assertIn("# Xiaohongshu image-text writing", writing_skill_for(
+            [], messages=[history[0]], creation_kind="image",
+        ))
+
     def test_plan_mode_can_route_chat_then_plan_but_not_action(self):
         provider, client = self.provider({
             "intent": "explore",
@@ -186,6 +226,11 @@ class ContentCreationAgentTests(unittest.TestCase):
         self.assertEqual(result.plans[0].title, "Awareness campaign plan")
         progress.assert_any_call("chat_agent", "")
         progress.assert_any_call("plan_agent", "")
+        chat_system = client.chat.completions.create.call_args_list[1].kwargs["messages"][0]["content"]
+        plan_system = client.chat.completions.create.call_args_list[3].kwargs["messages"][0]["content"]
+        self.assertIn("# Marketing brief", chat_system)
+        self.assertNotIn("# Social storytelling", chat_system)
+        self.assertIn("# Social storytelling", plan_system)
 
         disallowed, _client = self.provider({
             "intent": "explore",

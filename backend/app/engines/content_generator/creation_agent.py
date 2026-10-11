@@ -42,6 +42,7 @@ from app.engines.content_generator.models import (
     CreativeDeliverable,
     ImageReference,
 )
+from app.engines.content_generator.skill_loader import writing_skill_for
 from app.engines.content_generator.work_tools import WorkToolbox, work_tool_definitions
 from app.engines.publishing.project_materials import ensure_project_material_access
 from app.media_storage import (
@@ -303,11 +304,16 @@ def _run_read_only_agent(
     messages: list[dict],
     handoffs: list[dict],
     context_sections: dict[str, str],
+    preference_keys: list[str] | None = None,
+    creation_kind: Literal["image", "video"] = "image",
     image_inputs: list[MaterialVisualInput | str] | None,
     progress: AgentProgressCallback | None,
 ) -> WorkerResult:
     provider = get_ai_provider("content_studio")
     system = CHAT_SYSTEM_PROMPT if agent == "chat" else PLAN_SYSTEM_PROMPT
+    system += writing_skill_for(
+        preference_keys, stage=agent, messages=messages, creation_kind=creation_kind,
+    )
     if context_sections.get("brand"):
         system += (
             "\n\nMandatory project brand constraints. Apply these requirements to all "
@@ -474,6 +480,7 @@ def _run_action_agent(
     mode: Literal["auto", "explore", "create"],
     reference_context: str,
     preference_keys: list[str],
+    creation_kind: Literal["image", "video"] = "image",
     image_inputs: list[MaterialVisualInput | str] | None,
     user_id: str,
     project_id: str,
@@ -496,7 +503,9 @@ def _run_action_agent(
         f"Work canvas and media handles:\n{json.dumps(toolbox.describe(), ensure_ascii=False)}\n\n"
         f"Conversation:\n{conversation}"
     )
-    system = ACTION_SYSTEM_PROMPT
+    system = ACTION_SYSTEM_PROMPT + writing_skill_for(
+        preference_keys, stage="action", messages=messages, creation_kind=creation_kind,
+    )
     if reference_context and not context_sections:
         system += "\n\nAuthorized project context:\n" + reference_context
     agent_messages = [
@@ -826,6 +835,8 @@ def _orchestrate_creation_agent(
                 messages=messages,
                 handoffs=handoffs,
                 context_sections=sections,
+                preference_keys=preference_keys,
+                creation_kind=creation_kind,
                 image_inputs=image_inputs,
                 progress=progress,
             )
@@ -863,6 +874,7 @@ def _orchestrate_creation_agent(
                 mode="create",
                 reference_context=reference_context,
                 preference_keys=preference_keys,
+                creation_kind=creation_kind,
                 image_inputs=image_inputs,
                 user_id=user_id,
                 project_id=project_id,
