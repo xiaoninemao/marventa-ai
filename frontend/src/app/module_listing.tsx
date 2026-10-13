@@ -81,6 +81,7 @@ const quickActions = [
   { label: "发布管理", labelEn: "Publishing", path: "/publishing", icon: "send" as InlineIconName },
   { label: "账号内容", labelEn: "Account Content", path: "/account_content", icon: "content" as InlineIconName },
   { label: "线索追踪", labelEn: "Lead Tracking", path: "/lead_tracking", icon: "target" as InlineIconName },
+  { label: "舆论追踪", labelEn: "Opinion Tracking", path: "/opinion_tracking", icon: "insight" as InlineIconName },
 ];
 
 export default function ModuleListing() {

@@ -300,6 +300,34 @@ def _initialize_account_lead_tracking(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (account_key, item_id)
         )
     """)
+    target_columns = {row[1] for row in conn.execute("PRAGMA table_info(lead_tracking_account_targets)").fetchall()}
+    if "title" not in target_columns:
+        conn.execute("ALTER TABLE lead_tracking_account_targets ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+    if "share_url" not in target_columns:
+        conn.execute("ALTER TABLE lead_tracking_account_targets ADD COLUMN share_url TEXT NOT NULL DEFAULT ''")
+    for column, definition in (
+        ("published_at", "TEXT NOT NULL DEFAULT ''"),
+        ("views", "INTEGER"), ("likes", "INTEGER"),
+        ("comments", "INTEGER"), ("shares", "INTEGER"),
+    ):
+        if column not in target_columns:
+            conn.execute(f"ALTER TABLE lead_tracking_account_targets ADD COLUMN {column} {definition}")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_tracking_post_metric_snapshots (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            views INTEGER,
+            likes INTEGER,
+            comments INTEGER,
+            shares INTEGER,
+            observed_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date, item_id),
+            FOREIGN KEY (account_key, item_id)
+                REFERENCES lead_tracking_account_targets(account_key, item_id)
+                ON DELETE CASCADE
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS lead_tracking_account_comment_runs (
             account_key TEXT NOT NULL,
@@ -389,6 +417,86 @@ def _initialize_account_lead_tracking(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_lead_tracking_account_leads_priority
         ON lead_tracking_account_leads(
             account_key, local_date, score DESC, review_status, comment_id
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_daily_jobs (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+            attempts INTEGER NOT NULL DEFAULT 0,
+            lease_until TEXT NOT NULL DEFAULT '',
+            next_retry_at TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_daily_reports (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            organization_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('completed', 'partial', 'unavailable', 'failed')),
+            report_version TEXT NOT NULL,
+            report_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(report_json)),
+            generated_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_lead_daily_reports_org_date
+        ON lead_daily_reports(organization_id, local_date DESC)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_daily_report_decisions (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'dismissed')),
+            reviewed_by_user_id TEXT NOT NULL,
+            reviewed_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date, topic),
+            FOREIGN KEY (account_key, local_date)
+                REFERENCES lead_daily_reports(account_key, local_date) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_daily_comment_reviews (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            comment_id TEXT NOT NULL,
+            stance TEXT NOT NULL CHECK (stance IN ('support', 'oppose', 'neutral', 'uncertain')),
+            reviewed_by_user_id TEXT NOT NULL REFERENCES users(id),
+            reviewed_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date, comment_id),
+            FOREIGN KEY (account_key, local_date, comment_id)
+                REFERENCES lead_tracking_account_comments(account_key, local_date, comment_id)
+                ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_opinion_action_progress (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            completed_by_user_id TEXT NOT NULL REFERENCES users(id),
+            completed_at TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date, topic),
+            FOREIGN KEY (account_key, local_date, topic)
+                REFERENCES lead_daily_report_decisions(account_key, local_date, topic)
+                ON DELETE CASCADE
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_daily_report_deliveries (
+            account_key TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            notification_id TEXT NOT NULL,
+            PRIMARY KEY (account_key, local_date, user_id),
+            FOREIGN KEY (account_key, local_date)
+                REFERENCES lead_daily_reports(account_key, local_date) ON DELETE CASCADE
         )
     """)
     account_rows = conn.execute(

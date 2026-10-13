@@ -1,0 +1,4 @@
+-r requirements.txt
+torch>=2.4,<3
+transformers==4.46.3
+scikit-learn>=1.5,<2

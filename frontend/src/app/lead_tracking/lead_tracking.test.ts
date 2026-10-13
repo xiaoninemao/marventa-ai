@@ -11,12 +11,14 @@ import CommentInsightPanel from "../../components/lead_tracking/CommentInsightPa
 import LeadAnalysisPanel, {
   isLeadMetricActive,
 } from "../../components/lead_tracking/LeadAnalysisPanel.tsx";
+import OpinionOverviewPanel from "../../components/lead_tracking/OpinionOverviewPanel.tsx";
 import {
   filterLeadTrackingEntities,
   groupLeadTrackingEntities,
   leadTrackingEntityHref,
 } from "../../utils/lead_tracking.ts";
 import type { AccountContentAccount } from "../../types/account_content.ts";
+import type { OpinionOverview } from "../../types/lead_tracking.ts";
 
 const account: AccountContentAccount = {
   id: "account-a", project_id: "project-a", project_title: "Marketing project", platform: "douyin",
@@ -26,9 +28,12 @@ const account: AccountContentAccount = {
   content_status: "ready", required_scope: "video.list", content_message: "",
 };
 
-test("Lead Tracking follows Account Content in primary navigation and shares quick-search discovery", () => {
+test("Opinion Tracking is a separate Operations module beside Lead Tracking", () => {
   const shell = readFileSync(new URL("../../components/layout/app_shell.tsx", import.meta.url), "utf8");
   assert.match(shell, /path: "\/account_content"[^\n]*\n\s*\{ label: "线索追踪", labelEn: "Lead Tracking", path: "\/lead_tracking", icon: "target"/);
+  assert.match(shell, /\{ label: "舆论追踪", labelEn: "Opinion Tracking", path: "\/opinion_tracking"/);
+  const opinion = readFileSync(new URL("../opinion_tracking/page.tsx", import.meta.url), "utf8");
+  assert.match(opinion, /router\.replace\(`\/opinion_tracking\?\$\{query\}`\)/);
   assert.match(shell, /\[\.\.\.navItems, \.\.\.utilityNavItems\]/);
 });
 
@@ -56,22 +61,79 @@ test("lead workspace runs scoped analysis and retains strict entity context", ()
   assert.match(page, /groupLeadTrackingEntities\(accounts\)/);
   assert.match(page, /projectNames/);
   assert.match(page, /if \(!projectId \|\| error \|\| !account\)/);
-  assert.match(page, /useState<"comments" \| "analysis">\("comments"\)/);
+  assert.match(page, /useState<"comments" \| "analysis" \| "report">/);
+  assert.doesNotMatch(page, /LeadTrackingSectionNav|舆情监测/);
+  assert.doesNotMatch(page, /id="lead-opinion-tab"/);
+  assert.match(page, /<DailyReportPanel/);
   assert.match(page, /评论洞察/);
-  assert.match(page, /线索分析/);
+  assert.match(page, /意向评估/);
   assert.doesNotMatch(page, /每日评论洞察|每天 00:00 汇总|Daily comment insights|At 00:00 each day/);
   assert.match(page, /<CommentInsightPanel/);
   const panel = readFileSync(new URL("../../components/lead_tracking/CommentInsightPanel.tsx", import.meta.url), "utf8");
   assert.match(panel, /Sync is disabled, permission is missing, or the first daily snapshot has not completed/);
   assert.doesNotMatch(page, /基于评论内容识别潜在需求与跟进机会|analysis results require human review/);
-  assert.match(page, /run_lead_tracking_analysis\(projectId, accountId\)/);
+  assert.match(page, /run_lead_tracking_analysis\(projectId, accountId, analysisDate\)/);
   assert.match(page, /disabled=\{!canAnalyze \|\| analyzing\}/);
   assert.match(page, /analysisData\?\.status === "failed"/);
   assert.match(page, /t\("重新分析", "Reanalyze"\)/);
-  assert.match(page, /review_lead_tracking_item\(projectId, accountId, commentId, status\)/);
+  assert.match(page, /review_lead_tracking_item\(projectId, accountId, commentId, status, analysisDate\)/);
   assert.doesNotMatch(page, /查看账号内容|管理账号|View account content|Manage account/);
   assert.doesNotMatch(panel, /actions|amp-lead-tracking-workspace-links/);
   assert.doesNotMatch(page, /mock|0 leads|fetch_leads/i);
+});
+
+test("account opinion overview stays aggregate and does not expose model details or comments", () => {
+  const data: OpinionOverview = {
+    status: "completed", period_days: 7, start_date: "2026-10-05", end_date: "2026-10-11",
+    timezone: "Asia/Shanghai", is_simulated: false, covered_days: 6, incomplete_days: 0,
+    comments_collected: 20, distinct_users: 17, last_synced_at: "2026-10-12T00:00:00Z",
+    daily: [{ date: "2026-10-11", comments: 20, negative_percent: 15 }],
+    question_percent: 30, demand_percent: 25,
+    sentiments: [{ key: "negative", label: "负向", count: 3, percent: 15 }],
+    themes: [{ key: "1", label: "报表 · 数据", count: 8, percent: 40 }],
+    words: [{ word: "报表", weight: 0.8 }],
+    keyword_clusters: [{ key: "1", label: "报表与数据", count: 8, percent: 40, keywords: ["报表", "导出"] }],
+    theme_status: "ready",
+  };
+  const html = renderToStaticMarkup(createElement(I18nProvider, null, createElement(ToastProvider, null,
+    createElement(OpinionOverviewPanel, {
+      data,
+      performance: { post_count: 2, views: 22500, engagement: 1450, risk_count: 3,
+        daily: Array.from({ length: 7 }, (_, index) => ({
+          date: `2026-10-${String(index + 5).padStart(2, "0")}`, views: 500 + index * 80,
+          engagement: 100 + index * 20, previous_views: 300 + index * 40,
+          previous_engagement: 60 + index * 10,
+        })) },
+      loading: false, error: "", onRetry: () => {},
+    }))));
+  assert.match(html, /Promotion performance trend/);
+  assert.match(html, /Promotion posts/);
+  assert.match(html, /Total exposure/);
+  assert.match(html, /Content engagement/);
+  assert.match(html, /Risks to review/);
+  assert.match(html, /Previous period/);
+  assert.match(html, /Audience topics/);
+  assert.match(html, /Comment sentiment/);
+  assert.match(html, /8 comments/);
+  assert.match(html, /Copy summary/);
+  assert.doesNotMatch(html, /BERTopic|LDA|停用词|原始评论/);
+  const previousNodeEnv = process.env.NODE_ENV;
+  try {
+    Object.assign(process.env, { NODE_ENV: "production" });
+    const productionHtml = renderToStaticMarkup(createElement(I18nProvider, null, createElement(ToastProvider, null,
+      createElement(OpinionOverviewPanel, {
+        data: { ...data, is_simulated: true }, performance: null, loading: false, error: "", onRetry: () => {},
+      }))));
+    assert.doesNotMatch(productionHtml, /Local simulated data|本地模拟数据/);
+    Object.assign(process.env, { NODE_ENV: "development" });
+    const previewHtml = renderToStaticMarkup(createElement(I18nProvider, null, createElement(ToastProvider, null,
+      createElement(OpinionOverviewPanel, {
+        data: { ...data, is_simulated: true }, performance: null, loading: false, error: "", onRetry: () => {},
+      }))));
+    assert.match(previewHtml, /Local simulated data/);
+  } finally {
+    Object.assign(process.env, { NODE_ENV: previousNodeEnv });
+  }
 });
 
 test("lead analysis reuses the standard workspace empty state and decorative target icon", () => {
@@ -104,8 +166,7 @@ test("lead analysis renders explainable B2B results and manual review actions", 
       loading: false, error: "", onRetry: () => {}, onReview: () => {}, reviewingCommentId: "",
     })),
   ));
-  assert.match(html, /Lead analysis summary/);
-  assert.match(html, /Demo data/);
+  assert.match(html, /Intent evaluation summary/);
   assert.match(html, /AI model qwen3.8-flash/);
   assert.match(html, /High intent/);
   assert.match(html, /Pricing &amp; purchase/);
@@ -144,7 +205,7 @@ test("failed analysis is explicit while unavailable analysis waits for daily syn
       loading: false, error: "", onRetry: () => {}, onReview: () => {}, reviewingCommentId: "",
     }),
   ));
-  assert.match(failed, /Lead analysis failed/);
+  assert.match(failed, /Intent evaluation failed/);
   assert.match(failed, /Select Reanalyze to try again/);
   const unavailable = renderToStaticMarkup(createElement(I18nProvider, null,
     createElement(LeadAnalysisPanel, {
@@ -232,7 +293,6 @@ test("daily comment insights render deterministic rank, comment data and engagem
     }),
   ));
   assert.match(html, /aria-label="Top 50 high-engagement comments"/);
-  assert.match(html, /Demo data/);
   assert.match(html, /<span class="amp-lead-comment-rank">1<\/span>/);
   assert.match(html, /&lt;script&gt;Need pricing&lt;\/script&gt;/);
   assert.match(html, /Commenter &lt;user&gt;/);

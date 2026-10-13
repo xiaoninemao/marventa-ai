@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 
 def _env(name: str, default: str = "") -> str:
@@ -178,6 +178,13 @@ LEAD_TRACKING_AI_BATCH_SIZE = int(_env("LEAD_TRACKING_AI_BATCH_SIZE", "10"))
 LEAD_TRACKING_AI_TIMEOUT_SECONDS = float(
     _env("LEAD_TRACKING_AI_TIMEOUT_SECONDS", "90"),
 )
+LEAD_DAILY_REPORT_ENABLED = _env("LEAD_DAILY_REPORT_ENABLED", "false").lower() == "true"
+LEAD_DAILY_LOCAL_DEMO_PREVIEW = _env("LEAD_DAILY_LOCAL_DEMO_PREVIEW", "false").lower() == "true"
+LEAD_DAILY_SEMANTIC_MODEL_PATH = _env("LEAD_DAILY_SEMANTIC_MODEL_PATH")
+LEAD_OPINION_EMBEDDING_MODEL_PATH = _env("LEAD_OPINION_EMBEDDING_MODEL_PATH")
+LEAD_OPINION_STRATEGY_LLM_ENABLED = _env("LEAD_OPINION_STRATEGY_LLM_ENABLED", "false").lower() == "true"
+LEAD_DAILY_REPORT_LLM_ENABLED = _env("LEAD_DAILY_REPORT_LLM_ENABLED", "false").lower() == "true"
+LEAD_DAILY_RETRY_MINUTES = int(_env("LEAD_DAILY_RETRY_MINUTES", "15"))
 if not 1 <= CONTENT_STUDIO_MULTIMODAL_MAX_IMAGES <= 10:
     raise ValueError("CONTENT_STUDIO_MULTIMODAL_MAX_IMAGES must be between 1 and 10")
 if CONTENT_STUDIO_MULTIMODAL_MAX_IMAGE_BYTES < 1:
@@ -246,6 +253,8 @@ if (
     raise ValueError(
         "LEAD_TRACKING_AI_TIMEOUT_SECONDS must be between 10 and 180",
     )
+if not 5 <= LEAD_DAILY_RETRY_MINUTES <= 120:
+    raise ValueError("LEAD_DAILY_RETRY_MINUTES must be between 5 and 120")
 
 # ---- File Handling ----
 ALLOWED_DOCUMENT_TYPES = {

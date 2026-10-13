@@ -509,7 +509,7 @@ async def get_account_content(
         # comment tracking targets. Local and simulated records never reach here.
         from app.engines.publishing.lead_tracking import register_comment_targets
 
-        register_comment_targets(project_id, account_id, [item.id for item in items])
+        register_comment_targets(project_id, account_id, items)
     result.items = items
     result.has_more = has_more
     result.limited = source == "platform" and has_more and page == MAX_PAGES

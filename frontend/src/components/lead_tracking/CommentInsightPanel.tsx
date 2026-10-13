@@ -31,7 +31,8 @@ export default function CommentInsightPanel({ data, loading, error, onRetry }: {
   return (
     <>
       <div className="amp-lead-comment-summary" role="status">
-        {data.is_simulated && <span className="amp-badge amp-badge-muted">{t("模拟数据", "Demo data")}</span>}
+        {process.env.NODE_ENV === "development" && data.is_simulated
+          && <span className="amp-badge amp-badge-muted">{t("模拟数据", "Demo data")}</span>}
         <span>{t("{date} · Top {count}", "{date} · Top {count}", { date: data.date, count: data.top_limit })}</span>
         <span>{data.timezone}</span>
         {data.last_synced_at && <time dateTime={data.last_synced_at}>

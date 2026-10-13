@@ -16,6 +16,8 @@ export interface ComposerToken {
 export interface InlineComposerHandle {
   focus: () => void;
   read: () => { text: string; positions: MessageReferencePosition[] };
+  appendPrompt: (prompt: string) => void;
+  removePrompt: (prompt: string) => boolean;
 }
 
 function readEditor(root: HTMLElement) {
@@ -60,6 +62,62 @@ export default forwardRef<InlineComposerHandle, {
   useImperativeHandle(ref, () => ({
     focus: () => editor.current?.focus(),
     read: () => editor.current ? readEditor(editor.current) : { text: "", positions: [] },
+    appendPrompt: (prompt) => {
+      const root = editor.current;
+      if (!root || isDisabled.current) return;
+      const current = readEditor(root).text;
+      const hasContent = Boolean(current.trim() || root.querySelector("[data-reference-id]"));
+      const separator = !hasContent || current.endsWith("\n") ? "" : "\n";
+      const node = document.createTextNode(separator + prompt);
+      root.appendChild(node);
+      previousText.current = readEditor(root).text;
+      onChange(previousText.current);
+      root.focus();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      range.collapse(false);
+      const currentSelection = window.getSelection();
+      currentSelection?.removeAllRanges();
+      currentSelection?.addRange(range);
+      selection.current = range.cloneRange();
+    },
+    removePrompt: (prompt) => {
+      const root = editor.current;
+      if (!root || isDisabled.current) return false;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node) {
+        const parent = node.parentElement;
+        if (parent?.closest("[data-reference-id]")) { node = walker.nextNode(); continue; }
+        const value = node.textContent || "";
+        const offset = value.indexOf(prompt);
+        if (offset >= 0 && (offset === 0 || value[offset - 1] === "\n")
+          && (offset + prompt.length === value.length || value[offset + prompt.length] === "\n")) {
+          let before = value.slice(0, offset);
+          let after = value.slice(offset + prompt.length);
+          if (before.endsWith("\n")) before = before.slice(0, -1);
+          else if (after.startsWith("\n")) after = after.slice(1);
+          node.textContent = before + after;
+          if (!node.textContent) node.parentNode?.removeChild(node);
+          if (!root.querySelector("[data-reference-id]") && root.firstChild?.nodeType === Node.TEXT_NODE) {
+            root.firstChild.textContent = (root.firstChild.textContent || "").replace(/^\n+/, "");
+          }
+          previousText.current = readEditor(root).text;
+          onChange(previousText.current);
+          root.focus();
+          const range = document.createRange();
+          range.selectNodeContents(root);
+          range.collapse(false);
+          const currentSelection = window.getSelection();
+          currentSelection?.removeAllRanges();
+          currentSelection?.addRange(range);
+          selection.current = range.cloneRange();
+          return true;
+        }
+        node = walker.nextNode();
+      }
+      return false;
+    },
   }));
 
   useEffect(() => {

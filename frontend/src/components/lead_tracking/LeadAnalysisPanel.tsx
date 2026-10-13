@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/contexts/i18n_context";
 import WorkspaceEmptyState from "@/components/redesign/WorkspaceEmptyState";
 import { GuardedButton } from "@/components/redesign/GuardedControls";
@@ -26,9 +26,10 @@ export function isLeadMetricActive(
 }
 
 export default function LeadAnalysisPanel({
-  data, loading, error, onRetry, onReview, reviewingCommentId,
+  data, selectedWorkId = "", loading, error, onRetry, onReview, reviewingCommentId,
 }: {
   data: LeadTrackingAnalysis | null;
+  selectedWorkId?: string;
   loading: boolean;
   error: string;
   onRetry: () => void;
@@ -39,6 +40,11 @@ export default function LeadAnalysisPanel({
   const [query, setQuery] = useState("");
   const [intent, setIntent] = useState<"all" | LeadIntent>("all");
   const [review, setReview] = useState<"all" | LeadReviewStatus>("all");
+  useEffect(() => {
+    setQuery("");
+    setIntent("all");
+    setReview("all");
+  }, [selectedWorkId]);
   const labels = useMemo<Record<string, string>>(() => ({
     pricing: t("价格与采购", "Pricing & purchase"),
     demo_trial: t("演示与试用", "Demo & trial"),
@@ -74,9 +80,11 @@ export default function LeadAnalysisPanel({
     confirmed: t("已确认", "Confirmed"),
     dismissed: t("已忽略", "Dismissed"),
   };
+  const scopedItems = useMemo(() => (data?.items || []).filter((item) =>
+    !selectedWorkId || item.item_id === selectedWorkId), [data?.items, selectedWorkId]);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase(locale);
-    return [...(data?.items || [])]
+    return [...scopedItems]
       .filter((item) => intent === "all" || item.intent === intent)
       .filter((item) => review === "all" || item.review_status === review)
       .filter((item) => !normalized || [
@@ -85,31 +93,32 @@ export default function LeadAnalysisPanel({
       ].some((value) => value.toLocaleLowerCase(locale).includes(normalized)))
       .sort((left, right) => intentOrder[left.intent] - intentOrder[right.intent]
         || right.score - left.score || right.create_time - left.create_time);
-  }, [data?.items, intent, labels, locale, query, review]);
+  }, [scopedItems, intent, labels, locale, query, review]);
 
-  if (loading) return <div className="amp-page-state" role="status">{t("线索分析加载中…", "Loading lead analysis…")}</div>;
+  if (loading) return <div className="amp-page-state" role="status">{t("意向评估加载中…", "Loading intent evaluation…")}</div>;
   if (error) return <div className="amp-projects-state" role="alert"><strong>{error}</strong>
     <button type="button" className="amp-button amp-button-secondary" onClick={onRetry}>{t("重试", "Retry")}</button></div>;
   if (!data || data.status === "unavailable") return <WorkspaceEmptyState icon="target"
-    title={t("尚未生成线索分析", "No lead analysis yet")}
-    description={t("完成下一次每日评论同步后，系统会自动生成线索分析。",
-      "Lead analysis will be generated automatically after the next daily comment sync.")} />;
+    title={t("尚未生成意向评估", "No intent evaluation yet")}
+    description={t("完成下一次每日评论同步后，系统会自动生成意向评估。",
+      "Intent evaluation will be generated automatically after the next daily comment sync.")} />;
   if (data.status === "failed") return <WorkspaceEmptyState icon="target"
-    title={t("线索分析失败", "Lead analysis failed")}
+    title={t("意向评估失败", "Intent evaluation failed")}
     description={t("自动分析未完成，可点击右上角“重新分析”再次尝试。",
       "Automatic analysis did not complete. Select Reanalyze to try again.")} />;
 
-  const confirmedCount = data.items.filter((item) => item.review_status === "confirmed").length;
+  const confirmedCount = scopedItems.filter((item) => item.review_status === "confirmed").length;
   const metrics = [
-    [t("高意向", "High intent"), data.high_count, "high"],
-    [t("中意向", "Medium intent"), data.medium_count, "medium"],
-    [t("待确认", "Pending review"), data.pending_count, "pending"],
+    [t("高意向", "High intent"), scopedItems.filter((item) => item.intent === "high").length, "high"],
+    [t("中意向", "Medium intent"), scopedItems.filter((item) => item.intent === "medium").length, "medium"],
+    [t("待确认", "Pending review"), scopedItems.filter((item) => item.review_status === "pending").length, "pending"],
     [t("已确认", "Confirmed"), confirmedCount, "confirmed"],
   ] as const;
   return <div className="amp-lead-analysis">
     <div className="amp-lead-analysis-meta">
       <div>
-        {data.is_simulated && <span className="amp-badge amp-badge-muted">{t("模拟数据", "Demo data")}</span>}
+        {process.env.NODE_ENV === "development" && data.is_simulated
+          && <span className="amp-badge amp-badge-muted">{t("模拟数据", "Demo data")}</span>}
         <span>{data.date}</span><span>{data.timezone}</span>
         <span>{data.analysis_method === "ai"
           ? t("AI 模型 {model}", "AI model {model}", { model: data.model })
@@ -119,7 +128,7 @@ export default function LeadAnalysisPanel({
         {t("分析于 {time}", "Analyzed {time}", { time: new Date(data.generated_at).toLocaleString(locale) })}
       </time>}
     </div>
-    <div className="amp-lead-analysis-metrics" aria-label={t("线索分析摘要", "Lead analysis summary")}>
+    <div className="amp-lead-analysis-metrics" aria-label={t("意向评估摘要", "Intent evaluation summary")}>
       {metrics.map(([label, value, key]) => <button key={key} type="button"
         className={isLeadMetricActive(key, intent, review) ? "is-active" : ""}
         onClick={() => {
@@ -159,7 +168,7 @@ export default function LeadAnalysisPanel({
         ariaLabel={t("确认状态", "Review status")} className="w-36" />
     </div>
     {filtered.length ? <div className="amp-lead-analysis-table" role="table"
-      aria-label={t("评论线索分析结果", "Comment lead analysis results")}>
+      aria-label={t("评论意向评估结果", "Comment intent evaluation results")}>
       {filtered.map((item) => <LeadRow key={item.comment_id} item={item} locale={locale}
         labels={labels} evidence={evidence} actions={actions} intentLabels={intentLabels}
         reviewLabels={reviewLabels} busy={reviewingCommentId === item.comment_id}

@@ -18,6 +18,15 @@ function notificationContent(
 ): { title: string; detail: string } {
   const organization = item.data.organization_name || t("组织", "organization");
   const role = item.data.role === "admin" ? t("管理员", "Administrator") : t("成员", "Member");
+  if (item.kind === "lead_daily_report") {
+    return {
+      title: t("每日评论简报已生成", "Daily comment report is ready"),
+      detail: t("{name} · {date}", "{name} · {date}", {
+        name: item.data.account_name || t("授权账号", "Authorized account"),
+        date: item.data.date || "",
+      }),
+    };
+  }
   if (item.kind === "organization_invitation") {
     return {
       title: t("你已加入「{name}」", "You joined {name}", { name: organization }),
@@ -60,7 +69,7 @@ function notificationTime(value: string, locale: string): string {
 }
 
 export default function NotificationCenter() {
-  const { user } = useAuth();
+  const { user, switchOrganization } = useAuth();
   const { t, locale } = useI18n();
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,6 +124,15 @@ export default function NotificationCenter() {
   }, [open]);
 
   const openNotification = async (item: NotificationItem) => {
+    if (item.kind === "lead_daily_report" && item.organization_id
+      && item.organization_id !== (user?.current_organization?.id || user?.default_organization?.id)) {
+      try {
+        await switchOrganization(item.organization_id);
+      } catch {
+        setError(t("无法切换到简报所属组织，请检查访问权限。", "Could not switch to the report's organization."));
+        return;
+      }
+    }
     if (!item.is_read) {
       setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, is_read: true } : entry));
       setUnreadCount((count) => Math.max(0, count - 1));
@@ -178,7 +196,7 @@ export default function NotificationCenter() {
               <p className="amp-notification-state" role="status">{t(CHINESE_PROGRESS.loading, ENGLISH_PROGRESS.loading)}</p>
             ) : error ? (
               <div className="amp-notification-state" role="alert">
-                <p>{t("通知加载失败", "Could not load notifications")}</p>
+                <p>{error}</p>
                 <button type="button" className="amp-text-action amp-text-action-primary" onClick={() => void loadNotifications(true)}>{t(CHINESE_ACTIONS.retry, ENGLISH_ACTIONS.retry)}</button>
               </div>
             ) : items.length === 0 ? (
