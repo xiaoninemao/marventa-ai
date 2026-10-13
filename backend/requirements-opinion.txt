@@ -1,0 +1,4 @@
+-r requirements.txt
+bertopic==0.17.0
+sentence-transformers==4.1.0
+jieba==0.42.1

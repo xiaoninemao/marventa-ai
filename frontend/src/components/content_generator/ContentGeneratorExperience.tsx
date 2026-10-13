@@ -46,6 +46,7 @@ import {
   ACTIVE_SESSION_STORAGE_KEY,
   type Feedback,
 } from "@/components/content_generator/contentGeneratorHelpers";
+import { hasBriefPrompt } from "./creationBrief";
 
 function sessionTimestamp(value: string): number {
   const timestamp = Date.parse(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
@@ -79,6 +80,20 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
   const [session, set_session] = useState<SessionRecord | null>(null);
   const [messages, set_messages] = useState<ChatMessage[]>([]);
   const [input, set_input] = useState("");
+  const brief_field_options = useMemo(() => [
+    { key: "benefits" as const, icon: "star" as const,
+      label: t("产品卖点", "Product benefits"),
+      prompt: t("请帮我梳理产品的核心卖点：", "Help me clarify the product's key benefits:") },
+    { key: "audience" as const, icon: "user" as const,
+      label: t("目标受众", "Target audience"),
+      prompt: t("这次内容的目标受众是：", "The target audience for this content is:") },
+    { key: "platform" as const, icon: "file" as const,
+      label: t("平台与形式", "Platform and format"),
+      prompt: t("我准备发布的平台和内容形式是：", "The platform and content format are:") },
+    { key: "tone" as const, icon: "message" as const,
+      label: t("品牌语气", "Brand tone"),
+      prompt: t("希望内容呈现的品牌语气是：", "The desired brand tone is:") },
+  ], [t]);
   const [agent_mode, set_agent_mode] = useState<"auto" | "explore" | "create">("auto");
   const [show_agent_mode_menu, set_show_agent_mode_menu] = useState(false);
   const [sending, set_sending] = useState(false);
@@ -1294,24 +1309,21 @@ export function ContentGeneratorExperience({ canvasId = "" }: { canvasId?: strin
                 <div className="amp-content-assistant-empty">
                   <strong>{t("描述你想创作的内容", "Describe what you want to create")}</strong>
                   <div className="amp-content-assistant-prompts">
-                    {[
-                      { icon: "star" as const, label: t("产品卖点", "Product benefits"), prompt: t("请帮我梳理产品的核心卖点：", "Help me clarify the product's key benefits:") },
-                      { icon: "user" as const, label: t("目标受众", "Target audience"), prompt: t("这次内容的目标受众是：", "The target audience for this content is:") },
-                      { icon: "file" as const, label: t("平台与形式", "Platform and format"), prompt: t("我准备发布的平台和内容形式是：", "The platform and content format are:") },
-                      { icon: "message" as const, label: t("品牌语气", "Brand tone"), prompt: t("希望内容呈现的品牌语气是：", "The desired brand tone is:") },
-                    ].map(({ icon, label, prompt }) => (
-                      <button key={label} type="button"
-                        className={input === prompt ? "amp-content-assistant-prompt-active" : ""}
-                        aria-pressed={input === prompt}
+                    {brief_field_options.map(({ key, icon, label, prompt }) => (
+                      <GuardedButton key={key} type="button"
+                        className={hasBriefPrompt(input, prompt) ? "amp-content-assistant-prompt-active" : ""}
+                        aria-pressed={hasBriefPrompt(input, prompt)}
+                        disabled={sending || Boolean(reply_action) || is_generating || Boolean(session && !can_manage_session)}
+                        blockedReason={session && !can_manage_session
+                          ? t("当前会话不可编辑。", "This conversation cannot be edited.")
+                          : t("正在处理上一条消息，请稍候。", "The previous message is still being processed.")}
                         onClick={() => {
-                        set_input(prompt);
-                        window.requestAnimationFrame(() => {
-                          prompt_input_ref.current?.focus();
-                        });
-                      }}>
+                          if (hasBriefPrompt(input, prompt)) prompt_input_ref.current?.removePrompt(prompt);
+                          else prompt_input_ref.current?.appendPrompt(prompt);
+                        }}>
                         <InlineIcon name={icon} />
                         <span>{label}</span>
-                      </button>
+                      </GuardedButton>
                     ))}
                   </div>
                 </div>

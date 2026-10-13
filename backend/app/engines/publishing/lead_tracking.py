@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.config import (
+    LEAD_DAILY_REPORT_ENABLED,
+    LEAD_DAILY_RETRY_MINUTES,
     LEAD_TRACKING_REQUIRED_SCOPE,
     LEAD_TRACKING_SYNC_ENABLED,
     LEAD_TRACKING_TIMEZONE,
@@ -21,7 +23,9 @@ from app.engines.publishing.account_content import (
     MAX_CURSOR,
     AccountContentProviderError,
     _get_provider_json,
+    _platform_page,
     _scoped_account,
+    public_https_url,
 )
 from app.engines.publishing.channel_credentials import (
     ChannelCredentialEncryptionUnavailable,
@@ -30,6 +34,7 @@ from app.engines.publishing.channel_credentials import (
 )
 from app.engines.publishing.lead_identity import lead_account_key_from_row
 from app.engines.publishing.models import (
+    AccountContentPost,
     LeadTrackingComment,
     LeadTrackingCommentInsight,
 )
@@ -39,6 +44,7 @@ COMMENT_PAGE_SIZE = 20
 TOP_LIMIT = 50
 MAX_PAGES_PER_ACCOUNT = 100
 MAX_COMMENTS_PER_ACCOUNT = 2_000
+MAX_DISCOVERY_PAGES = 20
 PROVIDER_ERROR = "The official comment provider is unavailable or returned an invalid response"
 logger = logging.getLogger(__name__)
 
@@ -54,13 +60,22 @@ def _now() -> str:
 def register_comment_targets(
     project_id: str,
     account_id: str,
-    item_ids: list[str],
+    item_ids: list[str | AccountContentPost],
 ) -> None:
     """Persist only IDs returned by a successful authenticated video.list read."""
-    valid = list(dict.fromkeys(
-        item_id for item_id in item_ids
-        if isinstance(item_id, str) and 0 < len(item_id) <= 512
-    ))
+    valid: dict[str, tuple[str, str, str, int | None, int | None, int | None, int | None]] = {}
+    for item in item_ids:
+        item_id = item.id if isinstance(item, AccountContentPost) else item
+        if isinstance(item_id, str) and 0 < len(item_id) <= 512:
+            valid[item_id] = (
+                item.title[:1000] if isinstance(item, AccountContentPost) else "",
+                public_https_url(item.share_url) if isinstance(item, AccountContentPost) else "",
+                item.published_at if isinstance(item, AccountContentPost) else "",
+                item.statistics.views if isinstance(item, AccountContentPost) else None,
+                item.statistics.likes if isinstance(item, AccountContentPost) else None,
+                item.statistics.comments if isinstance(item, AccountContentPost) else None,
+                item.statistics.shares if isinstance(item, AccountContentPost) else None,
+            )
     if not valid:
         return
     account = _internal_account(project_id, account_id)
@@ -68,22 +83,85 @@ def register_comment_targets(
         raise LookupError("Channel account not found")
     account_key = lead_account_key_from_row(account)
     stamp = _now()
+    local_day = datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone(
+        ZoneInfo(LEAD_TRACKING_TIMEZONE)
+    ).date().isoformat()
     with storage._get_conn() as conn:
-        for item_id in valid:
+        for item_id, (title, share_url, published_at, views, likes, comments, shares) in valid.items():
             conn.execute(
                 """
                 INSERT INTO lead_tracking_account_targets (
                     account_key, platform, platform_user_id, item_id,
-                    discovered_at, last_seen_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    discovered_at, last_seen_at, title, share_url,
+                    published_at, views, likes, comments, shares
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(account_key, item_id) DO UPDATE
-                SET last_seen_at = excluded.last_seen_at
+                SET last_seen_at = excluded.last_seen_at,
+                    title = CASE WHEN excluded.title != '' THEN excluded.title ELSE lead_tracking_account_targets.title END,
+                    share_url = CASE WHEN excluded.share_url != '' THEN excluded.share_url ELSE lead_tracking_account_targets.share_url END,
+                    published_at = CASE WHEN excluded.published_at != '' THEN excluded.published_at ELSE lead_tracking_account_targets.published_at END,
+                    views = COALESCE(excluded.views, lead_tracking_account_targets.views),
+                    likes = COALESCE(excluded.likes, lead_tracking_account_targets.likes),
+                    comments = COALESCE(excluded.comments, lead_tracking_account_targets.comments),
+                    shares = COALESCE(excluded.shares, lead_tracking_account_targets.shares)
                 """,
                 (
                     account_key, account["platform"], account["platform_user_id"],
-                    item_id, stamp, stamp,
+                    item_id, stamp, stamp, title, share_url, published_at,
+                    views, likes, comments, shares,
                 ),
             )
+            if any(value is not None for value in (views, likes, comments, shares)):
+                conn.execute(
+                    """INSERT INTO lead_tracking_post_metric_snapshots
+                       (account_key, local_date, item_id, views, likes, comments, shares, observed_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(account_key, local_date, item_id) DO UPDATE SET
+                         views = COALESCE(excluded.views, lead_tracking_post_metric_snapshots.views),
+                         likes = COALESCE(excluded.likes, lead_tracking_post_metric_snapshots.likes),
+                         comments = COALESCE(excluded.comments, lead_tracking_post_metric_snapshots.comments),
+                         shares = COALESCE(excluded.shares, lead_tracking_post_metric_snapshots.shares),
+                         observed_at = excluded.observed_at""",
+                    (account_key, local_day, item_id, views, likes, comments, shares, stamp),
+                )
+
+
+def list_tracking_works(user_id: str, project_id: str, account_id: str) -> list[dict]:
+    account = _scoped_account(user_id, project_id, account_id)
+    account_key = lead_account_key_from_row(account)
+    with storage._get_conn() as conn:
+        rows = conn.execute(
+            """SELECT item_id, title, share_url FROM lead_tracking_account_targets
+               WHERE account_key = ? ORDER BY last_seen_at DESC, item_id""",
+            (account_key,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+async def discover_comment_targets(account: dict, client: httpx.AsyncClient | None = None) -> bool:
+    """Read verified creator works; return False if provider pagination was capped."""
+    token, unavailable = _credential(account)
+    if unavailable:
+        raise CommentProviderError(unavailable)
+    try:
+        scopes = json.loads(account["scopes"])
+    except (TypeError, ValueError):
+        scopes = []
+    if "video.list" not in scopes:
+        raise CommentProviderError("Approve and authorize video.list to discover works")
+    cursor = 0
+    for _ in range(MAX_DISCOVERY_PAGES):
+        try:
+            posts, next_cursor, has_more = await _platform_page(
+                token, account["platform_user_id"], cursor, 20, client,
+            )
+        except AccountContentProviderError as exc:
+            raise CommentProviderError(PROVIDER_ERROR) from exc
+        register_comment_targets(account["project_id"], account["id"], posts)
+        if not has_more:
+            return True
+        cursor = int(next_cursor)
+    return False
 
 
 def _internal_account(project_id: str, account_id: str) -> dict | None:
@@ -228,7 +306,7 @@ async def _comment_page(
                 "cursor": cursor,
                 "count": COMMENT_PAGE_SIZE,
                 "item_id": item_id,
-                "sort_type": "time_asc",
+                "sort_type": "time" if LEAD_DAILY_REPORT_ENABLED else "time_asc",
             },
             {"access-token": token, "Content-Type": "application/json"},
             client,
@@ -287,6 +365,13 @@ def _save_run(
 ) -> None:
     stamp = _now()
     with storage._get_conn() as conn:
+        previous_comment_reviews = (
+            [dict(row) for row in conn.execute(
+                """SELECT comment_id, stance, reviewed_by_user_id, reviewed_at
+                   FROM lead_daily_comment_reviews WHERE account_key = ? AND local_date = ?""",
+                (account_key, local_date.isoformat()),
+            ).fetchall()] if LEAD_DAILY_REPORT_ENABLED else []
+        )
         conn.execute(
             """
             INSERT INTO lead_tracking_account_comment_runs (
@@ -348,6 +433,17 @@ def _save_run(
                     item["reply_comment_total"], int(item["top"]), item["raw_data"],
                 ),
             )
+        retained_ids = {item["comment_id"] for item in comments}
+        for review in previous_comment_reviews:
+            if review["comment_id"] not in retained_ids:
+                continue
+            conn.execute(
+                """INSERT INTO lead_daily_comment_reviews
+                   (account_key, local_date, comment_id, stance, reviewed_by_user_id, reviewed_at)
+                   VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""",
+                (account_key, local_date.isoformat(), review["comment_id"], review["stance"],
+                 review["reviewed_by_user_id"], review["reviewed_at"]),
+            )
 
 
 async def sync_account_comment_insight(
@@ -356,6 +452,7 @@ async def sync_account_comment_insight(
     local_date: date,
     *,
     client: httpx.AsyncClient | None = None,
+    discovery_complete: bool = True,
 ) -> LeadTrackingCommentInsight:
     """Synchronize one verified account/date. This is intentionally not an HTTP mutation."""
     if not LEAD_TRACKING_SYNC_ENABLED:
@@ -396,9 +493,11 @@ async def sync_account_comment_insight(
                 seen += len(page)
                 beyond_day = False
                 for item in page:
-                    if item["create_time"] >= end_epoch:
+                    if LEAD_DAILY_REPORT_ENABLED and item["create_time"] < start_epoch:
                         beyond_day = True
-                    elif item["create_time"] >= start_epoch:
+                    elif not LEAD_DAILY_REPORT_ENABLED and item["create_time"] >= end_epoch:
+                        beyond_day = True
+                    elif start_epoch <= item["create_time"] < end_epoch:
                         comments[item["comment_id"]] = item
                 if beyond_day or not has_more:
                     break
@@ -412,13 +511,14 @@ async def sync_account_comment_insight(
         )
         return get_comment_insight_internal(account_key, local_date)
 
-    status = "partial" if limited else "completed"
+    status = "partial" if limited or not discovery_complete else "completed"
     message = (
         "A provider safety ceiling was reached; the snapshot is incomplete"
-        if limited else "Daily comments synchronized from the official Douyin API"
+        if limited else "Work discovery was capped; the snapshot is incomplete"
+        if not discovery_complete else "Daily comments synchronized from the official Douyin API"
     )
     _save_run(
-        account_key, local_date, status, limited, message,
+        account_key, local_date, status, limited or not discovery_complete, message,
         list(comments.values()),
     )
     from app.engines.publishing.lead_analysis import (
@@ -440,6 +540,7 @@ def _previous_local_date() -> date:
 def get_comment_insight_internal(
     account_key: str,
     local_date: date | None = None,
+    item_id: str = "",
 ) -> LeadTrackingCommentInsight:
     selected = local_date or _previous_local_date()
     with storage._get_conn() as conn:
@@ -456,17 +557,16 @@ def get_comment_insight_internal(
                 timezone=LEAD_TRACKING_TIMEZONE,
                 message="No daily comment snapshot is available",
             )
+        where_work = " AND item_id = ?" if item_id else ""
         rows = conn.execute(
-            """
-            SELECT item_id, comment_id, comment_user_id, content, create_time,
-                   digg_count, reply_comment_total, top,
-                   digg_count + reply_comment_total * 2 AS interaction_score
-            FROM lead_tracking_account_comments
-            WHERE account_key = ? AND local_date = ?
-            ORDER BY interaction_score DESC, create_time DESC, comment_id ASC
-            LIMIT ?
-            """,
-            (account_key, selected.isoformat(), TOP_LIMIT),
+            f"""SELECT item_id, comment_id, comment_user_id, content, create_time,
+                       digg_count, reply_comment_total, top,
+                       digg_count + reply_comment_total * 2 AS interaction_score
+                FROM lead_tracking_account_comments
+                WHERE account_key = ? AND local_date = ?{where_work}
+                ORDER BY interaction_score DESC, create_time DESC, comment_id ASC
+                LIMIT ?""",
+            (account_key, selected.isoformat(), *((item_id,) if item_id else ()), TOP_LIMIT),
         ).fetchall()
     return LeadTrackingCommentInsight(
         status=run["status"], date=selected.isoformat(), timezone=run["timezone"],
@@ -485,11 +585,13 @@ def get_comment_insight(
     project_id: str,
     account_id: str,
     local_date: date | None = None,
+    item_id: str = "",
 ) -> LeadTrackingCommentInsight:
     account = _scoped_account(user_id, project_id, account_id)
     return get_comment_insight_internal(
         lead_account_key_from_row(account),
         local_date,
+        item_id,
     )
 
 
@@ -505,35 +607,109 @@ def seconds_until_next_midnight(
 
 
 class LeadTrackingCommentScheduler:
+    @staticmethod
+    def _claim(account_key: str, local_date: date) -> bool:
+        now = datetime.now(timezone.utc)
+        stamp = now.isoformat()
+        lease = (now + timedelta(hours=2)).isoformat()
+        with storage._get_conn() as conn:
+            conn.execute(
+                """INSERT INTO lead_daily_jobs
+                   (account_key, local_date, status, attempts, updated_at)
+                   VALUES (?, ?, 'failed', 0, ?) ON CONFLICT DO NOTHING""",
+                (account_key, local_date.isoformat(), stamp),
+            )
+            changed = conn.execute(
+                """UPDATE lead_daily_jobs SET status = 'running', attempts = attempts + 1,
+                     lease_until = ?, updated_at = ?
+                   WHERE account_key = ? AND local_date = ? AND attempts < 5
+                     AND ((status = 'failed' AND next_retry_at <= ?)
+                       OR (status = 'running' AND lease_until <= ?))""",
+                (lease, stamp, account_key, local_date.isoformat(), stamp, stamp),
+            )
+            return changed.rowcount == 1
+
+    @staticmethod
+    def _finish(account_key: str, local_date: date, success: bool, message: str = "") -> None:
+        now = datetime.now(timezone.utc)
+        with storage._get_conn() as conn:
+            job = conn.execute(
+                "SELECT attempts FROM lead_daily_jobs WHERE account_key = ? AND local_date = ?",
+                (account_key, local_date.isoformat()),
+            ).fetchone()
+            attempts = int(job["attempts"]) if job else 1
+            retry = (now + timedelta(minutes=min(120, LEAD_DAILY_RETRY_MINUTES * 2 ** (attempts - 1)))).isoformat()
+            conn.execute(
+                """UPDATE lead_daily_jobs SET status = ?, lease_until = '', next_retry_at = ?,
+                     message = ?, updated_at = ? WHERE account_key = ? AND local_date = ?""",
+                ("completed" if success else "failed", "" if success else retry,
+                 message[:500], now.isoformat(), account_key, local_date.isoformat()),
+            )
+
     async def run_once(self, local_date: date) -> None:
         with storage._get_conn() as conn:
-            account_keys = conn.execute(
-                """
-                SELECT DISTINCT account_key
-                FROM lead_tracking_account_targets
-                ORDER BY account_key
-                """,
-            ).fetchall()
-        for item in account_keys:
-            account = _account_for_key(item["account_key"])
+            if LEAD_DAILY_REPORT_ENABLED:
+                bindings = [dict(row) for row in conn.execute(
+                    """SELECT account.*, project.organization_id
+                       FROM project_channel_accounts account
+                       JOIN content_projects project ON project.id = account.project_id
+                       ORDER BY account.id""",
+                ).fetchall()]
+                keys = sorted({lead_account_key_from_row(row) for row in bindings})
+            else:
+                keys = [row["account_key"] for row in conn.execute(
+                    "SELECT DISTINCT account_key FROM lead_tracking_account_targets ORDER BY account_key",
+                ).fetchall()]
+        for account_key in keys:
+            account = _account_for_key(account_key)
             if account is None:
                 logger.error(
                     "Lead tracking comment sync skipped without a binding for account %s",
-                    item["account_key"],
+                    account_key,
                 )
                 continue
+            if LEAD_DAILY_REPORT_ENABLED and not self._claim(account_key, local_date):
+                continue
             try:
-                await sync_account_comment_insight(
+                discovery_complete = True
+                if LEAD_DAILY_REPORT_ENABLED:
+                    discovery_complete = await discover_comment_targets(account)
+                snapshot = await sync_account_comment_insight(
                     account["project_id"], account["id"], local_date,
+                    discovery_complete=discovery_complete,
                 )
+                if LEAD_DAILY_REPORT_ENABLED:
+                    from app.engines.publishing.daily_comment_report import generate_daily_report
+
+                    await asyncio.to_thread(
+                        generate_daily_report, account, local_date,
+                        notify=local_date == _previous_local_date(),
+                    )
+                    self._finish(account_key, local_date, snapshot.status in ("completed", "partial"), snapshot.message)
+            except CommentProviderError as exc:
+                if LEAD_DAILY_REPORT_ENABLED:
+                    self._finish(account_key, local_date, False, str(exc))
+                logger.warning("Daily comment discovery unavailable for account=%s date=%s: %s", account_key, local_date, exc)
             except Exception:
+                if LEAD_DAILY_REPORT_ENABLED:
+                    self._finish(account_key, local_date, False, "Daily report generation failed")
                 logger.exception(
                     "Lead tracking comment sync failed for account %s",
-                    item["account_key"],
+                    account_key,
                 )
 
     async def serve(self, stop: asyncio.Event) -> None:
         zone = ZoneInfo(LEAD_TRACKING_TIMEZONE)
+        if LEAD_DAILY_REPORT_ENABLED:
+            while not stop.is_set():
+                yesterday = datetime.now(zone).date() - timedelta(days=1)
+                for days_back in reversed(range(3)):
+                    await self.run_once(yesterday - timedelta(days=days_back))
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=LEAD_DAILY_RETRY_MINUTES * 60)
+                    return
+                except TimeoutError:
+                    continue
         while not stop.is_set():
             delay = seconds_until_next_midnight(datetime.now(timezone.utc))
             try:

@@ -46,9 +46,7 @@ function LeadTrackingList() {
       <main className="amp-projects-main">
         <header className="amp-projects-header">
           <div>
-            <h1 className="amp-module-title">{t("线索追踪", "Lead Tracking")}</h1>
-            <p>{t("按渠道账号查看关联项目，选择账号后进入线索分析。",
-              "Browse channel accounts and their linked projects, then open an account to analyze leads.")}</p>
+            <h1 className="amp-module-title">{t("评论分析", "Comment analysis")}</h1>
           </div>
         </header>
         <div className="amp-insight-toolbar">

@@ -1,6 +1,8 @@
+import gc
 import json
 import shutil
 import sqlite3
+import time
 import unittest
 import uuid
 from datetime import date, datetime, timezone
@@ -31,7 +33,7 @@ class LeadTrackingCommentTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.directory = Path(__file__).parent / (".lead-tracking-" + uuid.uuid4().hex)
         self.directory.mkdir()
-        self.addCleanup(shutil.rmtree, self.directory)
+        self.addCleanup(self._cleanup)
         self.db_path = str(self.directory / "test.db")
         self.enterContext(patch.object(auth_storage, "DB_PATH", self.db_path))
         self.enterContext(patch.object(storage, "DB_PATH", self.db_path))
@@ -76,6 +78,16 @@ class LeadTrackingCommentTests(unittest.IsolatedAsyncioTestCase):
             "/channel-accounts/account-1/lead-tracking/comment-insights"
         )
         self.day = date(2026, 10, 4)
+
+    def _cleanup(self):
+        for _ in range(5):
+            gc.collect()
+            try:
+                shutil.rmtree(self.directory)
+                return
+            except PermissionError:
+                time.sleep(0.1)
+        shutil.rmtree(self.directory)
 
     def _add_account(self, account_id, project_id, blob):
         with sqlite3.connect(self.db_path) as conn:
