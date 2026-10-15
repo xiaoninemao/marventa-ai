@@ -23,8 +23,6 @@ An open-source workspace for market understanding, agent-driven creation, publis
 
 https://github.com/user-attachments/assets/6fddf8d3-92c0-4a8b-b531-772e4f3f73b0
 
-[Download: Marventa AI Product Overview](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 min 04 sec
-
 ## Overview
 
 Marketing teams work with product documents, campaign examples, images, videos, drafts, publishing records, and customer feedback. Marventa organizes these resources around projects so teams can use the same knowledge throughout research, creation, delivery, and review.

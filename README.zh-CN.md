@@ -23,8 +23,6 @@
 
 https://github.com/user-attachments/assets/6fddf8d3-92c0-4a8b-b531-772e4f3f73b0
 
-[下载：Marventa AI 产品概览](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 分 04 秒
-
 ## 产品概览
 
 营销团队每天使用产品文档、内容案例、图片、视频、草稿、发布记录和用户反馈。Marventa 围绕项目组织这些资料，让团队在研究、创作、交付和复盘中持续使用同一批知识。
