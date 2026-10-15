@@ -149,6 +149,19 @@ def ensure_organization_scope(
                 ''
             )
             WHERE organization_id = ''
+              AND (
+                  EXISTS (
+                      SELECT 1 FROM user_organization_preferences p
+                      JOIN organization_memberships m
+                        ON m.organization_id = p.organization_id
+                       AND m.user_id = p.user_id
+                      WHERE p.user_id = {table}.{user_column}
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM organizations o
+                      WHERE o.default_for_user_id = {table}.{user_column}
+                  )
+              )
         """)
 
     conn.execute(

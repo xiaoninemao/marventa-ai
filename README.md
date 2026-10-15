@@ -251,6 +251,8 @@ cd backend
 
 Back up database records and media together. Stop writes during transfers, validate recovery, rotate credentials through deployment secrets, and monitor worker health, authorization expiry, and provider quotas.
 
+Legacy records without a resolvable organization or project remain stored but are not exposed across access boundaries. Repeated schema initialization skips unresolved organization backfills instead of updating those records or bypassing project validation.
+
 Backend tests:
 
 ```bash

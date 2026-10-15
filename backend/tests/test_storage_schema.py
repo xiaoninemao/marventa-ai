@@ -6,13 +6,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from app.auth.dependencies import can_manage_organization_record
 from app.engines.content_generator import storage as content_storage
 from app.engines.content_generator.models import ChatMessage
 from app.engines.portfolio import storage as portfolio_storage
-from app.auth.dependencies import can_manage_organization_record
 from app.storage_schema import (
     ensure_organization_scope,
     ensure_parent_organization_scope,
+    ensure_project_scope,
     resolve_user_organization_id,
 )
 
@@ -91,6 +92,30 @@ class OrganizationStorageSchemaTests(unittest.TestCase):
             ).fetchone()[0],
             "org-current",
         )
+
+    def test_repeat_organization_backfill_does_not_update_unscoped_legacy_rows(self):
+        self.conn.execute("INSERT INTO records VALUES ('unknown-owner', 'missing-user')")
+        ensure_organization_scope(self.conn, "records", "user_id")
+        self.conn.executescript("""
+            CREATE TABLE content_projects (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL);
+            INSERT INTO content_projects VALUES
+                ('current-project', 'org-current'), ('default-project', 'org-user-2');
+            ALTER TABLE records ADD COLUMN project_id TEXT NOT NULL DEFAULT '';
+            UPDATE records SET project_id = 'current-project' WHERE id = 'current-record';
+            UPDATE records SET project_id = 'default-project' WHERE id = 'default-record';
+        """)
+        ensure_project_scope(self.conn, "records")
+
+        ensure_organization_scope(self.conn, "records", "user_id")
+
+        self.assertEqual(dict(self.conn.execute(
+            "SELECT id, organization_id FROM records WHERE project_id = ''",
+        )), {"guest-record": "", "unknown-owner": ""})
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "project_id is required"):
+            self.conn.execute("""
+                INSERT INTO records (id, user_id, organization_id)
+                VALUES ('invalid', 'user-1', 'org-current')
+            """)
 
     def test_parent_rows_inherit_organization_scope(self):
         ensure_organization_scope(self.conn, "records", "user_id")
