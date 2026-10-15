@@ -21,9 +21,9 @@ An open-source workspace for market understanding, agent-driven creation, publis
 
 ## Product video
 
-[![Marventa AI Product Overview](docs/media/marventa-ai-product-overview.jpg)](docs/media/marventa-ai-product-overview.mp4?raw=true)
+https://github.com/user-attachments/assets/6fddf8d3-92c0-4a8b-b531-772e4f3f73b0
 
-[Watch or download: Marventa AI Product Overview](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 min 03 sec · English voice-over
+[Download: Marventa AI Product Overview](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 min 04 sec
 
 ## Overview
 

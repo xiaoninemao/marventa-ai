@@ -21,9 +21,9 @@
 
 ## 产品视频
 
-[![Marventa AI 产品概览](docs/media/marventa-ai-product-overview.jpg)](docs/media/marventa-ai-product-overview.mp4?raw=true)
+https://github.com/user-attachments/assets/6fddf8d3-92c0-4a8b-b531-772e4f3f73b0
 
-[观看或下载：Marventa AI 产品概览](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 分 03 秒 · 英文配音
+[下载：Marventa AI 产品概览](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 分 04 秒
 
 ## 产品概览
 
