@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/assets/brand/marventa-logo.png" alt="Marventa AI" width="104" />
+<img src="frontend/public/assets/brand/marventa-mark.png" alt="Marventa AI" width="104" />
 
 # Marventa AI
 
@@ -15,9 +15,15 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg)](backend/requirements.txt)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](frontend/package.json)
 
-[产品概览](#产品概览) · [工作流程](#工作流程) · [核心能力](#核心能力) · [快速开始](#快速开始) · [配置](#配置)
+[产品视频](#产品视频) · [产品概览](#产品概览) · [工作流程](#工作流程) · [核心能力](#核心能力) · [快速开始](#快速开始) · [配置](#配置)
 
 </div>
+
+## 产品视频
+
+[![Marventa AI 产品概览](docs/media/marventa-ai-product-overview.jpg)](docs/media/marventa-ai-product-overview.mp4?raw=true)
+
+[观看或下载：Marventa AI 产品概览](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 分 03 秒 · 英文配音
 
 ## 产品概览
 
@@ -67,7 +73,7 @@ Agent 读取相关品牌规范、洞察、案例和素材，使用可用工具�
 
 创建命名发布草稿，选择已完成的作品集作品，再在发布设置中配置渠道、已连接账号和时间。计划保存独立的媒体与文案副本，首页日历将排期日期关联到发布计划。
 
-账号内容展示可获取的渠道作品与 Marventa 发布记录。线索追踪汇总每日评论，结合证据与建议动作识别潜在需求。
+账号内容展示可获取的渠道作品与 Marventa 发布记录。舆情追踪默认展示项目全部账号的监测总览，在“账号分析”中查看单个账号的评论洞察、意向评估和每日简报。
 
 ## 核心能力
 
@@ -117,13 +123,16 @@ Agent 读取相关品牌规范、洞察、案例和素材，使用可用工具�
 - 取消、重新安排、失败反馈与持久化执行记录。
 - 可选后端调度器，通过抖音官方 API 发布。
 
-### 账号内容与线索追踪
+### 账号内容与舆情追踪
 
 - 按渠道账号浏览，查看媒体、可用互动指标和分页内容。
 - 分开展示平台可读取内容与 Marventa 发布记录。
-- 同一组织内，跨项目绑定的同一账号只展示一个线索追踪入口。
+- 保留项目侧栏，选择项目后默认展示该项目全部已连接账号的监测总览。
+- 全部项目使用项目模块的卡片布局，展示项目头像、描述、成员和关联账号数。
+- “账号分析”点击账号卡片打开详情弹窗，包含评论洞察、意向评估和每日简报；关闭后保留列表筛选与分页，各项操作仍限定在所选账号。
+- 项目内同一平台账号的重复绑定去重，评论和作品保留来源账号信息。
 - 每日 Top 50 评论快照，规则／AI 意向判断与人工复核。
-- 线索追踪在账号页先选择「全部作品」或单个作品，再查看评论洞察、意向评估和每日简报；「全部作品」下的反馈分析汇总同一账号各作品的已采集评论。启用条件和语义模型训练见[每日智能评论简报说明](backend/docs/daily-comment-report.md)。
+- 舆情追踪的账号分析汇总单个账号全部作品的已采集评论。启用条件和语义模型训练见[每日智能评论简报说明](backend/docs/daily-comment-report.md)。
 - 舆情结论与产品、营销建议可展开查看关联原始评论及所属作品。
 
 ### 多模态理解
@@ -215,9 +224,9 @@ AI 功能默认使用 `AI_*`。可选的 `MARKET_INSIGHT_AI_*`、`CASE_LIBRARY_A
 | 市场洞察、案例分析 | 模型需支持对应的结构化输出；公开网页研究还需启用 `INSIGHT_RESEARCH_ENABLED` 并配置搜索服务凭据。 |
 | 智能创作对话和方案 | 模型需支持工具调用与结构化输出。 |
 | 智能创作生图 | 单独启用并配置 `CONTENT_STUDIO_IMAGE_*`，服务商需兼容项目使用的生图／编辑接口。 |
-| 线索追踪意向评估 | 设置 `LEAD_TRACKING_ANALYSIS_MODE=ai`，再对评论快照运行分析。 |
+| 账号意向评估 | 设置 `LEAD_TRACKING_ANALYSIS_MODE=ai`，再对所选账号的评论快照运行分析。 |
 | 每日简报 AI 建议 | 设置 `LEAD_DAILY_REPORT_LLM_ENABLED=true`，重新生成目标日期简报。 |
-| 舆论追踪 AI 策略建议 | 设置 `LEAD_OPINION_STRATEGY_LLM_ENABLED=true`；在已有未完成事项的周期内点击生成。 |
+| 舆情追踪 AI 策略建议 | 设置 `LEAD_OPINION_STRATEGY_LLM_ENABLED=true`；在项目已有未完成事项的周期内点击生成。 |
 
 评论语义模型和舆情主题模型使用本地模型目录，不能用文本 API Key 替代。视频生成仍缺原生适配器；预留的 Seedance 配置不会启用它。
 

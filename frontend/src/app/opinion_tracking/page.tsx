@@ -3,210 +3,204 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
+import { GuardedButton } from "@/components/redesign/GuardedControls";
+import InlineIcon from "@/components/redesign/InlineIcon";
+import WorkspaceEmptyState from "@/components/redesign/WorkspaceEmptyState";
+import PublishingProjectSidebar from "@/components/publishing/PublishingProjectSidebar";
+import AccountTrackingList from "@/components/lead_tracking/AccountTrackingList";
+import AccountAnalysisDialog from "@/components/lead_tracking/AccountAnalysisDialog";
+import OpinionProjectCard from "@/components/lead_tracking/OpinionProjectCard";
 import OpinionOverviewPanel from "@/components/lead_tracking/OpinionOverviewPanel";
 import OpinionEvidenceSections from "@/components/lead_tracking/OpinionEvidenceSections";
 import { useLeadTrackingEntities } from "@/components/lead_tracking/useLeadTrackingEntities";
+import { groupLeadTrackingEntities } from "@/utils/lead_tracking";
 import { useI18n } from "@/contexts/i18n_context";
 import { localizeErrorMessage } from "@/i18n/errors";
-import {
-  fetch_opinion_actions, fetch_opinion_details, fetch_opinion_overview,
-  generate_opinion_strategy,
-} from "@/services/lead_tracking_api";
-import type { OpinionActionSummary, OpinionDetails, OpinionOverview, OpinionStrategy } from "@/types/lead_tracking";
+import { fetch_project_opinion_monitor, generate_project_opinion_strategy } from "@/services/lead_tracking_api";
+import type { OpinionStrategy, ProjectOpinionMonitor } from "@/types/lead_tracking";
 
-export default function OpinionMonitoringPage() {
-  return <Suspense fallback={<div className="amp-page-state" role="status">Loading...</div>}><OpinionMonitoringWorkspace /></Suspense>;
+export default function OpinionTrackingPage() {
+  return <Suspense fallback={<div className="amp-page-state" role="status">Loading...</div>}><OpinionTrackingWorkspace /></Suspense>;
 }
 
-function OpinionMonitoringWorkspace() {
+function OpinionTrackingWorkspace() {
   const router = useRouter();
   const params = useSearchParams();
   const { t, locale } = useI18n();
-  const { user, authLoading, projects, accounts, loading, error, retry } = useLeadTrackingEntities();
-  const [attempt, setAttempt] = useState(0);
-  const [overviewState, setOverviewState] = useState<{
-    key: string; loading: boolean; error: string; data: OpinionOverview | null;
-  }>({ key: "", loading: false, error: "", data: null });
-  const [actionsState, setActionsState] = useState<{
-    key: string; loading: boolean; error: string; data: OpinionActionSummary | null;
-  }>({ key: "", loading: false, error: "", data: null });
-  const [detailsState, setDetailsState] = useState<{
-    key: string; loading: boolean; error: string; data: OpinionDetails | null;
-  }>({ key: "", loading: false, error: "", data: null });
-  const [strategy, setStrategy] = useState<OpinionStrategy | null>(null);
-  const [strategyBusy, setStrategyBusy] = useState(false);
-  const [strategyError, setStrategyError] = useState("");
-  const [activeSection, setActiveSection] = useState<"overview" | "performance" | "comments" | "risks">("overview");
-
-  const projectId = projects.some((project) => project.id === params.get("project"))
-    ? params.get("project") || "" : accounts[0]?.project_id || projects[0]?.id || "";
-  const scopedAccounts = useMemo(() => accounts.filter((account) => account.project_id === projectId), [accounts, projectId]);
-  const accountId = scopedAccounts.some((account) => account.id === params.get("account"))
-    ? params.get("account") || "" : scopedAccounts[0]?.id || "";
+  const { user, authLoading, projects, accounts, scope, loading, error, retry } = useLeadTrackingEntities();
+  const projectId = params.get("project") || "";
+  const project = projects.find((item) => item.id === projectId);
+  const accountId = params.get("account") || "";
+  const view = params.get("view") === "accounts" || accountId ? "accounts" : "overview";
   const days: 7 | 30 = params.get("days") === "30" ? 30 : 7;
-  const scopeKey = `${projectId}:${accountId}:${days}:${attempt}`;
+  const [attempt, setAttempt] = useState(0);
+  const scopeKey = `${scope}:${projectId}:${days}:${attempt}`;
+  const [monitorState, setMonitorState] = useState<{
+    key: string; loading: boolean; error: string; data: ProjectOpinionMonitor | null;
+  }>({ key: "", loading: false, error: "", data: null });
+  const [strategyState, setStrategyState] = useState<{ key: string; data: OpinionStrategy | null; error: string }>({
+    key: "", data: null, error: "",
+  });
+  const [strategyBusy, setStrategyBusy] = useState(false);
   const currentScope = useRef(scopeKey);
   useEffect(() => { currentScope.current = scopeKey; }, [scopeKey]);
-  const account = scopedAccounts.find((item) => item.id === accountId);
-  const overview = overviewState.key === scopeKey ? overviewState.data : null;
-  const actions = actionsState.key === scopeKey ? actionsState.data : null;
-  const details = detailsState.key === scopeKey ? detailsState.data : null;
+  const projectAccounts = useMemo(() => accounts.filter((item) => item.project_id === projectId), [accounts, projectId]);
+  const accountCount = useMemo(() => groupLeadTrackingEntities(projectAccounts).length, [projectAccounts]);
+  const monitor = monitorState.key === scopeKey ? monitorState.data : null;
+  const strategy = strategyState.key === scopeKey ? strategyState.data : null;
+  const strategyError = strategyState.key === scopeKey ? strategyState.error : "";
+  const monitorLoading = monitorState.key !== scopeKey || monitorState.loading;
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
   }, [authLoading, router, user]);
   useEffect(() => {
-    setStrategy(null);
-    setStrategyError("");
-  }, [projectId, accountId, days]);
-  useEffect(() => {
-    if (!user || !projectId || !accountId) return;
+    if (!user || !project || loading || view !== "overview") return;
     const controller = new AbortController();
     let active = true;
-    setOverviewState({ key: scopeKey, loading: true, error: "", data: null });
-    void fetch_opinion_overview(projectId, accountId, days, controller.signal)
-      .then((response) => { if (active) setOverviewState({ key: scopeKey, loading: false, error: "", data: response.data }); })
-      .catch((failure: unknown) => { if (active) setOverviewState({ key: scopeKey, loading: false, data: null,
-        error: localizeErrorMessage(failure instanceof Error ? failure.message : "Could not load opinion overview", locale) }); });
+    setMonitorState({ key: scopeKey, loading: true, error: "", data: null });
+    void fetch_project_opinion_monitor(projectId, days, controller.signal)
+      .then((response) => {
+        if (active) setMonitorState({ key: scopeKey, loading: false, error: "", data: response.data });
+      })
+      .catch((failure: unknown) => {
+        if (active) setMonitorState({ key: scopeKey, loading: false, data: null,
+          error: localizeErrorMessage(failure instanceof Error ? failure.message : "Could not load opinion overview", locale) });
+      });
     return () => { active = false; controller.abort(); };
-  }, [user, projectId, accountId, days, scopeKey, locale]);
-  useEffect(() => {
-    if (!user || !projectId || !accountId) return;
-    const controller = new AbortController();
-    let active = true;
-    setDetailsState({ key: scopeKey, loading: true, error: "", data: null });
-    void fetch_opinion_details(projectId, accountId, days, controller.signal)
-      .then((response) => { if (active) setDetailsState({ key: scopeKey, loading: false, error: "", data: response.data }); })
-      .catch((failure: unknown) => { if (active) setDetailsState({ key: scopeKey, loading: false, data: null,
-        error: localizeErrorMessage(failure instanceof Error ? failure.message : "Could not load opinion details", locale) }); });
-    return () => { active = false; controller.abort(); };
-  }, [user, projectId, accountId, days, scopeKey, locale]);
-  useEffect(() => {
-    if (!user || !projectId || !accountId) return;
-    const controller = new AbortController();
-    let active = true;
-    setActionsState({ key: scopeKey, loading: true, error: "", data: null });
-    void fetch_opinion_actions(projectId, accountId, days, controller.signal)
-      .then((response) => { if (active) setActionsState({ key: scopeKey, loading: false, error: "", data: response.data }); })
-      .catch((failure: unknown) => { if (active) setActionsState({ key: scopeKey, loading: false, data: null,
-        error: localizeErrorMessage(failure instanceof Error ? failure.message : "Could not load opinion actions", locale) }); });
-    return () => { active = false; controller.abort(); };
-  }, [user, projectId, accountId, days, scopeKey, locale]);
+  }, [user, project, projectId, days, scopeKey, locale, loading, view]);
 
-  function changeScope(project: string, selectedAccount: string, period: 7 | 30) {
-    const query = new URLSearchParams();
-    if (project) query.set("project", project);
-    if (selectedAccount) query.set("account", selectedAccount);
-    query.set("days", String(period));
+  function changeView(nextView: "overview" | "accounts", period: 7 | 30 = days) {
+    const query = new URLSearchParams({ project: projectId, days: String(period) });
+    if (nextView === "accounts") query.set("view", "accounts");
     router.replace(`/opinion_tracking?${query}`);
   }
-  function scrollToSection(section: "overview" | "performance" | "comments" | "risks") {
-    const sectionIds = {
-      overview: "opinion-page-title", performance: "opinion-performance-title",
-      comments: "opinion-voices-title", risks: "opinion-strategy-title",
-    };
-    setActiveSection(section);
-    document.getElementById(sectionIds[section])?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function closeAccount() {
+    const query = new URLSearchParams(params.toString());
+    for (const key of ["account", "tab", "date"]) query.delete(key);
+    query.set("view", "accounts");
+    router.replace(`/opinion_tracking?${query}`, { scroll: false });
   }
   async function createStrategy() {
-    if (!projectId || !accountId || strategyBusy) return;
+    if (!project || !accountCount || strategyBusy) return;
     const requestedScope = scopeKey;
     setStrategyBusy(true);
-    setStrategyError("");
+    setStrategyState({ key: requestedScope, data: null, error: "" });
     try {
-      const response = await generate_opinion_strategy(projectId, accountId, days);
-      if (currentScope.current === requestedScope) {
-        setStrategy(response.data);
-        scrollToSection("risks");
-      }
-    } catch {
-      if (currentScope.current === requestedScope) {
-        setStrategyError(t("生成失败，请稍后重试。", "Could not generate. Please try again."));
-        scrollToSection("risks");
-      }
+      const response = await generate_project_opinion_strategy(projectId, days);
+      if (currentScope.current === requestedScope) setStrategyState({ key: requestedScope, data: response.data, error: "" });
+    } catch (failure) {
+      if (currentScope.current === requestedScope) setStrategyState({ key: requestedScope, data: null,
+        error: localizeErrorMessage(failure instanceof Error ? failure.message : "Could not generate opinion strategy", locale) });
     } finally {
       setStrategyBusy(false);
     }
   }
   function exportData() {
-    if (!details) return;
-    const rows = [["评论编号", "平台", "账号", "时间", "评论内容", "情绪标签", "话题", "点赞", "回复"],
-      ...details.comments.map((comment) => [comment.comment_id, comment.platform, account?.account_name || "",
-        comment.created_at, comment.content, comment.mood, comment.topic, comment.likes, comment.replies])];
-    const csv = "\uFEFF" + rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
+    if (!monitor) return;
+    const rows = [[t("评论编号", "Comment ID"), t("平台", "Platform"), t("账号", "Account"),
+      t("时间", "Time"), t("评论内容", "Comment"), t("情绪标签", "Sentiment"),
+      t("话题", "Topic"), t("点赞", "Likes"), t("回复", "Replies")],
+    ...monitor.details.comments.map((comment) => [
+      comment.comment_id, comment.platform, comment.account_name || "", comment.created_at,
+      comment.content, comment.mood, comment.topic, comment.likes, comment.replies,
+    ])];
+    const csv = "\uFEFF" + rows.map((row) => row.map((value) =>
+      `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `marventa-opinion-comments-${accountId}-${days}d.csv`;
+    anchor.download = `marventa-opinion-project-${projectId}-${days}d.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
 
   if (authLoading || !user) return <div className="amp-page-state" role="status">{t("加载中…", "Loading…")}</div>;
-  return <div className="amp-projects-layout amp-opinion-shell">
+  return <div className="amp-projects-layout">
+    <PublishingProjectSidebar module="leadTracking" projects={projects} selectedProjectId={projectId} />
     <main className="amp-projects-main amp-opinion-workspace">
-      <nav className="amp-opinion-breadcrumb" aria-label={t("位置", "Breadcrumb")}>
-        <span>{t("运营", "Operations")}</span>
-        <span>›</span><strong>{t("舆论追踪", "Opinion tracking")}</strong>
-      </nav>
-      <header className="amp-opinion-page-heading">
-        <div className="amp-opinion-heading-title"><span className="amp-opinion-heading-symbol" aria-hidden="true">⌁</span>
-          <h1 id="opinion-page-title">{t("舆论追踪", "Opinion tracking")}</h1></div>
-        <div className="amp-opinion-heading-actions">
-          <button type="button" className="amp-opinion-export" onClick={exportData}>{t("导出数据", "Export data")}</button>
-          <button type="button" className="amp-opinion-generate" onClick={() => { void createStrategy(); }}>
-            {strategyBusy ? t("生成中…", "Generating…") : t("生成 AI 策略建议", "Generate AI strategy")}
-          </button>
-        </div>
+      <header className={project ? "amp-project-detail-header amp-project-header-aligned" : "amp-projects-header"}>
+        {project ? <div className="amp-project-detail-title">
+          <Link href="/opinion_tracking" className="amp-project-detail-back"
+            aria-label={t("返回全部项目", "Back to all projects")}><InlineIcon name="arrowLeft" /></Link>
+          <span className="amp-project-avatar amp-project-custom-avatar"
+            style={{ backgroundColor: project.avatar_color || "#bfdbfe" }}>
+            <span className="amp-project-avatar-emoji">{project.avatar_icon || "💡"}</span>
+          </span>
+          <div><h1 title={project.title}>{project.title || t("未命名项目", "Untitled project")}</h1></div>
+        </div> : <div><h1 className="amp-module-title">{t("舆情追踪", "Opinion Tracking")}</h1>
+          <p>{t("选择项目查看监测总览和账号分析。", "Select a project to view monitoring and account analysis.")}</p></div>}
+        {project && view === "overview" && <div className="amp-opinion-heading-actions">
+          <GuardedButton type="button" className="amp-button amp-button-secondary" disabled={!monitor || monitorLoading}
+            blockedReason={t("请等待监测数据加载完成后再导出。", "Wait for monitoring data to load before exporting.")}
+            onClick={exportData}>{t("导出数据", "Export data")}</GuardedButton>
+          <GuardedButton type="button" className="amp-button amp-button-primary"
+            disabled={!accountCount || strategyBusy || monitorLoading || !monitor}
+            blockedReason={strategyBusy ? t("策略正在生成，请稍候。", "Strategy is being generated. Please wait.")
+              : t("需要已连接账号和可用监测数据。", "Connected accounts and monitoring data are required.")}
+            onClick={() => { void createStrategy(); }}>
+            {strategyBusy ? t("生成中…", "Generating…") : t("生成策略", "Generate strategy")}
+          </GuardedButton>
+        </div>}
       </header>
       {loading ? <div className="amp-page-state" role="status">{t("加载中…", "Loading…")}</div>
-        : error ? <div className="amp-opinion-state" role="alert">{error}<button type="button" onClick={retry}>{t("重试", "Retry")}</button></div>
-          : <>
-            <div className="amp-opinion-scope">
-              <label>{t("项目", "Project")}
-                <select value={projectId} onChange={(event) => changeScope(event.target.value, "", days)}>
-                  {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
-                </select>
-              </label>
-              <label>{t("平台账号", "Platform account")}
-                <select value={accountId} onChange={(event) => changeScope(projectId, event.target.value, days)}>
-                  {scopedAccounts.map((item) => <option key={item.id} value={item.id}>
-                    {item.platform === "douyin" ? t("抖音", "Douyin") : t("小红书", "Xiaohongshu")} · {item.account_name}
-                  </option>)}
-                </select>
-              </label>
-              <label>{t("周期", "Period")}
-                <select value={days} onChange={(event) => changeScope(projectId, accountId, Number(event.target.value) as 7 | 30)}>
-                  <option value={7}>{t("近 7 天", "Last 7 days")}</option>
-                  <option value={30}>{t("近 30 天", "Last 30 days")}</option>
-                </select>
-              </label>
-              <button type="button" className="amp-opinion-refresh" aria-label={t("刷新舆情监测", "Refresh opinion monitoring")}
-                onClick={() => setAttempt((value) => value + 1)}>↻</button>
-            </div>
-            <nav className="amp-opinion-tabs" aria-label={t("舆情监测页面", "Opinion views")}>
-              {([[
-                "overview", t("监测总览", "Overview")], ["performance", t("推广表现", "Promotion performance")],
-                ["comments", t("评论舆情", "Comment sentiment")],
-                ["risks", t("策略建议", "Strategy advice")],
-              ] as const).map(([key, label]) => <button key={key} type="button"
-                className={activeSection === key ? "is-active" : ""} onClick={() => scrollToSection(key)}>{label}</button>)}
-              {account && <Link href={`/lead_tracking/${encodeURIComponent(accountId)}?project=${encodeURIComponent(projectId)}&tab=analysis`}>
-                {t("机会线索", "Opportunities")}</Link>}
-            </nav>
-            {!account ? <div className="amp-opinion-state" role="status">{t("该项目暂无可用账号。", "This project has no available account.")}</div>
+        : error ? <div className="amp-page-state" role="alert">{error}
+          <button type="button" className="amp-button amp-button-secondary" onClick={retry}>{t("重试", "Retry")}</button></div>
+          : !projectId ? projects.length ? <div className="amp-projects-grid amp-opinion-project-grid">
+            {projects.map((item) => <OpinionProjectCard key={item.id} project={item}
+              accountCount={groupLeadTrackingEntities(accounts.filter((account) => account.project_id === item.id)).length} />)}
+          </div> : <WorkspaceEmptyState icon="radar" title={t("暂无项目", "No projects")}
+            description={t("创建项目并连接渠道账号后开始舆情追踪。", "Create a project and connect channel accounts to begin monitoring.")} />
+            : !project ? <WorkspaceEmptyState icon="alert" title={t("项目不存在或无法访问", "Project not found or inaccessible")}
+              description={<Link href="/opinion_tracking">{t("返回全部项目", "Back to all projects")}</Link>} />
               : <>
-                <OpinionOverviewPanel data={overview} performance={details?.performance || null}
-                  loading={overviewState.key !== scopeKey || overviewState.loading}
-                  error={overviewState.key === scopeKey ? overviewState.error : ""}
-                  onRetry={() => setAttempt((value) => value + 1)} />
-                <OpinionEvidenceSections key={scopeKey}
-                  details={details} loading={detailsState.key !== scopeKey || detailsState.loading}
-                  error={detailsState.key === scopeKey ? detailsState.error : ""}
-                  onRetry={() => setAttempt((value) => value + 1)} actions={actions}
-                  strategy={strategy} strategyBusy={strategyBusy} strategyError={strategyError} />
+                <div className="amp-project-detail-tabs" role="tablist" aria-label={t("舆情追踪范围", "Opinion tracking scope")}>
+                  <button type="button" role="tab" id="opinion-overview-tab" aria-controls="opinion-overview-panel"
+                    aria-selected={view === "overview"} onClick={() => changeView("overview")}>{t("监测总览", "Monitoring overview")}</button>
+                  <button type="button" role="tab" id="opinion-accounts-tab" aria-controls="opinion-accounts-panel"
+                    aria-selected={view === "accounts"} onClick={() => changeView("accounts")}>{t("账号分析", "Account analysis")}</button>
+                </div>
+                {view === "accounts" ? <div role="tabpanel" id="opinion-accounts-panel" aria-labelledby="opinion-accounts-tab">
+                  <AccountTrackingList key={`${scope}:${projectId}`} accounts={accounts} projectId={projectId} scope={scope} />
+                </div> : <div role="tabpanel" id="opinion-overview-panel" aria-labelledby="opinion-overview-tab">
+                  <div className="amp-insight-toolbar amp-opinion-scope">
+                    <EnterpriseSelect<"7" | "30"> value={days === 30 ? "30" : "7"}
+                      onChange={(value) => changeView("overview", value === "30" ? 30 : 7)}
+                      options={[{ value: "7", label: t("近 7 天", "Last 7 days") }, { value: "30", label: t("近 30 天", "Last 30 days") }]}
+                      ariaLabel={t("选择周期", "Select period")} className="w-36 shrink-0" />
+                    <div className="amp-opinion-scope-summary">
+                    <span className="amp-opinion-project-scope-note">{t("{count} 个账号", "{count} accounts", { count: accountCount })}</span>
+                    <button type="button" className="amp-member-action-more amp-opinion-refresh"
+                      aria-label={t("刷新监测总览", "Refresh monitoring overview")}
+                      title={t("刷新监测总览", "Refresh monitoring overview")}
+                      onClick={() => setAttempt((value) => value + 1)}>
+                      <InlineIcon name="refresh" />
+                    </button>
+                    </div>
+                  </div>
+                  {monitor?.overview.status === "partial" && <p className="amp-opinion-coverage-note" role="status">
+                    {t("部分账号或日期的数据不完整，以下为已获取数据。",
+                      "Some accounts or dates have incomplete data. The overview shows available data.")}
+                  </p>}
+                  {!accountCount ? <WorkspaceEmptyState icon="radar" title={t("暂无渠道账号", "No channel accounts")}
+                    description={t("请先在此项目中连接渠道账号。", "Connect channel accounts in this project first.")} />
+                    : monitorState.key === scopeKey && monitorState.error ? <div className="amp-page-state" role="alert">{monitorState.error}
+                      <button type="button" className="amp-button amp-button-secondary" onClick={() => setAttempt((value) => value + 1)}>{t("重试", "Retry")}</button></div>
+                      : <>
+                        <OpinionOverviewPanel data={monitor?.overview || null} performance={monitor?.details.performance || null}
+                          loading={monitorLoading} error="" onRetry={() => setAttempt((value) => value + 1)} />
+                        <OpinionEvidenceSections key={scopeKey} details={monitor?.details || null}
+                          loading={monitorLoading} error="" onRetry={() => setAttempt((value) => value + 1)}
+                          actions={monitor?.actions || null} strategy={strategy} strategyBusy={strategyBusy} strategyError={strategyError} />
+                      </>}
+                </div>}
               </>}
-          </>}
     </main>
+    {!loading && project && accountId && <AccountAnalysisDialog
+      key={`${scope}:${projectId}:${accountId}:${params.get("tab") || ""}:${params.get("date") || ""}`}
+      projectId={projectId} accountId={accountId} accounts={accounts}
+      initialTab={params.get("tab") || ""} initialDate={params.get("date") || ""}
+      onClose={closeAccount} />}
   </div>;
 }

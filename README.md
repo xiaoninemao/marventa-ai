@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/assets/brand/marventa-logo.png" alt="Marventa AI" width="104" />
+<img src="frontend/public/assets/brand/marventa-mark.png" alt="Marventa AI" width="104" />
 
 # Marventa AI
 
@@ -15,9 +15,15 @@ An open-source workspace for market understanding, agent-driven creation, publis
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg)](backend/requirements.txt)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](frontend/package.json)
 
-[Overview](#overview) · [Workflow](#workflow) · [Capabilities](#capabilities) · [Quick start](#quick-start) · [Configuration](#configuration)
+[Product video](#product-video) · [Overview](#overview) · [Workflow](#workflow) · [Capabilities](#capabilities) · [Quick start](#quick-start) · [Configuration](#configuration)
 
 </div>
+
+## Product video
+
+[![Marventa AI Product Overview](docs/media/marventa-ai-product-overview.jpg)](docs/media/marventa-ai-product-overview.mp4?raw=true)
+
+[Watch or download: Marventa AI Product Overview](docs/media/marventa-ai-product-overview.mp4?raw=true) · 1 min 03 sec · English voice-over
 
 ## Overview
 
@@ -67,7 +73,7 @@ Media-only works can be completed. Copy-only works remain editable drafts; every
 
 Create a named publication draft, select a completed Portfolio work, then configure the channel, connected account, and time in Publication settings. The plan holds an independent media/copy snapshot. The homepage calendar links scheduled dates to publication plans.
 
-Account Content displays available channel works and Marventa publication records. Lead Tracking summarizes daily comments and identifies potential demand with evidence and suggested actions.
+Account Content displays available channel works and Marventa publication records. Opinion Tracking opens a project-wide monitoring overview across its connected accounts, with individual-account comment insights, intent evaluation and daily reports under Account analysis.
 
 ## Capabilities
 
@@ -117,11 +123,14 @@ Image generation uses a separately configured provider. Video works can use exis
 - Cancellation, rescheduling, failure feedback, and durable execution records.
 - Optional official Douyin publication through a backend scheduler.
 
-### Account Content and Lead Tracking
+### Account Content and Opinion Tracking
 
 - Channel-account browsing, media galleries, available interaction metrics, and pagination.
 - Separate platform-readable content and Marventa publication records.
-- One lead-tracking account across linked projects within an organization.
+- A project sidebar and default monitoring overview covering all connected accounts in the selected project.
+- The all-project view uses the project card layout with avatars, descriptions, members and linked-account counts.
+- Account cards open an analysis dialog with comment insights, intent evaluation and daily reports. Closing preserves list filters and pagination; each view remains scoped to the selected account.
+- Repeated bindings of the same platform account are deduplicated within a project; comments and posts retain source-account attribution.
 - Daily Top 50 comment snapshots, rule-based or AI-assisted qualification, and human review.
 - Evidence, recommended actions, confirmation, dismissal, and reset.
 

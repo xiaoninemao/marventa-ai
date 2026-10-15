@@ -68,6 +68,7 @@ const dialogModes: Record<string, Mode> = {
   "components/projects/MaterialDocumentPreview.tsx:component": editingModes("editing"),
   "components/account_content/AccountContentPreview.tsx:titleId": "view",
   "components/lead_tracking/OpinionEvidenceSections.tsx:role:dialog": "view",
+  "components/lead_tracking/AccountAnalysisDialog.tsx:titleId": "view",
 };
 
 function sourceFiles(directory: string): string[] {

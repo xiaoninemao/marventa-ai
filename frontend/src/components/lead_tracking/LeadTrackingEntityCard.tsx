@@ -18,8 +18,9 @@ export default function LeadTrackingEntityCard({ entity, selectedProjectId = "" 
   const projectNames = projects.join("、");
   return (
     <article className="amp-insight-card amp-lead-tracking-card">
-      <Link href={leadTrackingEntityHref(entity, selectedProjectId)} className="amp-insight-card-link"
-        aria-label={t("分析线索：{account}，项目：{projects}", "Analyze leads: {account}; projects: {projects}",
+      <Link href={leadTrackingEntityHref(entity, selectedProjectId)} scroll={false} className="amp-insight-card-link"
+        data-account-key={entity.key}
+        aria-label={t("账号分析：{account}，项目：{projects}", "Analyze account: {account}; projects: {projects}",
           { account: entity.account_name, projects: projectNames })}>
         <span className="amp-lead-tracking-logo" aria-hidden="true">
           <Image src={channel.logo} alt="" width={40} height={40} />

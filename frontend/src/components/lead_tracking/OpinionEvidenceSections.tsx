@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useI18n } from "@/contexts/i18n_context";
+import RedesignInput from "@/components/redesign/RedesignInput";
+import InlineIcon from "@/components/redesign/InlineIcon";
+import EnterpriseSelect from "@/components/redesign/EnterpriseSelect";
 import type { OpinionActionSummary, OpinionDetails, OpinionPost, OpinionStrategy, OpinionVoice } from "@/types/lead_tracking";
 
 type Props = {
@@ -26,7 +29,7 @@ function StrategyCard({ index, title, description, basis, onCopy }: {
     <div className="amp-opinion-insight-heading"><span>{String(index + 1).padStart(2, "0")}</span><h3>{title}</h3></div>
     <p>{description}</p>
     <div className="amp-opinion-insight-footer"><small>{basis}</small>
-      <button type="button" onClick={onCopy}>{t("复制建议 ↗", "Copy advice ↗")}</button></div>
+      <button type="button" className="amp-text-action" onClick={onCopy}>{t("复制建议", "Copy advice")}</button></div>
   </article>;
 }
 
@@ -79,7 +82,8 @@ export default function OpinionEvidenceSections({ details, loading, error, onRet
     <div className="amp-opinion-insight-list">
       {strategyItems.length ? strategyItems.map((item, index) => <StrategyCard key={`${item.title}-${index}`}
         index={index} {...item} onCopy={() => { void copyText(`${item.title}\n${item.description}`); }}/>)
-        : <div className="amp-opinion-proto-empty">{strategyBusy ? t("正在生成…", "Generating…") : t("暂无策略建议", "No strategy advice")}</div>}
+        : strategyBusy ? <div className="amp-page-state" role="status">{t("正在生成…", "Generating…")}</div>
+          : <p className="amp-opinion-inline-empty" role="status">{t("暂无策略", "No strategy yet")}</p>}
     </div>
     {strategyError && <p className="amp-opinion-strategy-error" role="alert">{strategyError}</p>}
   </section>;
@@ -101,16 +105,17 @@ export default function OpinionEvidenceSections({ details, loading, error, onRet
           <th>{t("互动率", "Engagement rate")}</th><th>{t("操作", "Action")}</th></tr></thead>
         <tbody>{loading ? <tr><td colSpan={6} className="amp-opinion-proto-empty">{t("加载中…", "Loading…")}</td></tr>
           : error ? <tr><td colSpan={6} className="amp-opinion-proto-empty">{error} <button type="button" onClick={onRetry}>{t("重试", "Retry")}</button></td></tr>
-            : posts.length ? posts.map((post, index) => <tr key={post.item_id}>
-              <td><div className="amp-opinion-post-name"><span className={`amp-opinion-post-thumb tone-${index % 5}`} aria-hidden="true">{["✧", "⌁", "◎", "▦", "▤"][index % 5]}</span>
-                <div><strong>{post.title}</strong><small>{post.published_at ? `${t("发布于", "Published")} ${post.published_at.slice(0, 10)}` : ""}</small></div></div></td>
+            : posts.length ? posts.map((post) => <tr key={`${post.account_id || ""}:${post.item_id}`}>
+              <td><div className="amp-opinion-post-name"><span className="amp-opinion-post-thumb" aria-hidden="true"><InlineIcon name="content" /></span>
+                <div><strong>{post.title}</strong><small>{post.account_name}</small><small>{post.published_at ? `${t("发布于", "Published")} ${post.published_at.slice(0, 10)}` : ""}</small></div></div></td>
               <td><span className={`amp-opinion-platform-badge is-${post.platform}`}>
                 {post.platform === "douyin" ? t("抖音", "Douyin") : t("小红书", "Xiaohongshu")}</span></td>
               <td><strong>{number(post.views)}</strong></td><td>{number(post.engagement)}</td>
               <td><strong>{post.rate === null ? "—" : `${post.rate.toFixed(2)}%`}</strong>
                 {post.rate !== null && <div className="amp-opinion-performance-meter"><b style={{ width: `${Math.min(100, post.rate * 10)}%` }}/></div>}</td>
-              <td><button type="button" className="amp-opinion-table-btn" onClick={() => setDrawer({ kind: "post", post })}>{t("分析 →", "Analyze →")}</button></td>
-            </tr>) : <tr><td colSpan={6} className="amp-opinion-proto-empty">{t("当前范围暂无推广内容", "No content in this period")}</td></tr>}</tbody>
+              <td><button type="button" className="amp-text-action amp-opinion-table-btn" onClick={() => setDrawer({ kind: "post", post })}>{t("分析", "Analyze")}</button></td>
+            </tr>) : <tr><td colSpan={6}><p className="amp-opinion-inline-empty" role="status">
+              {t("暂无推广内容", "No promotion content")}</p></td></tr>}</tbody>
       </table></div>
     </section>
 
@@ -118,31 +123,38 @@ export default function OpinionEvidenceSections({ details, loading, error, onRet
       <div className="amp-opinion-proto-section-head"><h2 id="opinion-voices-title">{t("用户声音与行动建议", "Audience voices and action advice")}</h2></div>
       <div className="amp-opinion-comments-layout"><div className="amp-opinion-voices-card">
         <div className="amp-opinion-comments-toolbar">
-          {([[
-            "all", t("全部评论", "All comments")], ["positive", t("正向反馈", "Positive")],
-            ["neutral", t("一般讨论", "Neutral")], ["negative", t("负向/风险", "Negative / risk")],
-          ] as const).map(([key, label]) => <button key={key} type="button" className={`amp-opinion-filter ${mood === key ? "is-active" : ""}`}
-            onClick={() => setMood(key)}>{label}</button>)}
-          <label className="amp-opinion-searchfield"><span aria-hidden="true">⌕</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)}
+          <div className="amp-projects-search">
+            <RedesignInput leftIcon={<InlineIcon name="search" className="h-4 w-4" />} value={query}
+              onChange={(event) => setQuery(event.target.value)}
               placeholder={t("搜索评论、需求", "Search comments or needs")}
-              aria-label={t("搜索评论、需求", "Search comments or needs")}/></label>
+              aria-label={t("搜索评论、需求", "Search comments or needs")} />
+          </div>
+          <EnterpriseSelect<"all" | "positive" | "neutral" | "negative"> value={mood} onChange={setMood}
+            ariaLabel={t("筛选评论情绪", "Filter comment sentiment")} className="w-36 shrink-0"
+            options={[
+              { value: "all", label: t("全部评论", "All comments") },
+              { value: "positive", label: t("正向反馈", "Positive") },
+              { value: "neutral", label: t("一般讨论", "Neutral") },
+              { value: "negative", label: t("负向／风险", "Negative / risk") },
+            ]} />
         </div>
         <div className="amp-opinion-voice-list">{loading ? <div className="amp-opinion-proto-empty">{t("加载中…", "Loading…")}</div>
           : error ? <div className="amp-opinion-proto-empty">{error}</div>
-            : visibleComments.length ? visibleComments.map((comment) => <button type="button" className="amp-opinion-voice" key={comment.comment_id}
+            : visibleComments.length ? visibleComments.map((comment) => <button type="button" className="amp-opinion-voice" key={`${comment.account_id || ""}:${comment.comment_id}`}
               onClick={() => setDrawer({ kind: "comment", comment })}>
               <span className={`amp-opinion-avatar is-${comment.mood}`}>{comment.author.slice(-1)}</span>
               <span className="amp-opinion-voice-main"><span className="amp-opinion-voice-top"><strong>{comment.author}</strong>
                 <span className={`amp-opinion-sentiment-tag is-${comment.mood}`}>
                   {comment.review_required ? t("待复核", "Review") : comment.mood === "positive" ? t("正向", "Positive")
                     : comment.mood === "negative" ? t("负向", "Negative") : t("一般", "Neutral")}</span>
-                <small>{comment.platform === "douyin" ? t("抖音", "Douyin") : t("小红书", "Xiaohongshu")} · {comment.created_at}</small></span>
+                <small>{comment.platform === "douyin" ? t("抖音", "Douyin") : t("小红书", "Xiaohongshu")} · {comment.account_name ? `${comment.account_name} · ` : ""}{comment.created_at}</small></span>
                 <span className="amp-opinion-voice-content">{comment.content}</span>
-                <span className="amp-opinion-voice-footer"><span>♡ {comment.likes}</span><span>▤ {comment.replies}</span>
-                  <span># {comment.topic || t("其他", "Other")}</span><em>{t("查看洞察 →", "View insight →")}</em></span>
+                <span className="amp-opinion-voice-footer"><span><InlineIcon name="heart" /> {comment.likes}</span><span><InlineIcon name="message" /> {comment.replies}</span>
+                  <span>{comment.topic || t("其他", "Other")}</span><em>{t("查看洞察", "View insight")}</em></span>
               </span>
-            </button>) : <div className="amp-opinion-proto-empty">{t("没有符合筛选条件的评论", "No matching comments")}</div>}</div>
+            </button>) : <p className="amp-opinion-inline-empty" role="status">
+              {query.trim() || mood !== "all" ? t("无匹配评论", "No matching comments") : t("暂无评论", "No comments")}
+            </p>}</div>
       </div>{strategyPanel}</div>
     </section>
 
@@ -150,9 +162,9 @@ export default function OpinionEvidenceSections({ details, loading, error, onRet
       if (event.target === event.currentTarget) setDrawer(null);
     }}><aside className="amp-opinion-drawer" role="dialog" aria-modal="true"
       aria-label={drawer.kind === "post" ? t("推广内容分析", "Content analysis") : t("评论洞察与处理", "Comment insight")}>
-      <div className="amp-opinion-drawer-head"><div><small>MARVENTA / MONITOR</small>
+      <div className="amp-opinion-drawer-head"><div>
         <h2>{drawer.kind === "post" ? t("推广内容分析", "Content analysis") : t("评论洞察与处理", "Comment insight")}</h2></div>
-        <button type="button" aria-label={t("关闭", "Close")} onClick={() => setDrawer(null)}>×</button></div>
+        <button type="button" aria-label={t("关闭", "Close")} onClick={() => setDrawer(null)}><InlineIcon name="close" /></button></div>
       {drawer.kind === "post" ? <div className="amp-opinion-drawer-body">
         <span className="amp-opinion-drawer-label">{t("内容标题", "Content title")}</span><div className="amp-opinion-drawer-copy">{drawer.post.title}</div>
         <span className="amp-opinion-drawer-label">{t("表现指标", "Performance")}</span>
@@ -163,13 +175,14 @@ export default function OpinionEvidenceSections({ details, loading, error, onRet
         <span className="amp-opinion-drawer-label">{t("反馈摘要", "Feedback summary")}</span>
         <p className="amp-opinion-drawer-content">{drawer.post.summary || t("暂无相关评论", "No related comments")}</p>
         <span className="amp-opinion-drawer-label">{t("相关评论", "Related comments")}</span>
-        <ul className="amp-opinion-drawer-list">{comments.filter((item) => item.item_id === drawer.post.item_id).slice(0, 8)
+        <ul className="amp-opinion-drawer-list">{comments.filter((item) => item.item_id === drawer.post.item_id
+          && item.account_id === drawer.post.account_id).slice(0, 8)
           .map((item) => <li key={item.comment_id}>{item.content}</li>)}</ul>
-        <button type="button" className="amp-opinion-drawer-soft" onClick={() => { void copyText(
+        <button type="button" className="amp-button amp-button-secondary" onClick={() => { void copyText(
           `${drawer.post.title}\n${t("曝光量", "Views")} ${number(drawer.post.views)} / ${t("互动量", "Engagement")} ${number(drawer.post.engagement)} / ${t("互动率", "Rate")} ${drawer.post.rate === null ? "—" : `${drawer.post.rate}%`}\n${drawer.post.summary}`,
         ); }}>{t("复制内容复盘", "Copy content review")}</button>
       </div> : <div className="amp-opinion-drawer-body">
-        <span className="amp-opinion-drawer-label">{t("来源", "Source")} / {drawer.comment.platform === "douyin" ? t("抖音", "Douyin") : t("小红书", "Xiaohongshu")} · {drawer.comment.created_at}</span>
+        <span className="amp-opinion-drawer-label">{t("来源", "Source")} / {drawer.comment.platform === "douyin" ? t("抖音", "Douyin") : t("小红书", "Xiaohongshu")} · {drawer.comment.account_name ? `${drawer.comment.account_name} · ` : ""}{drawer.comment.created_at}</span>
         <p className="amp-opinion-drawer-content">{drawer.comment.item_title}</p>
         <span className="amp-opinion-drawer-label">{t("原始评论", "Original comment")}</span>
         <div className="amp-opinion-drawer-copy">{drawer.comment.content}</div>
@@ -180,9 +193,9 @@ export default function OpinionEvidenceSections({ details, loading, error, onRet
           <p>{drawer.comment.topic || t("其他", "Other")} {drawer.comment.evidence.length ? `· ${drawer.comment.evidence.join("、")}` : ""}</p></div>
         <span className="amp-opinion-drawer-label">{t("建议回复草稿 · 需人工审核", "Reply draft · review before use")}</span>
         <div className="amp-opinion-drawer-copy">{replyDraft(drawer.comment)}</div>
-        <div className="amp-opinion-drawer-actions"><button type="button" className="amp-opinion-generate"
+        <div className="amp-opinion-drawer-actions"><button type="button" className="amp-button amp-button-primary"
           onClick={() => { void copyText(replyDraft(drawer.comment)); }}>{t("复制回复草稿", "Copy reply draft")}</button>
-          <button type="button" className="amp-opinion-export" onClick={() => {
+          <button type="button" className="amp-button amp-button-secondary" onClick={() => {
             setConfirmed((current) => new Set(current).add(drawer.comment.comment_id));
             setDrawer(null); setToast(t("本页已标记确认", "Marked confirmed on this page"));
           }}>{confirmed.has(drawer.comment.comment_id) ? t("已标记确认", "Confirmed") : t("人工确认线索", "Confirm lead")}</button></div>

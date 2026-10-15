@@ -981,7 +981,7 @@ export default function ProjectDetailPage() {
     <div className="amp-project-detail-layout">
       <ProjectQuickSidebar projects={quickProjects} currentProjectId={project.id} />
       <main className={`amp-project-detail-main${selectedMaterialSet ? " is-material-set" : ""}`}>
-        <header className="amp-project-detail-header">
+        <header className="amp-project-detail-header amp-project-header-aligned">
           {selectedMaterialSet ? (
             <div className="amp-project-detail-title amp-project-material-detail-title">
               <GuardedButton type="button" className="amp-project-detail-back"

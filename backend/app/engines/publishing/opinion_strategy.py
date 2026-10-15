@@ -232,6 +232,11 @@ def generate_opinion_strategy(
     if not summary.llm_available:
         raise AIProviderConfigurationError("Opinion strategy AI is disabled or not configured")
     account = _scoped_account(user_id, project_id, account_id)
+    return _strategy_from_evidence(summary, _action_quotes(account, summary))
+
+
+def _action_quotes(account: dict, summary: OpinionActionSummary) -> dict[str, list[dict[str, str]]]:
+    active = [item for item in summary.actions if not item.completed][:12]
     key = lead_account_key_from_row(account)
     allowed_ids = {item.id: item for item in active}
     with storage._get_conn() as conn:
@@ -246,6 +251,8 @@ def generate_opinion_strategy(
     action_by_topic = {(item.status, item.topic): item.id for item in active}
     for row in rows:
         report = DailyCommentReport.model_validate_json(row["report_json"])
+        if report.organization_id != account["organization_id"] or report.account_key != key:
+            continue
         if report.is_simulated and not _local_demo_preview(account):
             continue
         for topic in report.topics:
@@ -256,6 +263,18 @@ def generate_opinion_strategy(
                         if len(quotes[action_id]) < 4 and not any(x["id"] == comment_id for x in quotes[action_id]):
                             quotes[action_id].append({"id": comment_id, "text": _redact_comment_for_ai(quote)[:240]})
 
+    return quotes
+
+
+def _strategy_from_evidence(
+    summary: OpinionActionSummary, quotes: dict[str, list[dict[str, str]]],
+) -> OpinionStrategy:
+    active = [item for item in summary.actions if not item.completed][:12]
+    if not active:
+        return OpinionStrategy(status="insufficient_data", period_days=summary.period_days)
+    if not summary.llm_available:
+        raise AIProviderConfigurationError("Opinion strategy AI is disabled or not configured")
+    allowed_ids = {item.id: item for item in active}
     payload = {
         "period": [summary.start_date, summary.end_date], "report_days": summary.report_days,
         "pending_review_comments": summary.pending_review_comments,
@@ -298,7 +317,7 @@ def generate_opinion_strategy(
                 title=item.title, next_step=item.next_step, rationale=item.rationale,
                 evidence_action_ids=ids, source_dates=dates,
             ))
-        return OpinionStrategy(status="completed", period_days=days,
+        return OpinionStrategy(status="completed", period_days=summary.period_days,
                                headline=output.headline, recommendations=recommendations)
     finally:
         provider.close()

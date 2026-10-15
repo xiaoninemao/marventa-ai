@@ -13,17 +13,24 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai_provider import get_ai_provider
 from app.config import (
-    DATABASE_URL, DB_PATH, DEBUG, ENABLE_DEMO_USER,
-    LEAD_DAILY_LOCAL_DEMO_PREVIEW, LEAD_DAILY_REPORT_LLM_ENABLED, LEAD_DAILY_SEMANTIC_MODEL_PATH,
+    DATABASE_URL,
+    DB_PATH,
+    DEBUG,
+    ENABLE_DEMO_USER,
+    LEAD_DAILY_LOCAL_DEMO_PREVIEW,
+    LEAD_DAILY_REPORT_LLM_ENABLED,
+    LEAD_DAILY_SEMANTIC_MODEL_PATH,
     LEAD_TRACKING_TIMEZONE,
 )
 from app.engines.publishing import storage
 from app.engines.publishing.account_content import _scoped_account
 from app.engines.publishing.comment_semantics import (
-    SemanticModelUnavailable, classify_comments, thresholds,
+    SemanticModelUnavailable,
+    classify_comments,
+    thresholds,
 )
-from app.engines.publishing.lead_identity import lead_account_key_from_row
 from app.engines.publishing.lead_analysis import _redact_comment_for_ai
+from app.engines.publishing.lead_identity import lead_account_key_from_row
 from app.engines.publishing.lead_tracking import _previous_local_date
 from app.notifications.storage import create_notification
 
@@ -135,7 +142,6 @@ class DailyCommentReport(BaseModel):
     top_comments: list[ReportComment] = Field(default_factory=list)
     topics: list[ReportTopic] = Field(default_factory=list)
     work_analyses: list[ReportWorkAnalysis] = Field(default_factory=list)
-    selected_item_id: str = ""
     semantic_status: str = "rules_only"
     model_version: str = ""
     llm_used: bool = False
@@ -603,134 +609,3 @@ def get_daily_report(user_id: str, project_id: str, account_id: str, selected: d
     for topic in report.topics:
         topic.decision = by_topic.get(topic.topic, "pending")
     return report
-
-
-def list_daily_report_dates(user_id: str, project_id: str, account_id: str) -> list[str]:
-    account = _scoped_account(user_id, project_id, account_id)
-    with storage._get_conn() as conn:
-        rows = conn.execute(
-            """SELECT local_date, report_json FROM lead_daily_reports
-               WHERE account_key = ? AND organization_id = ?
-               ORDER BY local_date DESC LIMIT 90""",
-            (lead_account_key_from_row(account), account["organization_id"]),
-        ).fetchall()
-    allow_demo = _local_demo_preview(account)
-    return [row["local_date"] for row in rows
-            if allow_demo or not json.loads(row["report_json"]).get("is_simulated")]
-
-
-def decide_daily_topic(
-    user_id: str, project_id: str, account_id: str, selected: date, topic: str, status: str,
-) -> DailyCommentReport:
-    if status not in ("pending", "accepted", "dismissed"):
-        raise ValueError("Invalid decision status")
-    report = get_daily_report(user_id, project_id, account_id, selected)
-    if not any(item.topic == topic for item in report.topics):
-        raise LookupError("Report topic not found")
-    with storage._get_conn() as conn:
-        conn.execute(
-            """INSERT INTO lead_daily_report_decisions
-               (account_key, local_date, topic, status, reviewed_by_user_id, reviewed_at)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(account_key, local_date, topic) DO UPDATE SET
-                 status = excluded.status, reviewed_by_user_id = excluded.reviewed_by_user_id,
-                 reviewed_at = excluded.reviewed_at""",
-            (report.account_key, selected.isoformat(), topic, status, user_id, _now()),
-        )
-    return get_daily_report(user_id, project_id, account_id, selected)
-
-
-def review_daily_comment(
-    user_id: str, project_id: str, account_id: str, selected: date,
-    comment_id: str, stance: str,
-) -> DailyCommentReport:
-    if stance not in ("support", "oppose", "neutral", "uncertain"):
-        raise ValueError("Invalid comment stance")
-    account = _scoped_account(user_id, project_id, account_id)
-    key = lead_account_key_from_row(account)
-    current = get_daily_report(user_id, project_id, account_id, selected)
-    if current.status not in ("completed", "partial") or (current.is_simulated and not _local_demo_preview(account)):
-        raise ValueError("A verified daily report is required before comment review")
-    with storage._get_conn() as conn:
-        exists = conn.execute(
-            """SELECT 1 FROM lead_tracking_account_comments
-               WHERE account_key = ? AND local_date = ? AND comment_id = ?""",
-            (key, selected.isoformat(), comment_id),
-        ).fetchone()
-        if exists is None:
-            raise LookupError("Comment not found in this account's daily snapshot")
-        conn.execute(
-            """INSERT INTO lead_daily_comment_reviews
-               (account_key, local_date, comment_id, stance, reviewed_by_user_id, reviewed_at)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(account_key, local_date, comment_id) DO UPDATE SET
-                 stance = excluded.stance, reviewed_by_user_id = excluded.reviewed_by_user_id,
-                 reviewed_at = excluded.reviewed_at""",
-            (key, selected.isoformat(), comment_id, stance, user_id, _now()),
-        )
-    return generate_daily_report(account, selected)
-
-
-def report_for_work(report: DailyCommentReport, item_id: str) -> DailyCommentReport:
-    if not item_id:
-        return report
-    work = next((item for item in report.work_analyses if item.item_id == item_id), None)
-    if work is None:
-        raise LookupError("Work not found in this daily report")
-    scoped = report.model_copy(deep=True)
-    scoped.selected_item_id = item_id
-    scoped.work_analyses = [work]
-    scoped.top_comments = work.comments[:10]
-    scoped.topics = work.topics
-    scoped.llm_used = False
-    scoped.comments_collected = work.comments_collected
-    scoped.distinct_users = work.distinct_users
-    scoped.works_with_comments = 1
-    scoped.purchase_intent_comments = sum(
-        "purchase_intent" in item.signals and item.stance == "neutral" for item in work.comments)
-    scoped.feature_request_comments = sum(
-        "feature_request" in item.signals and item.stance == "support" for item in work.comments)
-    scoped.negative_feedback_comments = sum(
-        "negative_feedback" in item.signals and item.stance == "support" for item in work.comments)
-    scoped.negated_comments = sum(item.stance == "oppose" for item in work.comments)
-    scoped.pending_review_comments = sum(item.pending_review for item in work.comments)
-    return scoped
-
-
-def report_markdown(report: DailyCommentReport) -> str:
-    lines = [f"# 每日评论简报 {report.date}", "", f"状态：{report.status}",
-             f"来源：{report.platform} 官方接口", f"已采集评论：{report.comments_collected}",
-             f"不同评论者：{report.distinct_users}", f"有评论的作品：{report.works_with_comments}",
-             f"采集完整：{'是' if report.collection_complete else '否'}",
-             f"采购咨询信号：{report.purchase_intent_comments}；功能建议：{report.feature_request_comments}；负面反馈：{report.negative_feedback_comments}；否定观点：{report.negated_comments}；待复核：{report.pending_review_comments}", "",
-             "## 产品评论（按作品）", ""]
-    if report.is_simulated:
-        lines[3] = "来源：本地模拟数据，仅供功能预览；评论、用户和作品均为虚构。"
-    for work in report.work_analyses:
-        lines.extend([f"### {work.item_title or work.item_id}",
-                      f"已采集评论：{work.comments_collected}；不同评论者：{work.distinct_users}"])
-        if work.share_url:
-            lines.append(f"作品来源：{work.share_url}")
-        for topic in work.topics:
-            lines.extend([f"- {topic.topic}：{topic.conclusion}",
-                          f"  - 产品建议：{topic.product_suggestion}",
-                          f"  - 营销建议：{topic.marketing_suggestion}"])
-        lines.append("")
-        for item in work.comments:
-            lines.append(f"- {item.content.replace(chr(10), ' ').replace(chr(13), ' ')}；点赞 {item.digg_count}，回复 {item.reply_comment_total}；评论 ID：{item.comment_id}")
-        lines.append("")
-    lines.extend(["## 反馈分析（选定作品）" if report.selected_item_id else "## 反馈分析（账号汇总）", ""])
-    for topic in report.topics:
-        lines.extend([f"### {topic.topic}",
-                      f"归纳结论：{topic.conclusion}",
-                      f"证据等级：{topic.evidence_level}；支持 {topic.supporting_comments}，反对 {topic.opposing_comments}，中立 {topic.neutral_comments}；不同用户 {topic.distinct_users}",
-                      f"产品建议：{topic.product_suggestion}", f"营销建议：{topic.marketing_suggestion}"])
-        for index, (comment_id, quote_text) in enumerate(zip(topic.evidence_comment_ids, topic.quotes)):
-            source = topic.evidence_sources[index] if index < len(topic.evidence_sources) else None
-            work = source.item_title or source.item_id if source else "来源未记录"
-            lines.append(f"- 关联评论：{quote_text.replace(chr(10), ' ').replace(chr(13), ' ')}；作品：{work}；评论 ID：{comment_id}")
-            if source and source.share_url:
-                lines.append(f"  - 来源：{source.share_url}")
-        lines.append("")
-    lines.append("所有建议均需产品团队人工审核，不会自动执行。")
-    return "\n".join(lines) + "\n"

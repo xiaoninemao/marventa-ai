@@ -80,8 +80,7 @@ const quickActions = [
   { label: "作品集", labelEn: "Portfolio", path: "/portfolio", icon: "briefcase" as InlineIconName },
   { label: "发布管理", labelEn: "Publishing", path: "/publishing", icon: "send" as InlineIconName },
   { label: "账号内容", labelEn: "Account Content", path: "/account_content", icon: "content" as InlineIconName },
-  { label: "线索追踪", labelEn: "Lead Tracking", path: "/lead_tracking", icon: "target" as InlineIconName },
-  { label: "舆论追踪", labelEn: "Opinion Tracking", path: "/opinion_tracking", icon: "insight" as InlineIconName },
+  { label: "舆情追踪", labelEn: "Opinion Tracking", path: "/opinion_tracking", icon: "radar" as InlineIconName },
 ];
 
 export default function ModuleListing() {
@@ -202,7 +201,7 @@ export default function ModuleListing() {
                 <div
                   className={`grid flex-1 gap-2 ${recentProjects.length > 0 ? "content-start" : ""}`}
                   style={recentProjects.length > 0 ? {
-                    gridTemplateRows: `repeat(${recentProjects.length}, minmax(0, 1fr))`,
+                    gridTemplateRows: `repeat(${recentProjects.length}, 64px)`,
                   } : undefined}
                 >
                   {recentProjects.length > 0 ? (

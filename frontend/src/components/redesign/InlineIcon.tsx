@@ -47,6 +47,7 @@ export type InlineIconName =
   | "plus"
   | "portfolio"
   | "quote"
+  | "radar"
   | "redo"
   | "refresh"
   | "search"
@@ -92,6 +93,7 @@ const paths: Record<InlineIconName, ReactNode> = {
   case: <path d="M7 3.5h10A1.5 1.5 0 0 1 18.5 5v16L12 17l-6.5 4V5A1.5 1.5 0 0 1 7 3.5Z" />,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" /></>,
   chart: <path d="M4 16.5 8.6 12l3.4 3.2 6.8-7.4M4 20h16" />,
+  radar: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><path d="m12 12 6.4-6.4" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="8" cy="15" r="1" fill="currentColor" stroke="none" /></>,
   check: <path d="m5 12 4 4L19 6" />,
   chevronRight: <path d="m9 18 6-6-6-6" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,

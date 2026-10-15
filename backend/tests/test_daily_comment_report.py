@@ -3,8 +3,8 @@ import gc
 import json
 import shutil
 import sqlite3
-import time
 import tempfile
+import time
 import unittest
 import uuid
 from datetime import date
@@ -12,21 +12,22 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from app.api import publishing
-
 from app.auth import storage as auth_storage
 from app.auth.security import create_access_token
 from app.engines.publishing import (
     comment_semantics,
-    daily_comment_report as report,
     lead_tracking,
     storage,
 )
-from app.engines.publishing.project_memberships import ProjectNotFound
+from app.engines.publishing import (
+    daily_comment_report as report,
+)
 from app.engines.publishing.models import AccountContentPost
+from app.engines.publishing.project_memberships import ProjectNotFound
 from app.notifications import storage as notification_storage
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 
 class DailyCommentReportTests(unittest.TestCase):
@@ -146,8 +147,6 @@ class DailyCommentReportTests(unittest.TestCase):
             self.assertNotIn("不能代表", sentence)
             self.assertNotIn("本日有", sentence)
             self.assertNotIn("发布前核对", sentence)
-        exported = report.report_markdown(result)
-        self.assertIn(topic.conclusion, exported)
 
     def test_account_totals_keep_each_evidence_comment_linked_to_its_work(self):
         self._store([
@@ -163,9 +162,6 @@ class DailyCommentReportTests(unittest.TestCase):
             topic.evidence_comment_ids, topic.evidence_sources,
         )}
         self.assertEqual(sources, {"c-0": "work-1", "c-1": "work-2", "c-2": "work-2"})
-        exported = report.report_markdown(result)
-        self.assertIn("作品：work-1；评论 ID：c-0", exported)
-        self.assertIn("作品：work-2；评论 ID：c-1", exported)
 
     def test_work_comments_are_separate_and_account_opinion_uses_every_collected_comment(self):
         self._store([
@@ -184,21 +180,8 @@ class DailyCommentReportTests(unittest.TestCase):
         self.assertEqual(next(topic for topic in result.topics
                               if topic.topic == "报表与数据").supporting_comments, 12)
         self.assertNotIn("c-11", [item.comment_id for item in result.top_comments])
-        exported = report.report_markdown(result)
-        self.assertIn("## 产品评论（按作品）", exported)
-        self.assertIn("## 反馈分析（账号汇总）", exported)
-        self.assertIn("评论 ID：c-11", exported)
-        reviewed = report.review_daily_comment(
-            self.owner["id"], self.project.id, "daily-account", self.day, "c-11", "neutral",
-        )
-        last = next(item for work in reviewed.work_analyses for item in work.comments
-                    if item.comment_id == "c-11")
-        self.assertTrue(last.reviewed)
-        self.assertEqual(last.stance, "neutral")
-        self.assertEqual(next(topic for topic in reviewed.topics
-                              if topic.topic == "报表与数据").supporting_comments, 11)
 
-    def test_work_scope_applies_before_comment_top_fifty_and_to_export(self):
+    def test_work_scope_applies_before_comment_top_fifty(self):
         self._store([
             ("希望支持导出报表", f"u{index}", "work-1", 100 - index, 0)
             for index in range(51)
@@ -218,15 +201,6 @@ class DailyCommentReportTests(unittest.TestCase):
         self.assertEqual({work["item_id"] for work in works}, {"work-1", "work-2"})
         with self.assertRaises(ProjectNotFound):
             lead_tracking.list_tracking_works(self.outsider["id"], self.project.id, "daily-account")
-        account_report = report.generate_daily_report(self.account, self.day)
-        scoped = report.report_for_work(account_report, "work-2")
-        self.assertEqual(scoped.selected_item_id, "work-2")
-        self.assertEqual(scoped.comments_collected, 9)
-        self.assertEqual(len(scoped.work_analyses), 1)
-        self.assertTrue(all(item.item_id == "work-2" for item in scoped.top_comments))
-        self.assertIn("反馈分析（选定作品）", report.report_markdown(scoped))
-        with self.assertRaises(LookupError):
-            report.report_for_work(account_report, "unknown-work")
 
     def test_optional_llm_cannot_cite_another_comment(self):
         self._store([("希望支持导出报表", "u1", "work-1", 1, 0)])
@@ -359,7 +333,6 @@ class DailyCommentReportTests(unittest.TestCase):
                              ("completed", "local_demo", 1))
             self.assertTrue(preview.is_simulated)
             self.assertFalse(preview.collection_complete)
-            self.assertIn("本地模拟数据", report.report_markdown(preview))
             self.assertEqual(report.get_daily_report(
                 self.owner["id"], self.project.id, "daily-account", self.day,
             ).source, "local_demo")
@@ -371,29 +344,33 @@ class DailyCommentReportTests(unittest.TestCase):
             self.owner["id"], self.project.id, "daily-account", self.day,
         ).status, "unavailable")
 
-    def test_topic_decision_is_manual_and_preserved_on_regeneration(self):
+    def test_historical_topic_decision_is_preserved_on_regeneration(self):
         self._store([("希望支持导出报表", "u1", "work-1", 2, 0)])
         report.generate_daily_report(self.account, self.day)
-        selected = report.decide_daily_topic(
-            self.owner["id"], self.project.id, "daily-account", self.day,
-            "报表与数据", "accepted",
-        )
-        self.assertEqual(selected.topics[0].decision, "accepted")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """INSERT INTO lead_daily_report_decisions
+                   (account_key, local_date, topic, status, reviewed_by_user_id, reviewed_at)
+                   VALUES (?, ?, '报表与数据', 'accepted', ?, '2026-10-05T00:00:00Z')""",
+                (self.key, self.day.isoformat(), self.owner["id"]),
+            )
         report.generate_daily_report(self.account, self.day)
         self.assertEqual(report.get_daily_report(
             self.owner["id"], self.project.id, "daily-account", self.day,
         ).topics[0].decision, "accepted")
-        with self.assertRaises(LookupError):
-            report.decide_daily_topic(self.owner["id"], self.project.id, "daily-account",
-                                      self.day, "不存在的议题", "accepted")
 
-    def test_comment_review_overrides_model_and_survives_daily_resync(self):
+    def test_historical_comment_review_overrides_model_and_survives_daily_resync(self):
         items = [("我不需要这个功能", "u1", "work-1", 4, 0)]
         self._store(items)
         report.generate_daily_report(self.account, self.day)
-        corrected = report.review_daily_comment(
-            self.owner["id"], self.project.id, "daily-account", self.day, "c-0", "neutral",
-        )
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """INSERT INTO lead_daily_comment_reviews
+                   (account_key, local_date, comment_id, stance, reviewed_by_user_id, reviewed_at)
+                   VALUES (?, ?, 'c-0', 'neutral', ?, '2026-10-05T00:00:00Z')""",
+                (self.key, self.day.isoformat(), self.owner["id"]),
+            )
+        corrected = report.generate_daily_report(self.account, self.day)
         self.assertTrue(corrected.top_comments[0].reviewed)
         self.assertFalse(corrected.top_comments[0].pending_review)
         self.assertEqual(corrected.top_comments[0].stance, "neutral")
@@ -401,9 +378,6 @@ class DailyCommentReportTests(unittest.TestCase):
             self._store(items)
         refreshed = report.generate_daily_report(self.account, self.day)
         self.assertEqual(refreshed.top_comments[0].stance, "neutral")
-        with self.assertRaises(LookupError):
-            report.review_daily_comment(self.owner["id"], self.project.id,
-                                        "daily-account", self.day, "not-a-comment", "support")
 
     def test_job_claim_is_idempotent_and_retries_failed_work(self):
         self.assertTrue(lead_tracking.LeadTrackingCommentScheduler._claim(self.key, self.day))
@@ -417,7 +391,7 @@ class DailyCommentReportTests(unittest.TestCase):
         self.assertFalse(lead_tracking.LeadTrackingCommentScheduler._claim(self.key, self.day))
 
 
-    def test_report_routes_recheck_access_and_download_real_evidence(self):
+    def test_report_routes_recheck_access_and_expose_original_evidence(self):
         self._store([("希望支持导出报表", "u1", "work-1", 2, 0)])
         report.generate_daily_report(self.account, self.day)
         app = FastAPI()
@@ -439,28 +413,20 @@ class DailyCommentReportTests(unittest.TestCase):
             self.assertEqual(good.status_code, 200)
             self.assertEqual(good.json()["data"]["top_comments"][0]["comment_id"], "c-0")
             self.assertEqual(client.get(f"{path}/daily-reports?date={self.day}", headers=outsider_headers).status_code, 404)
-            self.assertEqual(client.get(f"{path}/daily-report-download?date={self.day}", headers=outsider_headers).status_code, 404)
-            downloaded = client.get(f"{path}/daily-report-download?date={self.day}", headers=owner_headers)
-            self.assertEqual(downloaded.status_code, 200)
-            self.assertIn("c-0", downloaded.text)
-            scoped_download = client.get(
-                f"{path}/daily-report-download?date={self.day}&item_id=work-1&format=json",
-                headers=owner_headers)
-            self.assertEqual(scoped_download.status_code, 200)
-            self.assertEqual(scoped_download.json()["selected_item_id"], "work-1")
-            self.assertEqual(client.get(
-                f"{path}/daily-report-download?date={self.day}&item_id=work-2",
-                headers=owner_headers).status_code, 404)
-            self.assertEqual(client.patch(
-                f"{path}/daily-comment-reviews?date={self.day}", headers=outsider_headers,
-                json={"comment_id": "c-0", "stance": "neutral"},
-            ).status_code, 404)
-            reviewed = client.patch(
-                f"{path}/daily-comment-reviews?date={self.day}", headers=owner_headers,
-                json={"comment_id": "c-0", "stance": "neutral"},
-            )
-            self.assertEqual(reviewed.status_code, 200)
-            self.assertTrue(reviewed.json()["data"]["top_comments"][0]["reviewed"])
+            topic = good.json()["data"]["topics"][0]
+            self.assertEqual(topic["evidence_comment_ids"], ["c-0"])
+            self.assertEqual(topic["evidence_sources"][0]["item_id"], "work-1")
+            routes = app.openapi()["paths"]
+            for retired in (
+                "daily-report-dates", "daily-report-download",
+                "daily-comment-reviews", "daily-report-decisions",
+            ):
+                self.assertNotIn(f"{path}/{retired}".replace(self.project.id, "{project_id}")
+                                 .replace("daily-account", "{account_id}"), routes)
+                method = client.patch if retired in ("daily-comment-reviews", "daily-report-decisions") else client.get
+                self.assertEqual(method(
+                    f"{path}/{retired}?date={self.day}", headers=owner_headers,
+                ).status_code, 404)
 
     def test_notification_recipients_need_both_org_and_project_access(self):
         observer = auth_storage.create_user("observer", "observer@example.com", "hash")

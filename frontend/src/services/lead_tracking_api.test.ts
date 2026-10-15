@@ -1,16 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  accept_opinion_action,
-  download_daily_comment_report,
+  fetch_daily_comment_report,
   fetch_lead_tracking_analysis,
   fetch_lead_tracking_comment_insight,
-  fetch_lead_tracking_works,
-  fetch_opinion_overview,
-  fetch_opinion_details,
-  fetch_opinion_actions,
-  generate_opinion_strategy,
-  update_opinion_action,
+  fetch_project_opinion_monitor,
+  generate_project_opinion_strategy,
   review_lead_tracking_item,
   run_lead_tracking_analysis,
 } from "./lead_tracking_api.ts";
@@ -53,77 +48,64 @@ const overview = {
   theme_status: "ready" as const,
 };
 
-test("opinion overview requests an account window without a work filter", async (context) => {
-  let data: unknown = overview;
-  context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input));
-    assert.equal(url.pathname, "/api/v1/publishing/projects/project/channel-accounts/account/lead-tracking/opinion-overview");
-    assert.equal(url.searchParams.get("days"), "7");
-    assert.equal(url.searchParams.has("item_id"), false);
-    assert.equal(init?.cache, "no-store");
-    return Response.json({ success: true, data });
-  });
-  assert.deepEqual((await fetch_opinion_overview("project", "account", 7)).data, overview);
-  data = { ...overview, question_percent: 140 };
-  await assert.rejects(fetch_opinion_overview("project", "account", 7), /response is invalid/);
+test("project monitoring uses the project endpoint and validates every account's provenance", async (context) => {
+    const details = {
+      period_days: 7, is_simulated: false,
+      performance: { post_count: 2, views: 3000, engagement: 300, risk_count: 0,
+        daily: Array.from({ length: 7 }, (_, index) => ({
+          date: `2026-10-${String(index + 5).padStart(2, "0")}`,
+          views: null, engagement: null, previous_views: null, previous_engagement: null,
+        })) },
+      posts: ["account-a", "account-b"].map((id) => ({
+        item_id: `${id}:post`, title: id, share_url: "", published_at: "",
+        platform: "douyin", views: 1500, engagement: 150, rate: 10, summary: "",
+        account_id: id, account_name: id, project_id: "p/x",
+      })),
+      comments: [{
+        comment_id: "account-a:comment", item_id: "account-a:post", item_title: "Product demo",
+        share_url: "", author: "User 8A1F", content: "Export is slow", created_at: "2026-10-11 16:00",
+        likes: 12, replies: 3, topic: "Reports", mood: "negative", review_required: false,
+        evidence: ["negative_feedback"], platform: "douyin", account_id: "account-a",
+        account_name: "account-a", project_id: "p/x",
+      }],
+    };
+    const actions = { period_days: 7, start_date: overview.start_date, end_date: overview.end_date,
+      is_simulated: false, report_days: 0, pending_review_comments: 0,
+      negative_feedback_comments: 0, actions: [], llm_available: false };
+    let data: unknown = { overview, details, actions };
+    const abort = new AbortController();
+    context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(new URL(String(input)).pathname, "/api/v1/publishing/projects/p%2Fx/opinion-monitor");
+      assert.equal(new URL(String(input)).searchParams.get("days"), "7");
+      assert.equal(init?.signal, abort.signal);
+      assert.equal(init?.cache, "no-store");
+      return Response.json({ success: true, data });
+    });
+    assert.equal((await fetch_project_opinion_monitor("p/x", 7, abort.signal)).data.details.posts.length, 2);
+    data = { overview: { ...overview, status: "partial" }, details, actions };
+    assert.equal((await fetch_project_opinion_monitor("p/x", 7, abort.signal)).data.overview.status, "partial");
+    for (const invalid of [
+      { overview: { ...overview, demand_percent: 200 }, details, actions },
+      { overview: { ...overview, question_percent: 140 }, details, actions },
+      { overview, details: { ...details, comments: [{ ...details.comments[0], evidence: [42] }] }, actions },
+      { overview, details: { ...details, posts: [{ ...details.posts[0], project_id: "other" }] }, actions },
+      { overview, details: { ...details, posts: [{ ...details.posts[0], account_id: "" }] }, actions },
+      { overview, details, actions: { ...actions, report_days: 9 } },
+    ]) {
+      data = invalid;
+      await assert.rejects(fetch_project_opinion_monitor("p/x", 7, abort.signal), /response is invalid/);
+    }
 });
 
-test("opinion details keep scoped post metrics and full comment evidence typed", async (context) => {
-  const details = {
-    period_days: 7, is_simulated: false,
-    performance: { post_count: 1, views: 1000, engagement: 100, risk_count: 1,
-      daily: Array.from({ length: 7 }, (_, index) => ({
-        date: `2026-10-${String(index + 5).padStart(2, "0")}`, views: 100 + index,
-        engagement: 10 + index, previous_views: null, previous_engagement: null,
-      })) },
-    posts: [{ item_id: "post-1", title: "Product demo", share_url: "", published_at: "2026-10-11T08:00:00Z",
-      platform: "douyin", views: 1000, engagement: 100, rate: 10, summary: "Two comments" }],
-    comments: [{ comment_id: "comment-1", item_id: "post-1", item_title: "Product demo", share_url: "",
-      author: "User 8A1F", content: "Export is slow", created_at: "2026-10-11 16:00", likes: 12, replies: 3,
-      topic: "Reports", mood: "negative", review_required: false, evidence: ["negative_feedback"],
-      platform: "douyin" }],
-  };
-  let data: unknown = details;
-  context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input));
-    assert.equal(url.pathname, "/api/v1/publishing/projects/project/channel-accounts/account/lead-tracking/opinion-details");
-    assert.equal(url.searchParams.get("days"), "7");
-    assert.equal(init?.cache, "no-store");
-    return Response.json({ success: true, data });
-  });
-  assert.deepEqual((await fetch_opinion_details("project", "account", 7)).data, details);
-  data = { ...details, comments: [{ ...details.comments[0], evidence: [42] }] };
-  await assert.rejects(fetch_opinion_details("project", "account", 7), /response is invalid/);
-});
-
-test("opinion follow-up stays scoped and strategy uses an explicit POST", async (context) => {
-  const actions = {
-    period_days: 7, start_date: "2026-10-06", end_date: "2026-10-12",
-    is_simulated: false, report_days: 1, pending_review_comments: 1,
-    negative_feedback_comments: 0, llm_available: true,
-    actions: [{ id: "a1", topic: "报表与数据", status: "accepted", completed: false,
-      latest_date: "2026-10-12", source_dates: ["2026-10-12"], report_count: 1,
-      conclusion: "需要改进", product_suggestion: "核对流程", marketing_suggestion: "整理问答",
-      evidence_comment_ids: ["c1"] }],
-  };
-  const strategy = { status: "completed", period_days: 7, headline: "先核对报表需求",
-    recommendations: [{ title: "访谈用户", next_step: "确认使用场景", rationale: "已有评论记录",
-      evidence_action_ids: ["a1"], source_dates: ["2026-10-12"] }] };
-  const methods: string[] = [];
-  context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input));
-    assert.equal(url.pathname.startsWith("/api/v1/publishing/projects/project/channel-accounts/account/lead-tracking/"), true);
-    assert.equal(url.searchParams.get("days"), "7");
-    methods.push(init?.method || "GET");
-    if (init?.method === "PATCH") assert.deepEqual(JSON.parse(String(init.body)), { action_id: "a1", completed: true });
-    if (url.pathname.endsWith("opinion-actions/accept")) assert.deepEqual(JSON.parse(String(init?.body)), { action_id: "a1" });
-    return Response.json({ success: true, data: url.pathname.endsWith("opinion-strategy") ? strategy : actions });
-  });
-  assert.deepEqual((await fetch_opinion_actions("project", "account", 7)).data, actions);
-  assert.deepEqual((await update_opinion_action("project", "account", 7, "a1", true)).data, actions);
-  assert.deepEqual((await accept_opinion_action("project", "account", 7, "a1")).data, actions);
-  assert.deepEqual((await generate_opinion_strategy("project", "account", 7)).data, strategy);
-  assert.deepEqual(methods, ["GET", "PATCH", "POST", "POST"]);
+test("project strategy remains explicit and does not fall back to a selected account", async (context) => {
+    const strategy = { status: "insufficient_data", period_days: 30, headline: "", recommendations: [] };
+    context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(new URL(String(input)).pathname, "/api/v1/publishing/projects/project/opinion-strategy");
+      assert.equal(new URL(String(input)).searchParams.get("days"), "30");
+      assert.equal(init?.method, "POST");
+      return Response.json({ success: true, data: strategy });
+    });
+    assert.deepEqual((await generate_project_opinion_strategy("project", 30)).data, strategy);
 });
 
 test("comment insight requests are scoped, no-store and preserve exact snapshot data", async (context) => {
@@ -139,28 +121,33 @@ test("comment insight requests are scoped, no-store and preserve exact snapshot 
   assert.deepEqual((await fetch_lead_tracking_comment_insight("project", "account", "2026-10-04", controller.signal)).data, insight);
 });
 
-test("account works are loaded separately and comment ranking is requested within the selected work", async (context) => {
+test("daily reports retain latest and historical account reads without retired controls", async (context) => {
+  const report = {
+    status: "completed", date: "2026-10-04", topics: [], top_comments: [],
+    semantic_status: "rules_only", collection_complete: true, is_simulated: false,
+    comments_collected: 0, distinct_users: 0, purchase_intent_comments: 0,
+    feature_request_comments: 0, negative_feedback_comments: 0,
+    negated_comments: 0, pending_review_comments: 0,
+  };
+  let data: unknown = report;
+  const controller = new AbortController();
   const requests: URL[] = [];
-  const works = [{ item_id: "item-1", title: "Product video", share_url: "" }];
-  context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL) => {
+  context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     requests.push(url);
-    return Response.json({ success: true, data: url.pathname.endsWith("/works") ? works : insight });
+    assert.equal(url.pathname, "/api/v1/publishing/projects/p%2Fx/channel-accounts/a%2Fx/lead-tracking/daily-reports");
+    assert.equal(init?.cache, "no-store");
+    assert.equal(init?.signal, controller.signal);
+    return Response.json({ success: true, data });
   });
-  assert.deepEqual(await fetch_lead_tracking_works("project", "account"), works);
-  await fetch_lead_tracking_comment_insight("project", "account", "2026-10-04", undefined, "item-1");
-  assert.equal(requests[0].pathname.endsWith("/lead-tracking/works"), true);
-  assert.equal(requests[1].searchParams.get("item_id"), "item-1");
-});
-
-test("daily report export follows the selected work", async (context) => {
-  const requests: URL[] = [];
-  context.mock.method(globalThis, "fetch", async (input: RequestInfo | URL) => {
-    requests.push(new URL(String(input)));
-    return new Response("report", { status: 200 });
-  });
-  await download_daily_comment_report("project", "account", "2026-10-04", "md", "item-1");
-  assert.equal(requests[0].searchParams.get("item_id"), "item-1");
+  assert.deepEqual((await fetch_daily_comment_report("p/x", "a/x", "", controller.signal)).data, report);
+  await fetch_daily_comment_report("p/x", "a/x", "2026-10-04", controller.signal);
+  assert.equal(requests[0].search, "");
+  assert.equal(requests[1].searchParams.get("date"), "2026-10-04");
+  for (const invalid of [null, { ...report, topics: [{}] }, { ...report, comments_collected: -1 }]) {
+    data = invalid;
+    await assert.rejects(fetch_daily_comment_report("p/x", "a/x", "", controller.signal), /response is invalid/);
+  }
 });
 
 test("invalid statuses, dates, limits and comments never become valid empty insights", async (context) => {

@@ -51,7 +51,7 @@ export function leadTrackingEntityHref(
 ): string {
   const binding = entity.bindings.find((item) => item.project_id === preferredProjectId)
     || entity.bindings[0];
-  return `/lead_tracking/${encodeURIComponent(binding.id)}?project=${encodeURIComponent(binding.project_id)}`;
+  return `/opinion_tracking?project=${encodeURIComponent(binding.project_id)}&view=accounts&account=${encodeURIComponent(binding.id)}`;
 }
 
 export function filterLeadTrackingEntities(

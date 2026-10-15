@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useI18n } from "@/contexts/i18n_context";
 import { useToast } from "@/contexts/toast_context";
+import InlineIcon from "@/components/redesign/InlineIcon";
+import WorkspaceEmptyState from "@/components/redesign/WorkspaceEmptyState";
 import type { OpinionOverview, OpinionPerformance, OpinionPerformancePoint } from "@/types/lead_tracking";
 
 type Props = { data: OpinionOverview | null; loading: boolean; error: string;
@@ -71,9 +73,9 @@ function PerformanceTrend({ performance }: { performance: OpinionPerformance | n
       </svg>
       <div className="amp-opinion-chart-dates">{points.map((point, index) => <span key={point.date}>
         {visibleLabels && !visibleLabels.has(index) ? "" : point.date.slice(5).replace("-", ".")}</span>)}</div>
-    </div> : <div className="amp-opinion-chart-empty" role="status">{t("暂无推广表现数据", "No promotion metrics yet")}</div>}
-    <div className="amp-opinion-trend-legend"><span><i />{label}</span>
-      {priorPath && <span className="is-prior"><i />{t("前期对比", "Previous period")}</span>}</div>
+    </div> : <p className="amp-opinion-inline-empty" role="status">{t("暂无表现数据", "No performance data")}</p>}
+    {values.length > 0 && <div className="amp-opinion-trend-legend"><span><i />{label}</span>
+      {priorPath && <span className="is-prior"><i />{t("前期对比", "Previous period")}</span>}</div>}
   </>;
 }
 
@@ -86,14 +88,15 @@ function Sentiment({ data }: { data: OpinionOverview }) {
   const positive = data.sentiments.find((item) => item.key === "positive")?.percent || 0;
   return <div className="amp-opinion-sentiment-layout">
     <div className="amp-opinion-donut" role="img"
-      aria-label={data.sentiments.map((item) => `${t(item.label, moodEn[item.key] || item.label)} ${item.percent}%`).join(", ")}
+      aria-label={data.sentiments.map((item) => `${t(item.label, moodEn[item.key] || item.label)} ${item.percent}%`).join(", ")
+        || t("暂无评论情绪数据", "No comment sentiment data")}
       style={{ background: `conic-gradient(${stops || "#e7edf6 0% 100%"})` }}>
-      <div><strong>{positive}%</strong><span>{t("正向", "Positive")}</span></div>
+      <div><strong>{data.comments_collected ? `${positive}%` : "—"}</strong><span>{t("正向", "Positive")}</span></div>
     </div>
-    <div className="amp-opinion-sentiment-legend">{data.sentiments.map((item) => <div key={item.key}>
+    {data.sentiments.length > 0 && <div className="amp-opinion-sentiment-legend">{data.sentiments.map((item) => <div key={item.key}>
       <span><i style={{ backgroundColor: tones[item.key] || "#adb8cd" }} />{t(item.label, moodEn[item.key] || item.label)}</span>
       <strong>{item.percent}%</strong>
-    </div>)}</div>
+    </div>)}</div>}
   </div>;
 }
 
@@ -115,7 +118,7 @@ function Topics({ data }: { data: OpinionOverview }) {
   }
   return <section className="amp-opinion-display-card amp-opinion-topics-card" aria-labelledby="opinion-theme-title">
     <div className="amp-opinion-card-head"><h2 id="opinion-theme-title">{t("用户关注话题", "Audience topics")}</h2>
-      {data.theme_status === "ready" && !!clusters.length && <button type="button" className="amp-opinion-topic-copy"
+      {data.theme_status === "ready" && !!clusters.length && <button type="button" className="amp-opinion-topic-copy amp-text-action"
         onClick={() => { void copyInsights(); }}>{t("复制摘要", "Copy summary")}</button>}</div>
     {data.theme_status === "ready" && clusters.length ? <div className="amp-opinion-topic-bars">
       {clusters.map((cluster) => <div className="amp-opinion-topic" key={cluster.key}>
@@ -127,33 +130,31 @@ function Topics({ data }: { data: OpinionOverview }) {
           <div style={{ width: `${cluster.count / maxCount * 100}%` }} /></div>
         <div className="amp-opinion-topic-keywords">{cluster.keywords.join(" · ")}</div>
       </div>)}
-    </div> : <div className="amp-opinion-topic-empty" role="status">
-      {t("暂无评论主题", "No comment topics")}
-    </div>}
+    </div> : <p className="amp-opinion-inline-empty" role="status">{t("暂无话题", "No topics")}</p>}
   </section>;
 }
 
 export default function OpinionOverviewPanel({ data, performance, loading, error, onRetry }: Props) {
   const { t } = useI18n();
-  if (loading) return <div className="amp-opinion-state" role="status">{t("正在汇总评论…", "Loading comment overview…")}</div>;
-  if (error) return <div className="amp-opinion-state" role="alert">{error}
-    <button type="button" onClick={onRetry}>{t("重试", "Retry")}</button></div>;
-  if (!data) return <div className="amp-opinion-state" role="status">
-    {t("该时段还没有可用的评论数据。", "No comment data is available for this period.")}</div>;
+  if (loading) return <div className="amp-page-state" role="status">{t("正在汇总评论…", "Loading comment overview…")}</div>;
+  if (error) return <div className="amp-page-state" role="alert">{error}
+    <button type="button" className="amp-button amp-button-secondary" onClick={onRetry}>{t("重试", "Retry")}</button></div>;
+  if (!data) return <WorkspaceEmptyState icon="message" title={t("暂无评论数据", "No comment data")}
+    description={t("该时段还没有可用的评论数据。", "No comment data is available for this period.")} />;
   const positive = data.sentiments.find((item) => item.key === "positive")?.percent || 0;
   return <div className="amp-opinion-dashboard">
     <div className="amp-opinion-section-title"><h2>{t("关键监测指标", "Key metrics")}</h2>
       {process.env.NODE_ENV === "development" && data.is_simulated
         && <span className="amp-opinion-demo">{t("本地模拟数据", "Local simulated data")}</span>}</div>
     <section className="amp-opinion-metric-grid" aria-label={t("关键监测指标", "Key metrics")}>
-      <div><span>{t("推广内容", "Promotion posts")}</span><i className="amp-opinion-metric-icon is-blue">▤</i><strong>{performance ? formatMetric(performance.post_count) : "—"}</strong></div>
-      <div><span>{t("累计曝光", "Total exposure")}</span><i className="amp-opinion-metric-icon is-teal">◎</i><strong>{formatMetric(performance?.views, true)}</strong></div>
-      <div><span>{t("内容互动", "Content engagement")}</span><i className="amp-opinion-metric-icon is-violet">♡</i><strong>{formatMetric(performance?.engagement)}</strong></div>
-      <div><span>{t("正向评论占比", "Positive share")}</span><i className="amp-opinion-metric-icon is-orange">▣</i><strong>{data.comments_collected ? `${positive}%` : "—"}</strong></div>
-      <div><span>{t("待处置风险", "Risks to review")}</span><i className="amp-opinion-metric-icon is-red">△</i><strong>{performance ? formatMetric(performance.risk_count) : "—"}</strong></div>
+      <div><span>{t("推广内容", "Promotion posts")}</span><InlineIcon name="content" className="amp-opinion-metric-icon" /><strong>{performance ? formatMetric(performance.post_count) : "—"}</strong></div>
+      <div><span>{t("累计曝光", "Total exposure")}</span><InlineIcon name="eye" className="amp-opinion-metric-icon" /><strong>{formatMetric(performance?.views, true)}</strong></div>
+      <div><span>{t("内容互动", "Content engagement")}</span><InlineIcon name="heart" className="amp-opinion-metric-icon" /><strong>{formatMetric(performance?.engagement)}</strong></div>
+      <div><span>{t("正向评论占比", "Positive share")}</span><InlineIcon name="message" className="amp-opinion-metric-icon" /><strong>{data.comments_collected ? `${positive}%` : "—"}</strong></div>
+      <div><span>{t("待处置风险", "Risks to review")}</span><InlineIcon name="alert" className="amp-opinion-metric-icon" /><strong>{performance ? formatMetric(performance.risk_count) : "—"}</strong></div>
     </section>
     <div className="amp-opinion-main-grid">
-      <section className="amp-opinion-display-card" aria-labelledby="opinion-trend-title">
+      <section className="amp-opinion-display-card amp-opinion-trend-card" aria-labelledby="opinion-trend-title">
         <PerformanceTrend performance={performance} />
       </section>
       <section className="amp-opinion-display-card" aria-labelledby="opinion-sentiment-title">

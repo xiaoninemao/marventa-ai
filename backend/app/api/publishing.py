@@ -21,12 +21,11 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import RedirectResponse
-from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from app.auth.dependencies import get_current_user
 from app.ai_provider import AIProviderConfigurationError
+from app.auth.dependencies import get_current_user
 from app.config import (
     ALLOWED_IMAGE_EXTENSIONS,
     ALLOWED_VIDEO_EXTENSIONS,
@@ -51,6 +50,7 @@ from app.engines.publishing.channel_oauth import (
     poll_xiaohongshu_authorization,
     start_channel_authorization,
 )
+from app.engines.publishing.daily_comment_report import get_daily_report
 from app.engines.publishing.document_copy import parse_document_copy
 from app.engines.publishing.lead_analysis import (
     LeadAnalysisProviderError,
@@ -58,22 +58,9 @@ from app.engines.publishing.lead_analysis import (
     get_lead_analysis,
     review_lead,
 )
-from app.engines.publishing.lead_tracking import get_comment_insight, list_tracking_works
-from app.engines.publishing.opinion_monitor import get_opinion_overview
-from app.engines.publishing.opinion_details import get_opinion_details
-from app.engines.publishing.opinion_strategy import (
-    accept_opinion_action,
-    generate_opinion_strategy,
-    get_opinion_actions,
-    set_opinion_action_completed,
-)
-from app.engines.publishing.daily_comment_report import (
-    decide_daily_topic,
-    get_daily_report,
-    list_daily_report_dates,
-    report_for_work,
-    report_markdown,
-    review_daily_comment,
+from app.engines.publishing.lead_tracking import (
+    get_comment_insight,
+    list_tracking_works,
 )
 from app.engines.publishing.material_copy import (
     DOCUMENT_CONTENT_TYPES,
@@ -97,6 +84,14 @@ from app.engines.publishing.models import (
     PublicationPlanUpdate,
     PublicationWorkSelection,
     UpdateProjectRequest,
+)
+from app.engines.publishing.opinion_details import get_opinion_details
+from app.engines.publishing.opinion_monitor import get_opinion_overview
+from app.engines.publishing.opinion_strategy import (
+    accept_opinion_action,
+    generate_opinion_strategy,
+    get_opinion_actions,
+    set_opinion_action_completed,
 )
 from app.engines.publishing.project_channel_accounts import (
     InvalidChannelAuthorizationState,
@@ -126,6 +121,10 @@ from app.engines.publishing.project_memberships import (
     list_project_members,
     remove_project_member,
     update_project_member_role,
+)
+from app.engines.publishing.project_opinion import (
+    generate_project_opinion_strategy,
+    get_project_opinion_monitor,
 )
 from app.engines.publishing.projects import (
     ProjectNameExists,
@@ -742,6 +741,49 @@ async def get_channel_account_tracking_works(
     return success_response("Tracked account works retrieved", works)
 
 
+@router.get("/projects/{project_id}/opinion-monitor")
+async def get_project_opinion_monitor_route(
+    project_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    days: Annotated[int, Query()] = 7,
+):
+    if days not in (7, 30):
+        raise HTTPException(status_code=422, detail="days must be 7 or 30")
+    try:
+        result = await run_in_threadpool(
+            get_project_opinion_monitor, current_user["id"], project_id, days,
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return success_response("Project opinion monitor retrieved", result.model_dump())
+
+
+@router.post("/projects/{project_id}/opinion-strategy")
+async def create_project_opinion_strategy_route(
+    project_id: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    days: Annotated[int, Query()] = 7,
+):
+    if days not in (7, 30):
+        raise HTTPException(status_code=422, detail="days must be 7 or 30")
+    try:
+        result = await run_in_threadpool(
+            generate_project_opinion_strategy, current_user["id"], project_id, days,
+        )
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectPermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except AIProviderConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Project opinion strategy generation failed")
+        raise HTTPException(status_code=502, detail="Opinion strategy generation failed") from exc
+    return success_response("Project opinion strategy generated", result.model_dump())
+
+
 @router.get("/projects/{project_id}/channel-accounts/{account_id}/lead-tracking/opinion-overview")
 async def get_channel_account_opinion_overview(
     project_id: str,
@@ -892,16 +934,6 @@ async def get_channel_account_comment_insights(
     return success_response("Daily comment insight retrieved", result.model_dump())
 
 
-class DailyTopicDecisionRequest(BaseModel):
-    topic: str = Field(min_length=1, max_length=200)
-    status: Literal["pending", "accepted", "dismissed"]
-
-
-class DailyCommentReviewRequest(BaseModel):
-    comment_id: str = Field(min_length=1, max_length=512)
-    stance: Literal["support", "oppose", "neutral", "uncertain"]
-
-
 @router.get("/projects/{project_id}/channel-accounts/{account_id}/lead-tracking/daily-reports")
 async def get_channel_account_daily_report(
     project_id: str, account_id: str,
@@ -915,86 +947,6 @@ async def get_channel_account_daily_report(
     except ProjectNotFound as exc:
         raise HTTPException(status_code=404, detail="Channel account not found") from exc
     return success_response("Daily comment report retrieved", report.model_dump())
-
-
-@router.get("/projects/{project_id}/channel-accounts/{account_id}/lead-tracking/daily-report-dates")
-async def get_channel_account_daily_report_dates(
-    project_id: str, account_id: str,
-    current_user: Annotated[dict, Depends(get_current_user)],
-):
-    try:
-        dates = await run_in_threadpool(
-            list_daily_report_dates, current_user["id"], project_id, account_id,
-        )
-    except ProjectNotFound as exc:
-        raise HTTPException(status_code=404, detail="Channel account not found") from exc
-    return success_response("Daily report dates retrieved", dates)
-
-
-@router.get("/projects/{project_id}/channel-accounts/{account_id}/lead-tracking/daily-report-download")
-async def download_channel_account_daily_report(
-    project_id: str, account_id: str,
-    current_user: Annotated[dict, Depends(get_current_user)],
-    snapshot_date: Annotated[date, Query(alias="date")],
-    format: Literal["json", "md"] = "md",
-    item_id: Annotated[str, Query(max_length=512)] = "",
-):
-    try:
-        report = await run_in_threadpool(
-            get_daily_report, current_user["id"], project_id, account_id, snapshot_date,
-        )
-    except ProjectNotFound as exc:
-        raise HTTPException(status_code=404, detail="Channel account not found") from exc
-    if report.status not in ("completed", "partial"):
-        raise HTTPException(status_code=404, detail="Daily report not found")
-    try:
-        report = report_for_work(report, item_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    payload = report.model_dump_json(indent=2) if format == "json" else report_markdown(report)
-    return Response(
-        content=payload,
-        media_type="application/json; charset=utf-8" if format == "json" else "text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="comment-report-{snapshot_date.isoformat()}.{format}"'},
-    )
-
-
-@router.patch("/projects/{project_id}/channel-accounts/{account_id}/lead-tracking/daily-report-decisions")
-async def review_channel_account_daily_topic(
-    project_id: str, account_id: str, body: DailyTopicDecisionRequest,
-    current_user: Annotated[dict, Depends(get_current_user)],
-    snapshot_date: Annotated[date, Query(alias="date")],
-):
-    try:
-        report = await run_in_threadpool(
-            decide_daily_topic, current_user["id"], project_id, account_id,
-            snapshot_date, body.topic, body.status,
-        )
-    except ProjectNotFound as exc:
-        raise HTTPException(status_code=404, detail="Channel account not found") from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return success_response("Daily report decision updated", report.model_dump())
-
-
-@router.patch("/projects/{project_id}/channel-accounts/{account_id}/lead-tracking/daily-comment-reviews")
-async def review_channel_account_daily_comment(
-    project_id: str, account_id: str, body: DailyCommentReviewRequest,
-    current_user: Annotated[dict, Depends(get_current_user)],
-    snapshot_date: Annotated[date, Query(alias="date")],
-):
-    try:
-        report = await run_in_threadpool(
-            review_daily_comment, current_user["id"], project_id, account_id,
-            snapshot_date, body.comment_id, body.stance,
-        )
-    except ProjectNotFound as exc:
-        raise HTTPException(status_code=404, detail="Channel account not found") from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return success_response("Daily comment review updated", report.model_dump())
 
 
 @router.get(

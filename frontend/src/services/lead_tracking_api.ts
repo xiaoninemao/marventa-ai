@@ -6,38 +6,20 @@ import type {
   LeadReviewStatus,
   LeadTrackingAnalysis,
   LeadTrackingCommentInsight,
-  LeadTrackingWork,
   OpinionOverview,
   OpinionDetails,
   OpinionActionSummary,
   OpinionStrategy,
+  ProjectOpinionMonitor,
 } from "@/types/lead_tracking";
 
 const statuses = new Set(["completed", "partial", "unavailable", "failed"]);
 
-export async function fetch_lead_tracking_works(
-  projectId: string, accountId: string, signal?: AbortSignal,
-): Promise<LeadTrackingWork[]> {
-  const response = await fetch(
-    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(projectId)}/channel-accounts/${encodeURIComponent(accountId)}/lead-tracking/works`,
-    { headers: auth_headers(), signal, cache: "no-store" },
-  );
-  if (!response.ok) throw await response_error(response, "Could not load account works");
-  const body: ItemResponse<LeadTrackingWork[]> = await response.json();
-  if (!body.success || !Array.isArray(body.data) || body.data.some((work) =>
-    !work || typeof work.item_id !== "string" || !work.item_id
-    || typeof work.title !== "string" || typeof work.share_url !== "string")) {
-    throw apiError("Account works response is invalid");
-  }
-  return body.data;
-}
-
 export async function fetch_lead_tracking_comment_insight(
-  projectId: string, accountId: string, date = "", signal?: AbortSignal, itemId = "",
+  projectId: string, accountId: string, date = "", signal?: AbortSignal,
 ): Promise<ItemResponse<LeadTrackingCommentInsight>> {
   const query = new URLSearchParams();
   if (date) query.set("date", date);
-  if (itemId) query.set("item_id", itemId);
   const response = await fetch(
     `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(projectId)}/channel-accounts/${encodeURIComponent(accountId)}/lead-tracking/comment-insights${query.size ? `?${query}` : ""}`,
     { headers: auth_headers(), signal, cache: "no-store" },
@@ -139,17 +121,10 @@ function reportPath(projectId: string, accountId: string): string {
   return `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(projectId)}/channel-accounts/${encodeURIComponent(accountId)}/lead-tracking`;
 }
 
-export async function fetch_opinion_overview(
-  projectId: string, accountId: string, days: 7 | 30, signal?: AbortSignal,
-): Promise<ItemResponse<OpinionOverview>> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/opinion-overview?days=${days}`, {
-    headers: auth_headers(), signal, cache: "no-store",
-  });
-  if (!response.ok) throw await response_error(response, "Could not load opinion overview");
-  const body: ItemResponse<OpinionOverview> = await response.json();
+function validateOpinionOverview(body: ItemResponse<OpinionOverview>, days: 7 | 30): ItemResponse<OpinionOverview> {
   const data = body.data;
   const validPercent = (value: number) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
-  if (!body.success || !data || !["completed", "unavailable"].includes(data.status)
+  if (!body.success || !data   || !["completed", "partial", "unavailable"].includes(data.status)
     || data.period_days !== days || !/^\d{4}-\d{2}-\d{2}$/.test(data.start_date)
     || !/^\d{4}-\d{2}-\d{2}$/.test(data.end_date) || typeof data.timezone !== "string"
     || typeof data.is_simulated !== "boolean" || !Number.isInteger(data.covered_days)
@@ -177,14 +152,7 @@ export async function fetch_opinion_overview(
   return body;
 }
 
-export async function fetch_opinion_details(
-  projectId: string, accountId: string, days: 7 | 30, signal?: AbortSignal,
-): Promise<ItemResponse<OpinionDetails>> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/opinion-details?days=${days}`, {
-    headers: auth_headers(), signal, cache: "no-store",
-  });
-  if (!response.ok) throw await response_error(response, "Could not load opinion details");
-  const body: ItemResponse<OpinionDetails> = await response.json();
+function validateOpinionDetails(body: ItemResponse<OpinionDetails>, days: 7 | 30): ItemResponse<OpinionDetails> {
   const data = body.data;
   if (!body.success || !data || data.period_days !== days || typeof data.is_simulated !== "boolean"
     || !Array.isArray(data.posts) || !Array.isArray(data.comments)
@@ -238,46 +206,7 @@ function validateOpinionActions(body: ItemResponse<OpinionActionSummary>, days: 
   return body;
 }
 
-export async function fetch_opinion_actions(
-  projectId: string, accountId: string, days: 7 | 30, signal?: AbortSignal,
-): Promise<ItemResponse<OpinionActionSummary>> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/opinion-actions?days=${days}`, {
-    headers: auth_headers(), signal, cache: "no-store",
-  });
-  if (!response.ok) throw await response_error(response, "Could not load opinion actions");
-  return validateOpinionActions(await response.json(), days);
-}
-
-export async function update_opinion_action(
-  projectId: string, accountId: string, days: 7 | 30, actionId: string, completed: boolean,
-): Promise<ItemResponse<OpinionActionSummary>> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/opinion-actions?days=${days}`, {
-    method: "PATCH", headers: { ...auth_headers(), "Content-Type": "application/json" },
-    body: JSON.stringify({ action_id: actionId, completed }),
-  });
-  if (!response.ok) throw await response_error(response, "Could not update opinion action");
-  return validateOpinionActions(await response.json(), days);
-}
-
-export async function accept_opinion_action(
-  projectId: string, accountId: string, days: 7 | 30, actionId: string,
-): Promise<ItemResponse<OpinionActionSummary>> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/opinion-actions/accept?days=${days}`, {
-    method: "POST", headers: { ...auth_headers(), "Content-Type": "application/json" },
-    body: JSON.stringify({ action_id: actionId }),
-  });
-  if (!response.ok) throw await response_error(response, "Could not accept opinion action");
-  return validateOpinionActions(await response.json(), days);
-}
-
-export async function generate_opinion_strategy(
-  projectId: string, accountId: string, days: 7 | 30,
-): Promise<ItemResponse<OpinionStrategy>> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/opinion-strategy?days=${days}`, {
-    method: "POST", headers: auth_headers(), cache: "no-store",
-  });
-  if (!response.ok) throw await response_error(response, "Could not generate opinion strategy");
-  const body: ItemResponse<OpinionStrategy> = await response.json();
+function validateOpinionStrategy(body: ItemResponse<OpinionStrategy>, days: 7 | 30): ItemResponse<OpinionStrategy> {
   const data = body.data;
   if (!body.success || !data || data.period_days !== days
     || !["completed", "insufficient_data"].includes(data.status) || typeof data.headline !== "string"
@@ -287,6 +216,39 @@ export async function generate_opinion_strategy(
     throw apiError("Opinion strategy response is invalid");
   }
   return body;
+}
+
+export async function fetch_project_opinion_monitor(
+  projectId: string, days: 7 | 30, signal?: AbortSignal,
+): Promise<ItemResponse<ProjectOpinionMonitor>> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(projectId)}/opinion-monitor?days=${days}`,
+    { headers: auth_headers(), signal, cache: "no-store" },
+  );
+  if (!response.ok) throw await response_error(response, "Could not load opinion overview");
+  const body: ItemResponse<ProjectOpinionMonitor> = await response.json();
+  if (!body.success || !body.data) throw apiError("Opinion overview response is invalid");
+  validateOpinionOverview({ ...body, data: body.data.overview }, days);
+  validateOpinionDetails({ ...body, data: body.data.details }, days);
+  validateOpinionActions({ ...body, data: body.data.actions }, days);
+  const records = [...body.data.details.posts, ...body.data.details.comments, ...body.data.actions.actions];
+  if (records.some((record) => record.project_id !== projectId
+    || typeof record.account_id !== "string" || !record.account_id
+    || typeof record.account_name !== "string" || !record.account_name)) {
+    throw apiError("Opinion details response is invalid");
+  }
+  return body;
+}
+
+export async function generate_project_opinion_strategy(
+  projectId: string, days: 7 | 30,
+): Promise<ItemResponse<OpinionStrategy>> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/publishing/projects/${encodeURIComponent(projectId)}/opinion-strategy?days=${days}`,
+    { method: "POST", headers: auth_headers(), cache: "no-store" },
+  );
+  if (!response.ok) throw await response_error(response, "Could not generate opinion strategy");
+  return validateOpinionStrategy(await response.json(), days);
 }
 
 function validateDailyReport(body: ItemResponse<DailyCommentReport>): ItemResponse<DailyCommentReport> {
@@ -317,41 +279,4 @@ export async function fetch_daily_comment_report(
   });
   if (!response.ok) throw await response_error(response, "Could not load daily comment report");
   return validateDailyReport(await response.json());
-}
-
-export async function fetch_daily_report_dates(projectId: string, accountId: string): Promise<string[]> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/daily-report-dates`, {
-    headers: auth_headers(), cache: "no-store",
-  });
-  if (!response.ok) throw await response_error(response, "Could not load report dates");
-  const body: ItemResponse<string[]> = await response.json();
-  if (!body.success || !Array.isArray(body.data) || body.data.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
-    throw apiError("Daily report dates response is invalid");
-  }
-  return body.data;
-}
-
-export async function review_daily_report_comment(
-  projectId: string, accountId: string, date: string, commentId: string,
-  stance: "support" | "oppose" | "neutral" | "uncertain",
-): Promise<ItemResponse<DailyCommentReport>> {
-  const response = await fetch(`${reportPath(projectId, accountId)}/daily-comment-reviews?date=${encodeURIComponent(date)}`, {
-    method: "PATCH", headers: { ...auth_headers(), "Content-Type": "application/json" },
-    body: JSON.stringify({ comment_id: commentId, stance }),
-  });
-  if (!response.ok) throw await response_error(response, "Could not review daily comment");
-  return validateDailyReport(await response.json());
-}
-
-export async function download_daily_comment_report(
-  projectId: string, accountId: string, date: string, format: "md" | "json" = "md", itemId = "",
-): Promise<Blob> {
-  const query = new URLSearchParams({ date, format });
-  if (itemId) query.set("item_id", itemId);
-  const response = await fetch(
-    `${reportPath(projectId, accountId)}/daily-report-download?${query}`,
-    { headers: auth_headers(), cache: "no-store" },
-  );
-  if (!response.ok) throw await response_error(response, "Could not download daily comment report");
-  return response.blob();
 }

@@ -82,7 +82,7 @@ export default function PublicHomepage() {
           <div className="amp-public-container amp-public-nav">
             <a href="#top" className="amp-public-brand" aria-label={t("Marventa AI 首页", "Marventa AI home")}
               onClick={(event) => navigateSection("#top", event)}>
-              <Image src="/assets/brand/marventa-logo.png" alt="" width={48} height={33} priority />
+              <Image src="/assets/brand/marventa-mark.png" alt="" width={35} height={20} sizes="36px" priority />
               <span>Marventa AI</span>
             </a>
             <div className="amp-public-nav-actions">

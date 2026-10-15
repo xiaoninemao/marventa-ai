@@ -5,7 +5,7 @@ export default async function LegacyOpinionPage({ searchParams }: {
 }) {
   const params = await searchParams;
   const query = new URLSearchParams();
-  for (const key of ["project", "account", "days"] as const) {
+  for (const key of ["project", "days"] as const) {
     const value = params[key];
     if (typeof value === "string" && value) query.set(key, value);
   }

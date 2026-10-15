@@ -24,11 +24,11 @@ const MODULES = {
     all: ["全部账号", "All accounts"],
   },
   leadTracking: {
-    path: "/lead_tracking", storage: "amp-lead-tracking-sidebar-collapsed", icon: "target",
-    filter: ["线索追踪项目筛选", "Lead tracking project filter"],
-    expand: ["展开线索追踪侧栏", "Expand lead tracking sidebar"],
-    collapse: ["收起线索追踪侧栏", "Collapse lead tracking sidebar"],
-    all: ["全部账号", "All accounts"],
+    path: "/opinion_tracking", storage: "amp-lead-tracking-sidebar-collapsed", icon: "radar",
+    filter: ["舆情追踪项目筛选", "Opinion tracking project filter"],
+    expand: ["展开舆情追踪侧栏", "Expand opinion tracking sidebar"],
+    collapse: ["收起舆情追踪侧栏", "Collapse opinion tracking sidebar"],
+    all: ["全部项目", "All projects"],
   },
 } as const;
 

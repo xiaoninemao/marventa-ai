@@ -241,13 +241,20 @@ def get_opinion_overview(
     start = end - timedelta(days=period_days - 1)
     training_start = end - timedelta(days=29)
     allow_demo = _local_demo_preview(account)
+    runs, rows = _opinion_evidence(account, training_start.isoformat(), end.isoformat())
+    return _overview_from_evidence(key, runs, rows, period_days, start, end, allow_demo)
+
+
+def _opinion_evidence(account: dict, training_start: str, end: str) -> tuple[list[dict], list[dict]]:
+    key = lead_account_key_from_row(account)
+    allow_demo = _local_demo_preview(account)
     with storage._get_conn() as conn:
         runs = [dict(row) for row in conn.execute(
             """SELECT local_date, status, limited, is_simulated, last_synced_at
                FROM lead_tracking_account_comment_runs
                WHERE account_key = ? AND local_date BETWEEN ? AND ?
                  AND is_simulated = ? ORDER BY local_date""",
-            (key, training_start.isoformat(), end.isoformat(), int(allow_demo)),
+            (key, training_start, end, int(allow_demo)),
         ).fetchall()]
         rows = [dict(row) for row in conn.execute(
             """SELECT comment.local_date, comment.comment_id, comment.comment_user_id,
@@ -258,8 +265,15 @@ def get_opinion_overview(
                WHERE comment.account_key = ? AND comment.local_date BETWEEN ? AND ?
                  AND run.is_simulated = ? AND run.status IN ('completed', 'partial')
                ORDER BY comment.local_date DESC, comment.comment_id""",
-            (key, training_start.isoformat(), end.isoformat(), int(allow_demo)),
+            (key, training_start, end, int(allow_demo)),
         ).fetchall()]
+    return runs, rows
+
+
+def _overview_from_evidence(
+    key: str, runs: list[dict], rows: list[dict], period_days: int,
+    start: date, end: date, allow_demo: bool,
+) -> OpinionOverview:
     # A provider may return the same comment on a later sync. Count it once.
     unique = {row["comment_id"]: row for row in reversed(rows)}
     rows = list(unique.values())

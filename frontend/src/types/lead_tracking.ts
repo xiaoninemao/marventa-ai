@@ -1,11 +1,5 @@
 export type LeadTrackingRunStatus = "completed" | "partial" | "unavailable" | "failed";
 
-export interface LeadTrackingWork {
-  item_id: string;
-  title: string;
-  share_url: string;
-}
-
 export interface LeadTrackingComment {
   comment_id: string;
   comment_user_id: string;
@@ -135,7 +129,6 @@ export interface DailyCommentReport {
   top_comments: DailyReportComment[];
   topics: DailyReportTopic[];
   work_analyses?: DailyReportWorkAnalysis[];
-  selected_item_id?: string;
   semantic_status: string;
   model_version: string;
   llm_used: boolean;
@@ -157,7 +150,7 @@ export interface OpinionShare {
 }
 
 export interface OpinionOverview {
-  status: "completed" | "unavailable";
+  status: "completed" | "partial" | "unavailable";
   period_days: 7 | 30;
   start_date: string;
   end_date: string;
@@ -179,6 +172,9 @@ export interface OpinionOverview {
 }
 
 export interface OpinionPost {
+  account_id?: string;
+  account_name?: string;
+  project_id?: string;
   item_id: string;
   title: string;
   share_url: string;
@@ -191,6 +187,9 @@ export interface OpinionPost {
 }
 
 export interface OpinionVoice {
+  account_id?: string;
+  account_name?: string;
+  project_id?: string;
   comment_id: string;
   item_id: string;
   item_title: string;
@@ -232,6 +231,9 @@ export interface OpinionPerformance {
 }
 
 export interface OpinionAction {
+  account_id?: string;
+  account_name?: string;
+  project_id?: string;
   id: string;
   topic: string;
   status: "pending" | "accepted";
@@ -268,4 +270,10 @@ export interface OpinionStrategy {
     evidence_action_ids: string[];
     source_dates: string[];
   }>;
+}
+
+export interface ProjectOpinionMonitor {
+  overview: OpinionOverview;
+  details: OpinionDetails;
+  actions: OpinionActionSummary;
 }
