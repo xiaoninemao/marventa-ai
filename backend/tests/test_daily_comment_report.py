@@ -344,6 +344,44 @@ class DailyCommentReportTests(unittest.TestCase):
             self.owner["id"], self.project.id, "daily-account", self.day,
         ).status, "unavailable")
 
+    def test_roadshow_preview_is_allowlisted_synthetic_and_never_calls_paid_services(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE project_channel_accounts SET platform_user_id = 'local-test-roadshow',
+                    authorization_status = 'demo', credential_blob = ''
+                WHERE id = 'daily-account'
+            """)
+        account = lead_tracking._internal_account(self.project.id, "daily-account")
+        self.key = lead_tracking.lead_account_key_from_row(account)
+        self._store([("希望支持报表导出", "sample-reader", "work-1", 8, 1)], simulated=True)
+        with patch.object(report, "LEAD_ROADSHOW_PREVIEW_ACCOUNT_IDS", frozenset({"daily-account"})), \
+             patch.object(report, "DEBUG", False), \
+             patch.object(report, "_llm_suggestions") as llm, \
+             patch.object(report, "deliver_daily_report") as notify:
+            preview = report.generate_daily_report(account, self.day)
+            self.assertEqual((preview.status, preview.source), ("completed", "presentation_preview"))
+            self.assertTrue(preview.is_simulated)
+            self.assertFalse(preview.collection_complete)
+            self.assertEqual(report.get_daily_report(
+                self.owner["id"], self.project.id, "daily-account", self.day,
+            ).comments_collected, 1)
+            self.assertEqual(report.get_daily_report(
+                self.owner["id"], self.project.id, "daily-account",
+            ).date, self.day.isoformat())
+            llm.assert_not_called()
+            notify.assert_not_called()
+            for invalid in (
+                {**account, "id": "not-allowlisted"},
+                {**account, "authorization_status": "active"},
+                {**account, "credential_blob": "platform-credentials"},
+                {**account, "platform_user_id": "real-platform-user"},
+            ):
+                self.assertFalse(report._demo_preview_allowed(invalid))
+            self.assertFalse(report._local_demo_preview(account))
+        self.assertEqual(report.get_daily_report(
+            self.owner["id"], self.project.id, "daily-account", self.day,
+        ).status, "unavailable")
+
     def test_historical_topic_decision_is_preserved_on_regeneration(self):
         self._store([("希望支持导出报表", "u1", "work-1", 2, 0)])
         report.generate_daily_report(self.account, self.day)

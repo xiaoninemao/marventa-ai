@@ -21,7 +21,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.config import LEAD_OPINION_EMBEDDING_MODEL_PATH, LEAD_TRACKING_TIMEZONE
 from app.engines.publishing import storage
 from app.engines.publishing.account_content import _scoped_account
-from app.engines.publishing.daily_comment_report import _local_demo_preview
+from app.engines.publishing.daily_comment_report import (
+    TOPICS,
+    _demo_preview_allowed,
+    _topic_names,
+)
 from app.engines.publishing.lead_identity import lead_account_key_from_row
 
 logger = logging.getLogger(__name__)
@@ -240,14 +244,14 @@ def get_opinion_overview(
     end = datetime.now(ZoneInfo(LEAD_TRACKING_TIMEZONE)).date() - timedelta(days=1)
     start = end - timedelta(days=period_days - 1)
     training_start = end - timedelta(days=29)
-    allow_demo = _local_demo_preview(account)
+    allow_demo = _demo_preview_allowed(account)
     runs, rows = _opinion_evidence(account, training_start.isoformat(), end.isoformat())
     return _overview_from_evidence(key, runs, rows, period_days, start, end, allow_demo)
 
 
 def _opinion_evidence(account: dict, training_start: str, end: str) -> tuple[list[dict], list[dict]]:
     key = lead_account_key_from_row(account)
-    allow_demo = _local_demo_preview(account)
+    allow_demo = _demo_preview_allowed(account)
     with storage._get_conn() as conn:
         runs = [dict(row) for row in conn.execute(
             """SELECT local_date, status, limited, is_simulated, last_synced_at
@@ -311,6 +315,28 @@ def _overview_from_evidence(
         key=key_name, label=mood_labels[key_name], count=mood_counts[key_name],
         percent=_percent(mood_counts[key_name], total),
     ) for key_name in SENTIMENT_ORDER]
+
+    if allow_demo and selected_runs and all(run["is_simulated"] for run in selected_runs.values()):
+        grouped = Counter((_topic_names(row["content"], []) or ["其他"])[0] for row in selected)
+        result.theme_status = "ready" if grouped else "insufficient_data"
+        word_counts: Counter[str] = Counter()
+        for index, (label, count) in enumerate(grouped.most_common(6)):
+            keywords = Counter(
+                word for row in selected for word in TOPICS.get(label, ())
+                if word in row["content"].lower()
+            )
+            result.themes.append(OpinionShare(
+                key=str(index), label=label, count=count, percent=_percent(count, total),
+            ))
+            result.keyword_clusters.append(OpinionKeywordCluster(
+                key=str(index), label=label, count=count, percent=_percent(count, total),
+                keywords=[word for word, _ in keywords.most_common(4)],
+            ))
+            word_counts.update(keywords)
+        peak = max(word_counts.values(), default=0)
+        result.words = [OpinionWord(word=word, weight=round(count / peak, 3))
+                        for word, count in word_counts.most_common(12) if peak]
+        return result
 
     texts = {text for row in rows if (text := str(row["content"]).strip())}
     if len(texts) < THEME_MIN_UNIQUE_TEXTS:

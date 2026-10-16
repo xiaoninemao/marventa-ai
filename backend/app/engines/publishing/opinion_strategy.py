@@ -15,9 +15,13 @@ from app.ai_provider import AIProviderConfigurationError, get_ai_provider
 from app.config import LEAD_OPINION_STRATEGY_LLM_ENABLED, LEAD_TRACKING_TIMEZONE
 from app.engines.publishing import storage
 from app.engines.publishing.account_content import _scoped_account
-from app.engines.publishing.daily_comment_report import DailyCommentReport, _local_demo_preview
+from app.engines.publishing.daily_comment_report import (
+    DailyCommentReport,
+    _demo_preview_allowed,
+)
 from app.engines.publishing.lead_analysis import _redact_comment_for_ai
 from app.engines.publishing.lead_identity import lead_account_key_from_row
+
 
 class OpinionAction(BaseModel):
     id: str
@@ -98,7 +102,7 @@ def get_opinion_actions(user_id: str, project_id: str, account_id: str, days: in
     start, end = _period(days)
     account = _scoped_account(user_id, project_id, account_id)
     key = lead_account_key_from_row(account)
-    allow_demo = _local_demo_preview(account)
+    allow_demo = _demo_preview_allowed(account)
     result = OpinionActionSummary(
         period_days=days, start_date=start, end_date=end, llm_available=_llm_available(),
     )
@@ -253,7 +257,7 @@ def _action_quotes(account: dict, summary: OpinionActionSummary) -> dict[str, li
         report = DailyCommentReport.model_validate_json(row["report_json"])
         if report.organization_id != account["organization_id"] or report.account_key != key:
             continue
-        if report.is_simulated and not _local_demo_preview(account):
+        if report.is_simulated and not _demo_preview_allowed(account):
             continue
         for topic in report.topics:
             for status in ("pending", "accepted"):

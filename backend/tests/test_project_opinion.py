@@ -15,6 +15,7 @@ from app.api import publishing
 from app.auth import storage as auth_storage
 from app.auth.dependencies import get_current_user
 from app.engines.publishing import (
+    daily_comment_report,
     lead_tracking,
     opinion_monitor,
     opinion_strategy,
@@ -148,6 +149,23 @@ class ProjectOpinionTests(unittest.TestCase):
 
     def _monitor(self, days=7):
         return project_opinion.get_project_opinion_monitor(self.owner["id"], self.project.id, days)
+
+    def test_project_preview_rules_never_replace_the_real_topic_model_for_mixed_evidence(self):
+        with storage._get_conn() as conn:
+            conn.execute("""
+                UPDATE project_channel_accounts SET platform_user_id = 'local-test-roadshow',
+                    authorization_status = 'demo' WHERE id = 'a'
+            """)
+        self._store("a", ["希望支持飞书对接"], simulated=True)
+        self._store("b", ["报表使用很方便"])
+        with patch.object(daily_comment_report, "LEAD_ROADSHOW_PREVIEW_ACCOUNT_IDS", frozenset({"a"})):
+            preview = project_opinion._overview([self._account("a")], self.project.id, 7)
+            self.assertTrue(preview.is_simulated)
+            self.assertEqual(preview.theme_status, "ready")
+            mixed = project_opinion._overview([self._account("a"), self._account("b")], self.project.id, 7)
+            self.assertTrue(mixed.is_simulated)
+            self.assertNotEqual(mixed.theme_status, "ready")
+            self.assertEqual(mixed.comments_collected, 2)
 
     def test_weighted_project_counts_and_identity_safe_provenance(self):
         self._store("a", ["页面太慢了"])

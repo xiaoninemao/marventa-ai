@@ -11,7 +11,7 @@ from app.engines.publishing import opinion_monitor, opinion_strategy, storage
 from app.engines.publishing.account_content import _account_rows
 from app.engines.publishing.daily_comment_report import (
     DailyCommentReport,
-    _local_demo_preview,
+    _demo_preview_allowed,
 )
 from app.engines.publishing.lead_identity import lead_account_key_from_row
 from app.engines.publishing.opinion_details import (
@@ -126,6 +126,7 @@ def _overview(accounts: list[dict], project_id: str, days: int) -> ProjectOpinio
             item["status"] == "completed" and not item["limited"] for item in items
         ) else "partial",
         "limited": any(item["limited"] for item in items),
+        "is_simulated": all(item["is_simulated"] for item in items),
         "last_synced_at": max(item["last_synced_at"] for item in items),
     } for day, items in sorted(runs_by_day.items())]
     rows.sort(key=lambda row: (row["local_date"], row["comment_id"]), reverse=True)
@@ -248,7 +249,7 @@ def _actions(user_id: str, project_id: str, accounts: list[dict], days: int) -> 
             report = DailyCommentReport.model_validate_json(row["report_json"])
             if report.organization_id != account["organization_id"] or report.account_key != key:
                 continue
-            if report.is_simulated and not _local_demo_preview(account):
+            if report.is_simulated and not _demo_preview_allowed(account):
                 continue
             report_dates.add(row["local_date"])
             if not report.work_analyses:

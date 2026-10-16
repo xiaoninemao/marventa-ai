@@ -20,6 +20,7 @@ from app.config import (
     LEAD_DAILY_LOCAL_DEMO_PREVIEW,
     LEAD_DAILY_REPORT_LLM_ENABLED,
     LEAD_DAILY_SEMANTIC_MODEL_PATH,
+    LEAD_ROADSHOW_PREVIEW_ACCOUNT_IDS,
     LEAD_TRACKING_TIMEZONE,
 )
 from app.engines.publishing import storage
@@ -285,6 +286,19 @@ def _local_demo_preview(account: dict) -> bool:
     )
 
 
+def _roadshow_demo_preview(account: dict) -> bool:
+    return bool(
+        account.get("id") in LEAD_ROADSHOW_PREVIEW_ACCOUNT_IDS
+        and str(account.get("platform_user_id") or "").startswith("local-test-")
+        and account.get("authorization_status") == "demo"
+        and not account.get("credential_blob")
+    )
+
+
+def _demo_preview_allowed(account: dict) -> bool:
+    return _local_demo_preview(account) or _roadshow_demo_preview(account)
+
+
 def _history(account_key: str, selected: date, *, simulated: bool = False) -> list[dict]:
     with storage._get_conn() as conn:
         rows = conn.execute(
@@ -462,8 +476,8 @@ def generate_daily_report(account: dict, selected: date, *, notify: bool = True)
         ).fetchall()}
     status = run["status"] if run is not None else "unavailable"
     simulated = bool(run["is_simulated"]) if run is not None else False
-    unsupported = account["platform"] != "douyin"
-    demo_preview = simulated and _local_demo_preview(account)
+    demo_preview = simulated and _demo_preview_allowed(account)
+    unsupported = account["platform"] != "douyin" and not demo_preview
     if (simulated and not demo_preview) or unsupported:
         status, rows = "unavailable", []
     comments, semantic_status, model_version = _classify(rows) if status in ("completed", "partial") else ([], "rules_only", "")
@@ -490,6 +504,7 @@ def generate_daily_report(account: dict, selected: date, *, notify: bool = True)
         status=status, date=selected.isoformat(), timezone=LEAD_TRACKING_TIMEZONE,
         organization_id=account["organization_id"], account_key=account_key,
         platform=account["platform"], source=("unsupported" if unsupported else
+                                               "presentation_preview" if demo_preview and _roadshow_demo_preview(account) else
                                                "local_demo" if demo_preview else
                                                "simulated_excluded" if simulated else "official_douyin_api"),
         is_simulated=simulated,
@@ -580,6 +595,18 @@ def get_daily_report(user_id: str, project_id: str, account_id: str, selected: d
     key = lead_account_key_from_row(account)
     day = selected or _previous_local_date()
     with storage._get_conn() as conn:
+        if selected is None and _roadshow_demo_preview(account):
+            candidates = conn.execute(
+                """SELECT local_date, report_json FROM lead_daily_reports
+                   WHERE account_key = ? AND organization_id = ?
+                     AND status IN ('completed', 'partial')
+                   ORDER BY local_date DESC LIMIT 90""",
+                (key, account["organization_id"]),
+            ).fetchall()
+            for candidate in candidates:
+                if json.loads(candidate["report_json"]).get("is_simulated") is True:
+                    day = date.fromisoformat(candidate["local_date"])
+                    break
         row = conn.execute(
             """SELECT report_json FROM lead_daily_reports
                WHERE account_key = ? AND local_date = ? AND organization_id = ?""",
@@ -598,7 +625,7 @@ def get_daily_report(user_id: str, project_id: str, account_id: str, selected: d
             message="No verified daily report is available",
         )
     report = DailyCommentReport.model_validate_json(row["report_json"])
-    if report.is_simulated and not _local_demo_preview(account):
+    if report.is_simulated and not _demo_preview_allowed(account):
         return DailyCommentReport(
             status="unavailable", date=day.isoformat(), timezone=LEAD_TRACKING_TIMEZONE,
             organization_id=account["organization_id"], account_key=key,

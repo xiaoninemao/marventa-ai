@@ -12,7 +12,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.auth import storage as auth_storage
-from app.engines.publishing import lead_tracking, opinion_monitor, storage
+from app.engines.publishing import (
+    daily_comment_report,
+    lead_tracking,
+    opinion_monitor,
+    storage,
+)
 from app.engines.publishing.project_memberships import ProjectNotFound
 
 
@@ -65,6 +70,33 @@ class OpinionOverviewTests(unittest.TestCase):
                 "reply_comment_total": 0, "top": False, "raw_data": "{}",
             } for index, (comment_id, user_id, content) in enumerate(comments)
         ], is_simulated=simulated)
+
+    def test_roadshow_themes_use_only_allowlisted_simulated_evidence(self):
+        with storage._get_conn() as conn:
+            conn.execute("""
+                UPDATE project_channel_accounts SET platform_user_id = 'local-test-roadshow',
+                    authorization_status = 'demo' WHERE id = 'opinion-account'
+            """)
+        account = lead_tracking._internal_account(self.project.id, "opinion-account")
+        self.key = lead_tracking.lead_account_key_from_row(account)
+        self._store(11, [("pricing", "reader-1", "想了解企业报价"),
+                         ("integration", "reader-2", "希望能对接飞书"),
+                         ("general", "reader-3", "很清晰")], simulated=True)
+        with patch.object(daily_comment_report, "LEAD_ROADSHOW_PREVIEW_ACCOUNT_IDS",
+                          frozenset({"opinion-account"})), \
+             patch.object(opinion_monitor, "_discover_themes") as model:
+            result = opinion_monitor.get_opinion_overview(
+                self.owner["id"], self.project.id, "opinion-account", 7,
+            )
+            self.assertTrue(result.is_simulated)
+            self.assertEqual(result.theme_status, "ready")
+            self.assertEqual(sum(topic.count for topic in result.themes), 3)
+            self.assertEqual({topic.label for topic in result.themes}, {"价格与采购", "系统集成", "其他"})
+            model.assert_not_called()
+        result = opinion_monitor.get_opinion_overview(
+            self.owner["id"], self.project.id, "opinion-account", 7,
+        )
+        self.assertEqual(result.status, "unavailable")
 
     def test_overview_uses_all_works_and_distinguishes_missing_days_from_zero(self):
         self._store(10, [("same", "u1", "能不能支持报表导出？")])

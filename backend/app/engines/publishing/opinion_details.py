@@ -12,7 +12,10 @@ from pydantic import BaseModel, Field
 from app.config import LEAD_TRACKING_TIMEZONE
 from app.engines.publishing import storage
 from app.engines.publishing.account_content import _scoped_account
-from app.engines.publishing.daily_comment_report import DailyCommentReport, _local_demo_preview
+from app.engines.publishing.daily_comment_report import (
+    DailyCommentReport,
+    _demo_preview_allowed,
+)
 from app.engines.publishing.lead_identity import lead_account_key_from_row
 from app.engines.publishing.opinion_monitor import _sentiment
 from app.engines.publishing.opinion_strategy import _period
@@ -121,7 +124,7 @@ def get_opinion_details(user_id: str, project_id: str, account_id: str, days: in
     start, end = _period(days)
     account = _scoped_account(user_id, project_id, account_id)
     key = lead_account_key_from_row(account)
-    allow_demo = _local_demo_preview(account)
+    allow_demo = _demo_preview_allowed(account)
     result = OpinionDetails(period_days=days)
     if account["authorization_status"] == "demo" and not allow_demo:
         return result
