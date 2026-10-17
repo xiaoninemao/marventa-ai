@@ -24,7 +24,7 @@ test("public tablet and mobile gutters keep their existing responsive sizes", ()
 });
 
 test("public descriptions use their available column width", () => {
-  for (const selector of [".amp-public-hero-statement", ".amp-public-value-copy > p"]) {
+  for (const selector of [".amp-public-hero-statement", ".amp-public-hero-description", ".amp-public-value-copy > p"]) {
     const rule = css.split(`${selector} {`)[1]?.split("}")[0];
     assert.ok(rule);
     assert.doesNotMatch(rule, /(?:max-)?width\s*:/);
@@ -39,18 +39,23 @@ test("the public capability heading wraps naturally instead of forcing a line br
   assert.ok(heading.includes('"Shared context. Work you build together."'));
 });
 
-test("the hero describes agents working with shared team knowledge in both languages", () => {
+test("the hero retains the product name, subtitle and complete organization-level positioning", () => {
   const heading = source.match(/<h1 id="public-hero-title">([\s\S]*?)<\/h1>/)?.[1];
   assert.ok(heading);
-  for (const phrase of ["让 Agent 带着", "团队的知识工作。", "Agents that work with ", "your team's knowledge."]) {
-    assert.ok(heading.includes(phrase));
-  }
-  assert.match(heading, /className="amp-public-hero-phrase"/);
-  assert.match(source, /className="amp-public-hero-description"/);
+  assert.equal(heading, "Marventa AI");
+  const hero = source.match(/className="amp-public-hero-copy">([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(hero);
+  assert.ok(hero.includes("以组织级 Agent 支持团队共创与 AI 执行，将知识、内容和成果沉淀为共享资产，贯通营销洞察、创作发布与效果复盘，让经验持续积累、营销持续优化。"));
+  assert.ok(hero.includes("shared organizational assets"));
+  assert.ok(hero.includes("build on experience and continually improve marketing"));
+  assert.equal((hero.match(/<p /g) || []).length, 2);
+  assert.match(hero, /className="amp-public-hero-statement"[^]*面向营销团队的 Agent 协作工作区/);
+  assert.ok(hero.includes("An agent workspace for marketing teams."));
+  assert.match(hero, /className="amp-public-hero-description"/);
+  assert.doesNotMatch(hero, /amp-public-hero-phrase|让 Agent 带着/);
   const rule = css.match(/\.amp-public-hero h1\s*\{([^}]+)\}/)?.[1];
   assert.ok(rule);
-  assert.doesNotMatch(rule, /white-space:\s*nowrap/);
-  assert.match(rule, /text-wrap:\s*balance/);
+  assert.match(rule, /white-space:\s*nowrap/);
 });
 
 test("collaboration is a concrete progression from context through creation to team review", () => {

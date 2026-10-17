@@ -100,14 +100,11 @@ export default function PublicHomepage() {
         <main id="public-content" className="amp-public-sections" tabIndex={-1}>
           <section className="amp-public-container amp-public-hero" aria-labelledby="public-hero-title">
             <div className="amp-public-hero-copy">
-              <h1 id="public-hero-title">
-                {t("让 Agent 带着", "Agents that work with ")}
-                <span className="amp-public-hero-phrase">{t("团队的知识工作。", "your team's knowledge.")}</span>
-              </h1>
+              <h1 id="public-hero-title">Marventa AI</h1>
               <p className="amp-public-hero-statement">{t("面向营销团队的 Agent 协作工作区", "An agent workspace for marketing teams.")}</p>
               <p className="amp-public-hero-description">{t(
-                "把产品资料、品牌规范、洞察与素材组织在项目里，和 Agent 一起规划、创作与交付。让团队的每一次工作，都留下可以继续使用的积累。",
-                "Bring product knowledge, brand guidance, research, and assets into each project. Plan, create, and deliver with agents, keeping the work ready for the next brief.",
+                "以组织级 Agent 支持团队共创与 AI 执行，将知识、内容和成果沉淀为共享资产，贯通营销洞察、创作发布与效果复盘，让经验持续积累、营销持续优化。",
+                "Organization-wide agents support team co-creation and AI execution, turning knowledge, content, and business outcomes into shared organizational assets. Connect market insight, content creation and publishing, and performance review to build on experience and continually improve marketing.",
               )}</p>
               <div className="amp-public-hero-actions">
                 <a href={REPOSITORY_URL} className="amp-public-button amp-public-github" target="_blank" rel="noopener noreferrer">

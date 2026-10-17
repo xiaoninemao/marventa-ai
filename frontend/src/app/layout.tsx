@@ -8,7 +8,7 @@ import { DEFAULT_LOCALE } from "@/i18n/locale";
 
 export const metadata: Metadata = {
   title: "Marventa AI",
-  description: "An agent workspace for marketing teams. Bring shared project knowledge into planning, creation, and delivery, and keep the work ready for the next brief.",
+  description: "An organization-wide agent collaboration platform that turns knowledge, marketing content, and business outcomes into shared assets across the full marketing workflow.",
 };
 
 export default function RootLayout({

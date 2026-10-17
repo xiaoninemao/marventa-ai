@@ -204,30 +204,25 @@
 
 .amp-public-hero h1 {
   font-family: inherit;
-  font-size: clamp(40px, 4.5vw, 66px);
+  font-size: clamp(56px, 6.4vw, 96px);
   font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.18;
+  letter-spacing: -0.01em;
+  line-height: 1.06;
   text-transform: none;
-  text-wrap: balance;
-}
-
-.amp-public-hero-phrase {
-  display: inline-block;
-  max-width: 100%;
+  white-space: nowrap;
 }
 
 .amp-public-hero-statement {
   font-size: clamp(18px, 1.65vw, 23px);
   font-weight: 400;
-  letter-spacing: -0.025em;
   line-height: 1.45;
-  margin-top: 22px;
+  margin-top: 24px;
 }
 
 .amp-public-hero-description {
   color: var(--public-muted);
   font-size: 16px;
+  font-weight: 400;
   line-height: 1.9;
   margin-top: 16px;
 }
@@ -536,10 +531,6 @@
     gap: 14px;
   }
 
-  .amp-public-hero-statement {
-    font-size: 20px;
-  }
-
   .amp-public-value-layout {
     gap: 0;
   }
@@ -560,11 +551,7 @@
   }
 
   .amp-public-hero h1 {
-    font-size: clamp(32px, 5.3vw, 46px);
-  }
-
-  .amp-public-hero-statement {
-    font-size: 18px;
+    font-size: clamp(48px, 7.4vw, 60px);
   }
 
   .amp-public-hero-visual {
@@ -672,12 +659,16 @@
   }
 
   .amp-public-hero h1 {
-    font-size: clamp(34px, 10.2vw, 44px);
+    font-size: clamp(46px, 13vw, 62px);
   }
 
   .amp-public-hero-statement {
     font-size: 18px;
     margin-top: 21px;
+  }
+
+  .amp-public-hero-description {
+    font-size: 15px;
   }
 
   .amp-public-hero-actions {
@@ -700,7 +691,6 @@
   }
 
   .amp-public-value-copy > p,
-  .amp-public-hero-description,
   .amp-public-collaboration-intro p,
   .amp-public-collaboration-steps p,
   .amp-public-start-copy {
