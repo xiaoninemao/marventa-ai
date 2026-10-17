@@ -100,8 +100,15 @@ export default function PublicHomepage() {
         <main id="public-content" className="amp-public-sections" tabIndex={-1}>
           <section className="amp-public-container amp-public-hero" aria-labelledby="public-hero-title">
             <div className="amp-public-hero-copy">
-              <h1 id="public-hero-title">Marventa AI</h1>
-              <p className="amp-public-hero-statement">{t("面向营销团队的创作工作台", "A creative workspace for marketing teams")}</p>
+              <h1 id="public-hero-title">
+                {t("让 Agent 带着", "Agents that work with ")}
+                <span className="amp-public-hero-phrase">{t("团队的知识工作。", "your team's knowledge.")}</span>
+              </h1>
+              <p className="amp-public-hero-statement">{t("面向营销团队的 Agent 协作工作区", "An agent workspace for marketing teams.")}</p>
+              <p className="amp-public-hero-description">{t(
+                "把产品资料、品牌规范、洞察与素材组织在项目里，和 Agent 一起规划、创作与交付。让团队的每一次工作，都留下可以继续使用的积累。",
+                "Bring product knowledge, brand guidance, research, and assets into each project. Plan, create, and deliver with agents, keeping the work ready for the next brief.",
+              )}</p>
               <div className="amp-public-hero-actions">
                 <a href={REPOSITORY_URL} className="amp-public-button amp-public-github" target="_blank" rel="noopener noreferrer">
                   <Image className="amp-public-github-icon" src="/assets/brand/github-mark.png" alt="" width={24} height={24} />
@@ -122,19 +129,63 @@ export default function PublicHomepage() {
             </div>
           </section>
 
-          <section id="capabilities" className="amp-public-capabilities" aria-labelledby="public-capabilities-title">
+          <section id="capabilities" className="amp-public-collaboration" aria-labelledby="public-capabilities-title">
+            <div className="amp-public-container">
+              <div className="amp-public-collaboration-intro">
+                <h2 id="public-capabilities-title">{t("从共同理解，到共同交付。", "Shared context. Work you build together.")}</h2>
+                <p>{t(
+                  "产品知识、品牌准则与创作经验，构成团队共享的工作语境。Agent 在此基础上推进创作，团队在持续迭代中把握方向与品质。",
+                  "Product knowledge, brand guidance, and creative references give your team a shared foundation. Agents move the work forward; your team shapes its direction and quality.",
+                )}</p>
+              </div>
+              <ol className="amp-public-collaboration-steps">
+                <li>
+                  <h3>{t("共享项目背景", "Start with shared context")}</h3>
+                  <p>{t(
+                    "产品定位、品牌规范、洞察与参考资料放在一起。团队成员和 Agent 可以引用同一批资料，减少重复介绍背景。",
+                    "Keep positioning, brand guidance, research, and references together. Teammates and agents can draw on the same sources without rebuilding the brief.",
+                  )}</p>
+                </li>
+                <li>
+                  <h3>{t("和 Agent 一起推进", "Move the work forward with agents")}</h3>
+                  <p>{t(
+                    "通过对话探索方向、制定计划，再调用资料与工具组合作品。讨论和产出一起保留，方便继续修改与完善。",
+                    "Explore a direction, develop a plan, then use references and tools to assemble the work. Keep the conversation alongside the output for the next revision.",
+                  )}</p>
+                </li>
+                <li>
+                  <h3>{t("由团队审阅与交付", "Keep the team in control")}</h3>
+                  <p>{t(
+                    "按项目角色协作，审阅媒体和文案，回看历史版本。把认可的成果保存到作品集，再安排发布。",
+                    "Collaborate through project roles, review the media and copy, and revisit earlier versions. Save the work to Portfolio before arranging publication.",
+                  )}</p>
+                </li>
+              </ol>
+            </div>
+          </section>
+
+          <section className="amp-public-capabilities" aria-labelledby="public-knowledge-title">
             <div className="amp-public-container">
               <div className="amp-public-value-layout">
                 <div className="amp-public-value-copy">
-                  <h2 id="public-capabilities-title">{t("内容生产，沉淀为组织能力。", "Project work becomes shared capability.")}</h2>
+                  <h2 id="public-knowledge-title">{t("作品交付，经验留下。", "Deliver the work. Keep the knowledge.")}</h2>
                   <p>{t(
-                    "市场研究、案例分析与内容版本统一归档于项目，团队方法与成果持续积累。",
-                    "Research, case analysis, and content versions remain with the project. Team methods and results accumulate over time.",
+                    "洞察、案例、素材、创作版本和作品持续保留在项目中。下一次任务可以引用已有资料，团队也能回看版本、整理方法，继续完善作品。",
+                    "Research, cases, assets, creative versions, and finished works stay with the project. Draw on existing references, revisit earlier decisions, and prepare useful material for the next task.",
                   )}</p>
                   <ul className="amp-public-value-outcomes">
-                    <li><OutcomeIllustration type="reference" /><span>{t("研究可引用", "Research to draw on")}</span></li>
-                    <li><OutcomeIllustration type="versions" /><span>{t("版本可回溯", "Versions to revisit")}</span></li>
-                    <li><OutcomeIllustration type="reuse" /><span>{t("经验可复用", "Knowledge to reuse")}</span></li>
+                    <li><OutcomeIllustration type="reference" /><span className="amp-public-outcome-copy">
+                      <strong>{t("研究可引用", "Research to draw on")}</strong>
+                      <span>{t("洞察与案例关联到创作，重要背景随任务保留。", "Reference insights and cases in the conversation, keeping the background with the task.")}</span>
+                    </span></li>
+                    <li><OutcomeIllustration type="versions" /><span className="amp-public-outcome-copy">
+                      <strong>{t("版本可回溯", "Versions to revisit")}</strong>
+                      <span>{t("回看方案和作品版本，必要时恢复，再继续完善。", "Revisit plans and work versions. Restore an earlier version and keep refining.")}</span>
+                    </span></li>
+                    <li><OutcomeIllustration type="reuse" /><span className="amp-public-outcome-copy">
+                      <strong>{t("经验可复用", "Knowledge to reuse")}</strong>
+                      <span>{t("把有效的表达和参考整理成素材，供后续任务引用。", "Turn useful copy and references into assets your team can draw on again.")}</span>
+                    </span></li>
                   </ul>
                 </div>
                 <div className="amp-public-value-visual">
@@ -149,14 +200,18 @@ export default function PublicHomepage() {
             <div className="amp-public-container">
               <h2 id="public-start-title">
                 <button type="button" className="amp-public-start-link"
-                  aria-label={t("注册后开始你的第一个项目", "Sign up to start your first project")}
+                  aria-label={t("注册并开启团队的新项目", "Sign up and start a project with your team")}
                   onClick={(event) => openAuth("register", event)}>
-                  <span>{t(CHINESE_ACTIONS.signUp, ENGLISH_ACTIONS.signUp)}</span>
+                  <span>{t("开启团队的下一个项目", "Start your team's next project")}</span>
                   <svg className="amp-public-start-arrow" aria-hidden="true" focusable="false" viewBox="0 0 40 40" fill="none">
                     <path d="M8 32 32 8M9 8h23v23" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </h2>
+              <p className="amp-public-start-copy">{t(
+                "从一份产品资料开始，把下一次创作接在团队已有的积累上。",
+                "Start with a product brief. Build the next piece of work on what your team already knows.",
+              )}</p>
             </div>
           </section>
         </main>
@@ -164,7 +219,7 @@ export default function PublicHomepage() {
         <footer className="amp-public-footer">
           <div className="amp-public-container amp-public-footer-content">
             <small>© {new Date().getFullYear()} Marventa AI</small>
-            <p className="amp-public-footer-note">{t("以持续创作，积累品牌的长期价值。", "Build lasting brand value through creative work.")}</p>
+            <p className="amp-public-footer-note">{t("把知识留在项目，把经验留给团队。", "Keep knowledge with the project. Keep experience with the team.")}</p>
           </div>
         </footer>
       </div>

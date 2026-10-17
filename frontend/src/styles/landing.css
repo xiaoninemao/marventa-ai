@@ -30,8 +30,7 @@
 }
 
 .amp-public-sections {
-  display: grid;
-  grid-template-rows: 1fr 1fr auto;
+  display: block;
 }
 
 .amp-public-skip-link {
@@ -205,20 +204,32 @@
 
 .amp-public-hero h1 {
   font-family: inherit;
-  font-size: clamp(56px, 6.4vw, 96px);
+  font-size: clamp(40px, 4.5vw, 66px);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.06;
+  letter-spacing: -0.035em;
+  line-height: 1.18;
   text-transform: none;
-  white-space: nowrap;
+  text-wrap: balance;
+}
+
+.amp-public-hero-phrase {
+  display: inline-block;
+  max-width: 100%;
 }
 
 .amp-public-hero-statement {
-  font-size: clamp(22px, 2.1vw, 30px);
+  font-size: clamp(18px, 1.65vw, 23px);
   font-weight: 400;
   letter-spacing: -0.025em;
   line-height: 1.45;
-  margin-top: 24px;
+  margin-top: 22px;
+}
+
+.amp-public-hero-description {
+  color: var(--public-muted);
+  font-size: 16px;
+  line-height: 1.9;
+  margin-top: 16px;
 }
 
 .amp-public-hero-actions {
@@ -247,6 +258,56 @@
   height: 100%;
   object-fit: contain;
   width: 100%;
+}
+
+.amp-public-collaboration {
+  padding-block: 68px 76px;
+}
+
+.amp-public-collaboration-intro {
+  align-items: end;
+  display: grid;
+  gap: 64px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+
+.amp-public-collaboration-intro h2 {
+  font-size: clamp(30px, 3.2vw, 44px);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1.45;
+  text-wrap: balance;
+}
+
+.amp-public-collaboration-intro p,
+.amp-public-collaboration-steps p {
+  color: var(--public-muted);
+  font-size: 15px;
+  line-height: 1.9;
+}
+
+.amp-public-collaboration-steps {
+  border-top: 1px solid #d8e2ef;
+  display: grid;
+  gap: 40px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  margin-top: 38px;
+}
+
+.amp-public-collaboration-steps > li {
+  min-width: 0;
+  padding-top: 24px;
+}
+
+.amp-public-collaboration-steps h3 {
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.amp-public-collaboration-steps p {
+  margin-top: 12px;
 }
 
 .amp-public-capabilities {
@@ -299,12 +360,29 @@
   display: flex;
   flex-direction: column;
   gap: 11px;
-  justify-content: space-between;
+  justify-content: flex-start;
   min-height: 112px;
   overflow: hidden;
   padding: 15px 18px 14px 0;
   position: relative;
   transition: background-color 180ms ease, color 180ms ease;
+}
+
+.amp-public-outcome-copy {
+  display: grid;
+  gap: 7px;
+}
+
+.amp-public-outcome-copy strong {
+  color: var(--public-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.amp-public-outcome-copy > span {
+  color: var(--public-muted);
+  font-size: 12px;
+  line-height: 1.8;
 }
 
 .amp-public-value-outcomes > li + li {
@@ -398,6 +476,13 @@
   line-height: 1.5;
 }
 
+.amp-public-start-copy {
+  color: #a3b5d1;
+  font-size: 15px;
+  line-height: 1.9;
+  margin-top: 6px;
+}
+
 .amp-public-start-link:hover {
   color: #d9e6ff;
   transform: none;
@@ -452,7 +537,7 @@
   }
 
   .amp-public-hero-statement {
-    font-size: 24px;
+    font-size: 20px;
   }
 
   .amp-public-value-layout {
@@ -465,10 +550,6 @@
 }
 
 @media (max-width: 800px) {
-  .amp-public-sections {
-    display: block;
-  }
-
   .amp-public-container {
     width: calc(100% - 48px);
   }
@@ -479,15 +560,33 @@
   }
 
   .amp-public-hero h1 {
-    font-size: clamp(48px, 7.4vw, 60px);
+    font-size: clamp(32px, 5.3vw, 46px);
   }
 
   .amp-public-hero-statement {
-    font-size: 21px;
+    font-size: 18px;
   }
 
   .amp-public-hero-visual {
     height: 480px;
+  }
+
+  .amp-public-collaboration-intro {
+    align-items: start;
+    gap: 18px;
+    grid-template-columns: 1fr;
+  }
+
+  .amp-public-collaboration-steps {
+    border-top: 0;
+    gap: 0;
+    grid-template-columns: 1fr;
+    margin-top: 28px;
+  }
+
+  .amp-public-collaboration-steps > li {
+    border-top: 1px solid #d8e2ef;
+    padding-block: 20px;
   }
 
   .amp-public-value-layout {
@@ -573,11 +672,11 @@
   }
 
   .amp-public-hero h1 {
-    font-size: clamp(46px, 13vw, 62px);
+    font-size: clamp(34px, 10.2vw, 44px);
   }
 
   .amp-public-hero-statement {
-    font-size: 21px;
+    font-size: 18px;
     margin-top: 21px;
   }
 
@@ -587,18 +686,24 @@
   }
 
   .amp-public-hero-visual {
-    height: 380px;
+    height: 300px;
   }
 
-  .amp-public-capabilities {
+  .amp-public-capabilities,
+  .amp-public-collaboration {
     padding-block: 42px;
   }
 
-  .amp-public-value-copy h2 {
+  .amp-public-value-copy h2,
+  .amp-public-collaboration-intro h2 {
     font-size: 28px;
   }
 
-  .amp-public-value-copy > p {
+  .amp-public-value-copy > p,
+  .amp-public-hero-description,
+  .amp-public-collaboration-intro p,
+  .amp-public-collaboration-steps p,
+  .amp-public-start-copy {
     font-size: 14px;
   }
 
